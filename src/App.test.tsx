@@ -65,11 +65,21 @@ describe("App report vs composer isolation", () => {
     vi.clearAllMocks();
     fetchRunSummaries.mockResolvedValue([
       {
+        contract_version: "research_run_summary.v1",
         run_id: "run-prototype",
-        created_at: "2026-01-01T00:00:00Z",
-        family: "ema_pullback",
-        symbol: "BTCUSDT",
+        created_at_utc: "2026-01-01T00:00:00Z",
+        instance_id: "instance_1",
+        strategy_id: "ema_pullback",
+        strategy_version: "1",
+        ticker: "BTCUSDT.P",
         timeframe: "5m",
+        from_ms: 1_000_000,
+        to_ms: 2_000_000,
+        realised_trade_count: 0,
+        open_position_count: 0,
+        final_equity: "10000",
+        net_pnl: "0",
+        market_data_hash: null,
       },
     ]);
     fetchRunReport.mockRejectedValue(new ApiError(500, PROTOTYPE_REPORT_ERROR));

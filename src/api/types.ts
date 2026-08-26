@@ -533,12 +533,23 @@ export type RunCompactSummaryReport = {
   source_report_path: string;
 };
 
+/** Mirrors Research Service `RunSummary` (research_run_summary.v1). Newest-first ordering by created_at_utc is a backend contract, not re-sorted here. */
 export type RunSummary = {
+  contract_version: string;
   run_id: string;
-  created_at: string;
-  family: string;
-  symbol: string;
+  created_at_utc: string;
+  instance_id: string;
+  strategy_id: string;
+  strategy_version: string;
+  ticker: string;
   timeframe: string;
+  from_ms: number;
+  to_ms: number;
+  realised_trade_count: number;
+  open_position_count: number;
+  final_equity: string;
+  net_pnl: string;
+  market_data_hash: string | null;
 };
 
 export type ExecutionDraft = {

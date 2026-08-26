@@ -164,21 +164,29 @@ const ONE_POINT_HTF_SIGNAL_TRACE: SignalTraceBundle = {
 
 const DEFAULT_CHART_CANDLES = [{ time: 1000, open: 1, high: 2, low: 0.5, close: 1.5 }];
 
+function makeRunSummary(run_id: string, created_at_utc: string): RunSummary {
+  return {
+    contract_version: "research_run_summary.v1",
+    run_id,
+    created_at_utc,
+    instance_id: "instance_1",
+    strategy_id: "ema_pullback",
+    strategy_version: "1",
+    ticker: "BTCUSDT.P",
+    timeframe: "5m",
+    from_ms: 1_000_000,
+    to_ms: 2_000_000,
+    realised_trade_count: 0,
+    open_position_count: 0,
+    final_equity: "10000",
+    net_pnl: "0",
+    market_data_hash: null,
+  };
+}
+
 const RUNS: RunSummary[] = [
-  {
-    run_id: "run-a",
-    created_at: "2026-01-01T00:00:00Z",
-    family: "ema_pullback",
-    symbol: "BTCUSDT",
-    timeframe: "5m",
-  },
-  {
-    run_id: "run-b",
-    created_at: "2026-01-02T00:00:00Z",
-    family: "ema_pullback",
-    symbol: "BTCUSDT",
-    timeframe: "5m",
-  },
+  makeRunSummary("run-a", "2026-01-01T00:00:00Z"),
+  makeRunSummary("run-b", "2026-01-02T00:00:00Z"),
 ];
 
 function makeReport(runId: string): RunReport {
@@ -376,6 +384,24 @@ describe("Workbench report-load invariant", () => {
       expect(fetchRunReport).toHaveBeenCalledTimes(1);
     });
     expect(fetchRunReport).toHaveBeenCalledWith("run-a");
+  });
+
+  it("selects the first entry from GET /runs as the default run (backend contract: newest created_at_utc first)", async () => {
+    fetchRunSummaries.mockResolvedValue([
+      makeRunSummary("run-newest", "2026-01-03T00:00:00Z"),
+      makeRunSummary("run-oldest", "2026-01-01T00:00:00Z"),
+    ]);
+
+    render(
+      <Host>
+        <WorkbenchCapture />
+      </Host>,
+    );
+
+    await waitFor(() => {
+      expect(fetchRunReport).toHaveBeenCalledTimes(1);
+    });
+    expect(fetchRunReport).toHaveBeenCalledWith("run-newest");
   });
 
   it("does not refetch report when variant changes", async () => {

@@ -294,6 +294,7 @@ const EMPTY_RUNS_HINT =
   "python -m research.strategies.ema_pullback.run --config <path>, " +
   "then refresh.";
 
+/** Backend returns runs newest-first by created_at_utc; the first entry is the default run. */
 function pickDefaultRunId(runs: RunSummary[]): string | null {
   if (runs.length === 0) return null;
   return runs[0].run_id;
