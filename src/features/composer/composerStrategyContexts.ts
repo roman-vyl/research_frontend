@@ -451,7 +451,7 @@ export function prepareStrategyForApi(
   return next;
 }
 
-export function prepareConfigDraftForApi<T extends { instances: { strategy: JsonObject }[] }>(
+export function prepareConfigDraftForApi<T extends { instances: { raw_spec: JsonObject }[] }>(
   draft: T,
   catalog: ComponentCatalog | null = null,
 ): T {
@@ -459,7 +459,7 @@ export function prepareConfigDraftForApi<T extends { instances: { strategy: Json
     ...draft,
     instances: draft.instances.map((inst) => ({
       ...inst,
-      strategy: prepareStrategyForApi(inst.strategy, catalog),
+      raw_spec: prepareStrategyForApi(inst.raw_spec, catalog),
     })),
   };
 }
@@ -603,13 +603,13 @@ export function collectComposerStrategyErrors(
 }
 
 export function collectComposerDraftErrors(
-  draft: { instances: { strategy: JsonObject }[] },
+  draft: { instances: { raw_spec: JsonObject }[] },
   catalog: ComponentCatalog | null = null,
 ): ValidationErrorItem[] {
   const errors: ValidationErrorItem[] = [];
   draft.instances.forEach((inst, index) => {
     errors.push(
-      ...collectComposerStrategyErrors(inst.strategy, `instances[${index}].strategy`, catalog),
+      ...collectComposerStrategyErrors(inst.raw_spec, `instances[${index}].raw_spec`, catalog),
     );
   });
   return errors;

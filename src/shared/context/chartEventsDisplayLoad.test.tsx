@@ -204,7 +204,7 @@ describe("lazy dense lanes (5B)", () => {
     vi.stubEnv("VITE_EMA_PIPELINE_DEBUG", "true");
     fetchRunSummaries.mockResolvedValue(RUNS);
     fetchConfigState.mockResolvedValue({
-      family: "ema_pullback",
+      strategy_id: "ema_pullback",
       selected_experiment_id: null,
       configs: [],
       selected_path: null,

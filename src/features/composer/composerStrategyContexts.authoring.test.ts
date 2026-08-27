@@ -14,7 +14,7 @@ import {
 } from "./composerStrategyContexts";
 
 const catalog: ComponentCatalog = {
-  family: "ema_pullback",
+  strategy_id: "ema_pullback",
   schema_version: 1,
   sections: [],
   components: [

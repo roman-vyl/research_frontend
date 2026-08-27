@@ -23,7 +23,7 @@ import { ListComponentSection } from "@/features/composer/ComposerPanel";
 afterEach(() => cleanup());
 
 const SETUP_CATALOG: ComponentCatalog = {
-  family: "ema_pullback",
+  strategy_id: "ema_pullback",
   schema_version: 1,
   sections: [{ section_id: "setup", label: "Setup", role: "setup" }],
   components: [
@@ -211,20 +211,21 @@ describe("setup component slot normalization", () => {
     const draft = {
       config_version: 1,
       experiment_id: "draft_ema_pullback",
-      family: "ema_pullback",
+      strategy_id: "ema_pullback",
       execution: {},
       instances: [
         {
-          instance_id: "instance_1",
-          variant: "instance_1",
-          market: { symbol: "BTCUSDT", base_timeframe: "5m" },
-          strategy: { setups: [editingSlot] },
+          enabled: true,
+          strategy_id: "ema_pullback",
+          ticker: "BTCUSDT.P",
+          base_timeframe: "5m",
+          raw_spec: { setups: [editingSlot] },
         },
       ],
     };
     const prepared = prepareConfigDraftForApi(draft, SETUP_CATALOG);
-    expect(prepared.instances[0]!.strategy.setups).toEqual([apiSlot]);
-    expect(prepared.instances[0]!.strategy).not.toHaveProperty("setup");
+    expect(prepared.instances[0]!.raw_spec.setups).toEqual([apiSlot]);
+    expect(prepared.instances[0]!.raw_spec).not.toHaveProperty("setup");
   });
 
   it("migrates legacy singleton setup to setups on load", () => {
@@ -245,25 +246,26 @@ describe("setup component slot normalization", () => {
     const draft = {
       config_version: 1,
       experiment_id: "draft_ema_pullback",
-      family: "ema_pullback",
+      strategy_id: "ema_pullback",
       execution: {},
       instances: [
         {
-          instance_id: "instance_1",
-          variant: "instance_1",
-          market: { symbol: "BTCUSDT", base_timeframe: "5m" },
-          strategy: { setup: loadedSlot },
+          enabled: true,
+          strategy_id: "ema_pullback",
+          ticker: "BTCUSDT.P",
+          base_timeframe: "5m",
+          raw_spec: { setup: loadedSlot },
         },
       ],
     };
     const normalized = normalizeConfigDraftForEditing(draft, SETUP_CATALOG);
-    const setups = normalized.instances[0]!.strategy.setups as JsonObject[];
+    const setups = normalized.instances[0]!.raw_spec.setups as JsonObject[];
     expect(Array.isArray(setups)).toBe(true);
     expect(setups[0]!.instance_id).toBe("setup");
     const editingSlot = normalizeComponentSlotForEditing(setups[0] as JsonObject, bounceSchema);
     expect(editingSlot.fast_ema).toBeUndefined();
     expect(editingSlot.max_bounces).toBe(4);
-    expect(normalized.instances[0]!.strategy.setup).toBeUndefined();
+    expect(normalized.instances[0]!.raw_spec.setup).toBeUndefined();
 
     const apiSlot = normalizeComponentSlotForApi(editingSlot, bounceSchema);
     expect(apiSlot.params).not.toHaveProperty("fast_ema");

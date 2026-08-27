@@ -12,7 +12,7 @@ import { prepareConfigDraftForApi } from "@/features/composer/composerStrategyCo
 afterEach(() => cleanup());
 
 const TREND_STRENGTH_CATALOG: ComponentCatalog = {
-  family: "ema_pullback",
+  strategy_id: "ema_pullback",
   schema_version: 1,
   sections: [{ section_id: "blockers", label: "Blockers", role: "blockers", list_slot: true }],
   components: [
@@ -99,18 +99,19 @@ describe("prepareConfigDraftForApi trend_strength booleans", () => {
       ...createBlankConfigDraft("ema_pullback"),
       instances: [
         {
-          instance_id: "inst_1",
-          variant: "inst_1",
-          market: { symbol: "BTCUSDT", base_timeframe: "1h" },
-          strategy: {
-            ...createBlankConfigDraft("ema_pullback").instances[0]!.strategy,
+          enabled: true,
+          strategy_id: "ema_pullback",
+          ticker: "BTCUSDT.P",
+          base_timeframe: "1h",
+          raw_spec: {
+            ...createBlankConfigDraft("ema_pullback").instances[0]!.raw_spec,
             blockers: [slot],
           },
         },
       ],
     };
     const prepared = prepareConfigDraftForApi(draft, TREND_STRENGTH_CATALOG);
-    const blocker = (prepared.instances[0]!.strategy.blockers as Record<string, unknown>[])[0]!;
+    const blocker = (prepared.instances[0]!.raw_spec.blockers as Record<string, unknown>[])[0]!;
     expect(blocker.require_di_alignment_on_peak).toBe(false);
     expect(blocker.block_on_opposite_di_flip).toBe(false);
   });

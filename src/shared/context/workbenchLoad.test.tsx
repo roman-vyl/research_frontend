@@ -327,7 +327,7 @@ describe("Workbench report-load invariant", () => {
     clearMarketResourceCache();
     fetchRunSummaries.mockResolvedValue(RUNS);
     fetchConfigState.mockResolvedValue({
-      family: "ema_pullback",
+      strategy_id: "ema_pullback",
       selected_experiment_id: null,
       configs: [],
       selected_path: null,
@@ -520,7 +520,7 @@ describe("Workbench missing-range trace scheduling", () => {
     clearMarketResourceCache();
     fetchRunSummaries.mockResolvedValue(RUNS);
     fetchConfigState.mockResolvedValue({
-      family: "ema_pullback",
+      strategy_id: "ema_pullback",
       selected_experiment_id: null,
       configs: [],
       selected_path: null,
@@ -689,7 +689,7 @@ describe("Workbench split market resource cache", () => {
     vi.stubEnv("VITE_EMA_PIPELINE_DEBUG", "true");
     fetchRunSummaries.mockResolvedValue(RUNS);
     fetchConfigState.mockResolvedValue({
-      family: "ema_pullback",
+      strategy_id: "ema_pullback",
       selected_experiment_id: null,
       configs: [],
       selected_path: null,
@@ -811,7 +811,7 @@ describe("Workbench abort + in-flight dedupe", () => {
     clearMarketResourceCache();
     fetchRunSummaries.mockResolvedValue(RUNS);
     fetchConfigState.mockResolvedValue({
-      family: "ema_pullback",
+      strategy_id: "ema_pullback",
       selected_experiment_id: null,
       configs: [],
       selected_path: null,
@@ -889,7 +889,7 @@ describe("Workbench market pan prefetch", () => {
     vi.stubEnv("VITE_EMA_PIPELINE_DEBUG", "true");
     fetchRunSummaries.mockResolvedValue(RUNS);
     fetchConfigState.mockResolvedValue({
-      family: "ema_pullback",
+      strategy_id: "ema_pullback",
       selected_experiment_id: null,
       configs: [],
       selected_path: null,

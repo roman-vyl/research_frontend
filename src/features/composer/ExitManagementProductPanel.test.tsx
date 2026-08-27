@@ -144,7 +144,7 @@ describe("ExitManagementProductPanel", () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]?.message).toBe(LEGACY_EXIT_MANAGEMENT_UNSUPPORTED_MESSAGE);
 
-    const draft = { instances: [{ strategy: LEGACY_STRATEGY }] };
+    const draft = { instances: [{ raw_spec: LEGACY_STRATEGY }] };
     expect(collectComposerDraftErrors(draft).some((e) => e.message.includes("unsupported legacy"))).toBe(
       true,
     );

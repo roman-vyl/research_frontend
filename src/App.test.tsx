@@ -87,21 +87,22 @@ describe("App report vs composer isolation", () => {
     ]);
     fetchRunDetail.mockRejectedValue(new ApiError(500, PROTOTYPE_REPORT_ERROR));
     fetchConfigState.mockResolvedValue({
-      family: "ema_pullback",
+      strategy_id: "ema_pullback",
       selected_experiment_id: "draft_ema_pullback",
       selected_path: "research/experiments/configs/ema_pullback/draft_ema_pullback.json",
       configs: [],
       draft: {
         config_version: 1,
         experiment_id: "draft_ema_pullback",
-        family: "ema_pullback",
+        strategy_id: "ema_pullback",
         execution: {},
         instances: [
           {
-            instance_id: "instance_1",
-            variant: "instance_1",
-            market: { symbol: "BTCUSDT", base_timeframe: "5m" },
-            strategy: {
+            enabled: true,
+            strategy_id: "ema_pullback",
+            ticker: "BTCUSDT.P",
+            base_timeframe: "5m",
+            raw_spec: {
               trade_sides: { long: true, short: false },
               anchor_stack: { source: "close", timeframe: "base", fast: 200, anchor: 500, slow: 1000 },
               direction: { component_id: "ema_anchor_stack_trend" },
@@ -130,7 +131,7 @@ describe("App report vs composer isolation", () => {
       },
     });
     fetchComponentCatalog.mockResolvedValue({
-      family: "ema_pullback",
+      strategy_id: "ema_pullback",
       schema_version: 1,
       sections: [{ section_id: "strategy_contexts", label: "Strategy contexts" }],
       components: [],

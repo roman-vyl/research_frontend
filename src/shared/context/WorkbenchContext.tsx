@@ -38,7 +38,7 @@ import {
   type StrategyConfigDraft,
   type WorkbenchTab,
 } from "@/api/types";
-import { COMPOSER_DEFAULT_FAMILY, createBlankConfigDraft } from "@/features/composer/composerDraft";
+import { COMPOSER_DEFAULT_STRATEGY_ID, createBlankConfigDraft } from "@/features/composer/composerDraft";
 import { resolveChartTimeframeMs } from "@/features/chart/chartTimeframeMs";
 import { getCandles } from "@/features/chart/marketResourceCache";
 import type { WindowCommitResult } from "@/features/chart/runtime/chartRuntime";
@@ -439,7 +439,7 @@ function WorkbenchProviderInner({
   const reloadConfig = useCallback(async () => {
     setConfigLoadStatus((status) => (status === "ready" ? status : "loading"));
     try {
-      const state = await fetchConfigState(COMPOSER_DEFAULT_FAMILY);
+      const state = await fetchConfigState(COMPOSER_DEFAULT_STRATEGY_ID);
       applyConfigState(state);
     } catch (err) {
       setConfigLoadError(
@@ -452,7 +452,7 @@ function WorkbenchProviderInner({
   const selectConfig = useCallback(
     async (experimentId: string) => {
       try {
-        const state = await selectSavedConfig(COMPOSER_DEFAULT_FAMILY, experimentId);
+        const state = await selectSavedConfig(COMPOSER_DEFAULT_STRATEGY_ID, experimentId);
         applyConfigState(state);
         setConfigLoadError(null);
       } catch (err) {
@@ -465,7 +465,7 @@ function WorkbenchProviderInner({
   );
 
   const createNewConfig = useCallback(() => {
-    setConfigDraft(createBlankConfigDraft(COMPOSER_DEFAULT_FAMILY));
+    setConfigDraft(createBlankConfigDraft(COMPOSER_DEFAULT_STRATEGY_ID));
     setSelectedConfigPath(null);
     setConfigLoadStatus("ready");
     setConfigLoadError(null);

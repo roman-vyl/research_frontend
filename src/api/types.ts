@@ -262,16 +262,21 @@ export type ExecutionDraft = {
 export type StrategyConfigDraft = {
   config_version: number;
   experiment_id: string;
-  family: string;
+  strategy_id: string;
   execution: ExecutionDraft;
-  instances: StrategyInstanceDraft[];
+  instances: DeployableStrategyInstance[];
 };
 
-export type StrategyInstanceDraft = {
-  instance_id: string;
-  variant: string;
-  market: { symbol: string; base_timeframe: string };
-  strategy: JsonObject;
+/** Canonical deployable strategy instance (canonical-strategy-instance-v1):
+ * identity subset (strategy_id/ticker/base_timeframe/raw_spec) plus sibling
+ * `enabled` deployment metadata. `enabled` never affects instance_id or
+ * backtest evaluation. */
+export type DeployableStrategyInstance = {
+  enabled: boolean;
+  strategy_id: string;
+  ticker: string;
+  base_timeframe: string;
+  raw_spec: JsonObject;
 };
 
 export type ParamFieldSchema = {
@@ -332,7 +337,7 @@ export type ComposerSectionSchema = {
 };
 
 export type ComponentCatalog = {
-  family: string;
+  strategy_id: string;
   schema_version: number;
   sections: ComposerSectionSchema[];
   components: ComponentSchema[];
@@ -366,11 +371,11 @@ export type SaveConfigResult = {
 export type ConfigListEntry = {
   experiment_id: string;
   path: string;
-  updated_at: string;
+  format: "json" | "yaml";
 };
 
 export type ConfigStateResponse = {
-  family: string;
+  strategy_id: string;
   selected_experiment_id: string | null;
   selected_path: string | null;
   draft: StrategyConfigDraft | null;

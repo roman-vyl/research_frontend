@@ -16,7 +16,7 @@ import {
 } from "@/features/composer/composerExitManagementProduct";
 
 const CATALOG_WITH_LEGACY_BE: ComponentCatalog = {
-  family: "ema_pullback",
+  strategy_id: "ema_pullback",
   schema_version: 1,
   sections: [],
   components: [
@@ -43,7 +43,7 @@ const CATALOG_WITH_LEGACY_BE: ComponentCatalog = {
 describe("composer exit_management product contract", () => {
   it("blank instance uses diagnostic_only product contract, not legacy always_on/rules", () => {
     const draft = createBlankConfigDraft("test_exp");
-    const strategy = draft.instances[0]?.strategy as Record<string, unknown> | undefined;
+    const strategy = draft.instances[0]?.raw_spec as Record<string, unknown> | undefined;
     const tm = strategy?.trade_management as Record<string, unknown> | undefined;
     const em = tm?.exit_management as Record<string, unknown> | undefined;
     expect(em).toEqual(createBlankExitManagement());

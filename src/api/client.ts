@@ -285,9 +285,9 @@ export async function fetchChartOverlayEma(params: {
 }
 
 export async function fetchComponentCatalog(
-  family = "ema_pullback",
+  strategyId = "ema_pullback",
 ): Promise<ComponentCatalog> {
-  const qs = new URLSearchParams({ family });
+  const qs = new URLSearchParams({ strategy_id: strategyId });
   return requestJson<ComponentCatalog>(`/api/research/component-catalog?${qs.toString()}`);
 }
 
@@ -314,19 +314,21 @@ export async function saveConfigDraft(
   return postJson<SaveConfigResult>("/api/research/config/save", { draft });
 }
 
-export async function fetchConfigState(family = "ema_pullback"): Promise<ConfigStateResponse> {
-  const qs = new URLSearchParams({ family });
+export async function fetchConfigState(
+  strategyId = "ema_pullback",
+): Promise<ConfigStateResponse> {
+  const qs = new URLSearchParams({ strategy_id: strategyId });
   return requestJson<ConfigStateResponse>(`/api/research/configs/state?${qs.toString()}`);
 }
 
 export async function selectSavedConfig(
-  family: string,
+  strategyId: string,
   experimentId: string,
 ): Promise<ConfigStateResponse> {
   return requestJson<ConfigStateResponse>("/api/research/configs/selected", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ family, experiment_id: experimentId }),
+    body: JSON.stringify({ strategy_id: strategyId, experiment_id: experimentId }),
   });
 }
 

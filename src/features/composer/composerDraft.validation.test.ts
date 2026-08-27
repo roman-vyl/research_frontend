@@ -11,7 +11,7 @@ import {
 } from "./composerStrategyContexts";
 
 const CATALOG_STUB: ComponentCatalog = {
-  family: "ema_pullback",
+  strategy_id: "ema_pullback",
   schema_version: 1,
   sections: [],
   components: [
@@ -92,8 +92,8 @@ describe("prepareConfigDraftForApi", () => {
   it("does not strip exit_policy.context — client validation must block save", () => {
     const draft = createBlankConfigDraft();
     const inst = draft.instances[0]!;
-    inst.strategy = {
-      ...inst.strategy,
+    inst.raw_spec = {
+      ...inst.raw_spec,
       trade_management: {
         exit_policy: {
           context: { component_id: "htf_context" },
@@ -108,14 +108,14 @@ describe("prepareConfigDraftForApi", () => {
     };
     expect(collectComposerDraftErrors(draft).length).toBeGreaterThan(0);
     const prepared = prepareConfigDraftForApi(draft);
-    expect(readExitPolicy(prepared.instances[0]!.strategy).context).toBeDefined();
+    expect(readExitPolicy(prepared.instances[0]!.raw_spec).context).toBeDefined();
   });
 
   it("collectComposerDraftErrors blocks profile exits without consumption", () => {
     const draft = createBlankConfigDraft();
     const inst = draft.instances[0]!;
-    inst.strategy = {
-      ...inst.strategy,
+    inst.raw_spec = {
+      ...inst.raw_spec,
       contexts: { htf: { component_id: "htf_context", timeframe: "4h" } },
       trade_management: {
         exit_policy: {
