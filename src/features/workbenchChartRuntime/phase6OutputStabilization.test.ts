@@ -31,11 +31,7 @@ import {
 } from "./viewportRuntime";
 import { evaluatePanPrefetchCandidate } from "./panRuntime";
 import { createMarketLoadHarness } from "./marketLoadHarness";
-import {
-  makePhase6Candles,
-  makePhase6Report,
-  makePhase6Variant,
-} from "./phase6ContractFixtures";
+import { makePhase6Candles, makePhase6RunDetail } from "./phase6ContractFixtures";
 import type { ChartRuntimeInput } from "./runtimeTypes";
 
 const fetchEmaWindow = vi.fn<typeof import("@/api/client").fetchEmaWindow>();
@@ -51,15 +47,14 @@ vi.mock("@/api/client", async (importOriginal) => {
 function makeReadyRuntimeInput(
   overrides: Partial<ChartRuntimeInput> = {},
 ): ChartRuntimeInput {
-  const variant = makePhase6Variant();
-  const report = makePhase6Report(variant);
+  const runDetail = makePhase6RunDetail();
   return createChartRuntimeInput({
     reportLoadStatus: "ready",
-    report,
-    selectedRunId: report.run_id,
+    runDetail,
+    runTrades: [],
+    managedPolicyEvents: [],
+    selectedRunId: runDetail.manifest.run_id,
     reloadToken: 0,
-    selectedVariantKey: variant.variant,
-    selectedVariant: variant,
     selectedTradeId: null,
     selectedTradeEntryTimeMs: null,
     chartTradeFocusWarning: null,
@@ -76,9 +71,8 @@ function makeReadyRuntimeInput(
 
 function seedMarketCacheForInput(input: ChartRuntimeInput): void {
   const view = resolveRunMarketView({
-    report: input.report!,
+    runDetail: input.runDetail!,
     chartTimeframe: input.chartTimeframe,
-    variant: input.selectedVariant!,
     reloadToken: input.reloadToken,
   });
   const target = resolveMarketTargetWindow(view, input.selectedTradeEntryTimeMs);
@@ -135,7 +129,7 @@ describe("Phase 6.2 runtime output stabilization harness", () => {
     const controller = createTraceDisplayRuntimeController();
     const cacheKey = buildTraceDisplayCacheKeyForRuntime({
       selectedRunId: "run-a",
-      selectedVariantKey: "exp_a",
+      instanceId: "exp_a",
       effectiveContextOverlayRef: null,
     });
     resetTraceDisplayRuntimeCache(controller, cacheKey);
@@ -207,12 +201,10 @@ describe("Phase 6.2 runtime output stabilization harness", () => {
   });
 
   it("does not re-init render window when foundation key is unchanged", () => {
-    const report = makePhase6Report();
-    const variant = makePhase6Variant();
+    const runDetail = makePhase6RunDetail();
     const view = resolveRunMarketView({
-      report,
+      runDetail,
       chartTimeframe: "5m",
-      variant,
       reloadToken: 0,
     });
     const candles = makePhase6Candles(120);
@@ -253,11 +245,10 @@ describe("Phase 6.2 runtime output stabilization harness", () => {
   });
 
   it("does not expand coverage on suppressed programmatic pan", () => {
-    const report = makePhase6Report();
+    const runDetail = makePhase6RunDetail();
     const view = resolveRunMarketView({
-      report,
+      runDetail,
       chartTimeframe: "5m",
-      variant: makePhase6Variant(),
       reloadToken: 0,
     });
     const coverageWindow = resolveMarketTargetWindow(view, null);
@@ -280,9 +271,8 @@ describe("Phase 6.2 runtime output stabilization harness", () => {
     const input = makeReadyRuntimeInput();
     seedMarketCacheForInput(input);
     const view = resolveRunMarketView({
-      report: input.report!,
+      runDetail: input.runDetail!,
       chartTimeframe: input.chartTimeframe,
-      variant: input.selectedVariant!,
       reloadToken: input.reloadToken,
     });
     const viewIdentity = buildRunMarketViewIdentity(view);
@@ -290,13 +280,13 @@ describe("Phase 6.2 runtime output stabilization harness", () => {
     const executeLoad = async () => ({ candlesFetched: false, emaFetched: 0 });
 
     const first = await harness.runLoad({
-      symbol: input.report!.symbol,
+      symbol: input.runDetail!.result.strategy_evaluation.market.ticker,
       timeframe: input.chartTimeframe,
       executeLoad,
     });
     const revisionBefore = harness.context.controller.candlesRevision;
     const second = await harness.runLoad({
-      symbol: input.report!.symbol,
+      symbol: input.runDetail!.result.strategy_evaluation.market.ticker,
       timeframe: input.chartTimeframe,
       executeLoad,
     });

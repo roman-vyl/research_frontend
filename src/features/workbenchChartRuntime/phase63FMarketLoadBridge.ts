@@ -80,12 +80,9 @@ export type Phase63FResolveMarketViewResult =
   | { outcome: "ok"; view: RunMarketView; viewIdentity: RunMarketViewIdentity }
   | { outcome: "error"; message: string };
 
-export function resolvePhase63FMarketView(input: {
-  report: Parameters<typeof resolveRunMarketView>[0]["report"];
-  chartTimeframe: string;
-  variant: Parameters<typeof resolveRunMarketView>[0]["variant"];
-  reloadToken: number;
-}): Phase63FResolveMarketViewResult {
+export function resolvePhase63FMarketView(
+  input: Parameters<typeof resolveRunMarketView>[0],
+): Phase63FResolveMarketViewResult {
   try {
     const view = resolveRunMarketView(input);
     return { outcome: "ok", view, viewIdentity: buildRunMarketViewIdentity(view) };

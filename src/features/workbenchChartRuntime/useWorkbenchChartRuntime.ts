@@ -59,8 +59,7 @@ export function createInitialChartRuntimeOutput(input: ChartRuntimeInput): Chart
     marketWindow.focusWindow !== null &&
     marketWindow.coverageWindow !== null
       ? resolveTraceEventsOverlaysShadow({
-          report: input.report,
-          variant: input.selectedVariant,
+          runDetail: input.runDetail,
           bundle: marketBundle?.bundle ?? null,
           foundationKey: marketBundle?.foundationKey ?? null,
           view: marketView.view,
@@ -133,7 +132,7 @@ export function createInitialChartRuntimeOutput(input: ChartRuntimeInput): Chart
     debug: {
       ...createEmptyRuntimeDebugSnapshot({
         runId: input.selectedRunId,
-        variantKey: input.selectedVariantKey,
+        instanceId: input.runDetail?.manifest.instance_id ?? null,
         selectedTradeId: input.selectedTradeId,
         selectedTradeEntryTimeMs: input.selectedTradeEntryTimeMs,
         chartHeavyIoEnabled: input.chartHeavyIoEnabled,

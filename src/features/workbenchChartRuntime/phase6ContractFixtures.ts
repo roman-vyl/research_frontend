@@ -1,30 +1,38 @@
-import type { ChartBar, RunReport, RunVariant } from "@/api/types";
+import type { ChartBar, RunDetail, TradeRecord } from "@/api/types";
 import { buildChartViewModel } from "@/features/chart/runtime/chartViewModel";
 
 import type { ChartRuntimeCompatibilityInput, ChartRuntimeOutput } from "./runtimeTypes";
 import { chartRuntimeCutoverConfig } from "./chartRuntimeCutoverConfig";
 
-const EMPTY_METRICS = {
-  long: { trades: 0, pnl: 0, return_pct: 0, profit_factor: null, win_rate: null },
-  short: { trades: 0, pnl: 0, return_pct: 0, profit_factor: null, win_rate: null },
-  total: {
-    trades: 0,
-    pnl: 0,
-    return_pct: 0,
-    profit_factor: null,
-    win_rate: null,
-    sharpe: 0,
-    max_drawdown: 0,
-  },
-  open_trades: { long: 0, short: 0, total: 0 },
-};
-
-export function makePhase6Variant(overrides: Partial<RunVariant> = {}): RunVariant {
+export function makePhase6RunDetail(overrides: Partial<RunDetail> = {}): RunDetail {
   return {
-    variant: "exp_a",
-    config_id: "cfg_a",
-    symbol: "BTCUSDT",
-    timeframe: "5m",
+    contract_version: "research_run_detail.v1",
+    manifest: {
+      contract_version: "research_run_artifacts.v1",
+      run_id: "run-a",
+      instance_id: "instance_1",
+      created_at_utc: "2026-01-01T00:00:00Z",
+      market_data_hash: "market-hash",
+    },
+    result: {
+      contract_version: "research_single_instance_backtest.v1",
+      run_id: "run-a",
+      instance_id: "instance_1",
+      strategy_evaluation: {
+        contract_version: "strategy_evaluation.v1",
+        strategy_id: "ema_pullback",
+        strategy_version: "v1",
+        instance_id: "instance_1",
+        market: {
+          ticker: "BTCUSDT",
+          timeframe: "5m",
+          from_ms: 1_000_000,
+          to_ms: 1_900_000,
+        },
+        bar_count: 100,
+        market_data_hash: "market-hash",
+      },
+    },
     strategy_spec: {
       anchor_stack: {
         fast: { period: 200 },
@@ -32,25 +40,60 @@ export function makePhase6Variant(overrides: Partial<RunVariant> = {}): RunVaria
         slow: { period: 1000 },
       },
     },
-    metrics: EMPTY_METRICS,
-    component_counters: [],
-    trade_records: [],
     ...overrides,
   };
 }
 
-export function makePhase6Report(variant = makePhase6Variant()): RunReport {
+export function makePhase6Trade(overrides: Partial<TradeRecord> = {}): TradeRecord {
   return {
-    run_id: "run-a",
-    created_at: "2026-01-01T00:00:00Z",
-    report_schema_version: 1,
-    family: "ema_pullback",
-    symbol: "BTCUSDT",
-    timeframe: "5m",
-    candles: 100,
-    data_range: { from_open_time_ms: 1_000_000, to_open_time_ms: 1_900_000 },
-    variants_count: 1,
-    variants: [variant],
+    trade_id: "trade:position:instance_1:long:0:1",
+    position_id: "position:instance_1:long:0",
+    instance_id: "instance_1",
+    side: "long",
+    status: "closed",
+    entry_bar_index: 0,
+    exit_bar_index: 1,
+    entry_time_ms: 1_000_000,
+    exit_time_ms: 1_300_000,
+    entry_price: "100",
+    exit_price: "105",
+    quantity: "1",
+    entry_notional: "100",
+    exit_notional: "105",
+    gross_pnl: "5",
+    entry_fee: "0",
+    exit_fee: "0",
+    fees_paid: "0",
+    net_pnl: "5",
+    gross_return_pct: "0.05",
+    net_return_pct: "0.05",
+    equity_before: "1000",
+    equity_after: "1005",
+    hold_bars: 1,
+    hold_ms: 300_000,
+    exit_candidate_type: "take_profit",
+    exit_reason: "take_profit",
+    exit_layer: "static",
+    exit_rule_id: null,
+    exit_component_id: null,
+    exit_kind: null,
+    path: {
+      mfe_price: "106",
+      mfe_pct: "0.06",
+      mfe_bar_index: 1,
+      mfe_bars_from_entry: 1,
+      mae_price: "99",
+      mae_pct: "0.01",
+      mae_bar_index: 0,
+      mae_bars_from_entry: 0,
+      captured_price: "105",
+      captured_pct: "0.05",
+      capture_ratio: "0.83",
+      giveback_price: "1",
+      giveback_pct: "0.01",
+      bars_from_mfe_to_exit: 0,
+    },
+    ...overrides,
   };
 }
 
@@ -68,7 +111,8 @@ export function makePhase6CompatibilityInput(
   overrides: Partial<ChartRuntimeCompatibilityInput> = {},
 ): ChartRuntimeCompatibilityInput {
   return {
-    selectedVariant: makePhase6Variant(),
+    strategySpec: makePhase6RunDetail().strategy_spec,
+    runTrades: [],
     selectedTradeId: 1,
     selectedBarTimeSec: 1_000,
     ...overrides,
@@ -128,7 +172,7 @@ export function makeSampleChartRuntimeOutput(
     },
     debug: {
       runId: "run-a",
-      variantKey: "exp_a",
+      instanceId: "instance_1",
       selectedTradeId: 1,
       selectedTradeEntryTimeMs: 1_200_000,
       chartHeavyIoEnabled: true,
@@ -198,7 +242,8 @@ export const RUNTIME_OWNED_WORKBENCH_CHART_FIELD_KEYS = [
 
 /** Provider-owned fields that must remain outside runtime v2 lifecycle. */
 export const PROVIDER_OWNED_WORKBENCH_CHART_FIELD_KEYS = [
-  "selectedVariant",
+  "runTrades",
+  "managedPolicyEvents",
   "selectedTradeId",
   "selectTrade",
   "selectedBarTimeSec",

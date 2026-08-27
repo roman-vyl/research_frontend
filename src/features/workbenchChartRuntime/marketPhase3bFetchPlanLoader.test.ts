@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { RunReport, RunVariant } from "@/api/types";
+import type { RunDetail } from "@/api/types";
 import { clearMarketResourceCache, mergeCandlesWindowBundle } from "@/features/chart/marketResourceCache";
 import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartViewWindow";
 import {
@@ -47,30 +47,33 @@ vi.mock("@/api/client", async (importOriginal) => {
   };
 });
 
-const EMPTY_METRICS = {
-  long: { trades: 0, pnl: 0, return_pct: 0, profit_factor: null, win_rate: null },
-  short: { trades: 0, pnl: 0, return_pct: 0, profit_factor: null, win_rate: null },
-  total: {
-    trades: 0,
-    pnl: 0,
-    return_pct: 0,
-    profit_factor: null,
-    win_rate: null,
-    sharpe: 0,
-    max_drawdown: 0,
-  },
-  open_trades: { long: 0, short: 0, total: 0 },
-};
-
 const TIMEFRAME_MS = 300_000;
 const TARGET_SPAN_MS = CHART_RENDER_WINDOW_SIZE * TIMEFRAME_MS;
 
-function makeVariant(overrides: Partial<RunVariant> = {}): RunVariant {
+function makeReport(): RunDetail {
   return {
-    variant: "exp_a",
-    config_id: "cfg_a",
-    symbol: "BTCUSDT",
-    timeframe: "5m",
+    contract_version: "1.0.0",
+    manifest: {
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      instance_id: "instance_1",
+      created_at_utc: "2026-01-01T00:00:00Z",
+      market_data_hash: null,
+    },
+    result: {
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      instance_id: "instance_1",
+      strategy_evaluation: {
+        contract_version: "1.0.0",
+        strategy_id: "ema_pullback",
+        strategy_version: "1",
+        instance_id: "instance_1",
+        market: { ticker: "BTCUSDT", timeframe: "5m", from_ms: 0, to_ms: TARGET_SPAN_MS * 3 },
+        bar_count: 150_000,
+        market_data_hash: "hash",
+      },
+    },
     strategy_spec: {
       anchor_stack: {
         fast: { period: 200 },
@@ -78,38 +81,18 @@ function makeVariant(overrides: Partial<RunVariant> = {}): RunVariant {
         slow: { period: 1000 },
       },
     },
-    metrics: EMPTY_METRICS,
-    component_counters: [],
-    trade_records: [],
-    ...overrides,
-  };
-}
-
-function makeReport(variant = makeVariant()): RunReport {
-  return {
-    run_id: "run-a",
-    created_at: "2026-01-01T00:00:00Z",
-    report_schema_version: 1,
-    family: "ema_pullback",
-    symbol: "BTCUSDT",
-    timeframe: "5m",
-    candles: 150_000,
-    data_range: { from_open_time_ms: 0, to_open_time_ms: TARGET_SPAN_MS * 3 },
-    variants: [variant],
-    variants_count: 1,
   };
 }
 
 function makeInput(overrides: Partial<ChartRuntimeInput> = {}): ChartRuntimeInput {
-  const selectedVariant = overrides.selectedVariant ?? makeVariant();
-  const report = overrides.report ?? makeReport(selectedVariant);
+  const runDetail = overrides.runDetail ?? makeReport();
   return createChartRuntimeInput({
     reportLoadStatus: "ready",
-    report,
-    selectedRunId: report.run_id,
+    runDetail,
+    runTrades: [],
+    managedPolicyEvents: [],
+    selectedRunId: runDetail?.manifest.run_id ?? null,
     reloadToken: 2,
-    selectedVariantKey: selectedVariant.variant,
-    selectedVariant,
     selectedTradeId: null,
     selectedTradeEntryTimeMs: null,
     chartTradeFocusWarning: null,
@@ -125,9 +108,8 @@ function makeInput(overrides: Partial<ChartRuntimeInput> = {}): ChartRuntimeInpu
 
 function resolveHarnessView(report = makeReport()) {
   const view = resolveRunMarketView({
-    report,
+    runDetail: report,
     chartTimeframe: "5m",
-    variant: report.variants[0]!,
     reloadToken: 0,
   });
   const viewIdentity = buildRunMarketViewIdentity(view);
@@ -256,7 +238,7 @@ describe("Phase 3B loader harness", () => {
     mockMarketResponses(target);
 
     const harness = createMarketLoadHarness({ view, viewIdentity });
-    const result = await harness.runLoad({ symbol: report.symbol, timeframe: "5m" });
+    const result = await harness.runLoad({ symbol: report.result.strategy_evaluation.market.ticker, timeframe: "5m" });
 
     expect(result.outcome).toBe("applied");
     expect(result.loadResult?.candlesFetched).toBe(true);
@@ -297,7 +279,7 @@ describe("Phase 3B loader harness", () => {
     });
 
     const harness = createMarketLoadHarness({ view, viewIdentity });
-    const result = await harness.runLoad({ symbol: report.symbol, timeframe: "5m" });
+    const result = await harness.runLoad({ symbol: report.result.strategy_evaluation.market.ticker, timeframe: "5m" });
 
     expect(result.outcome).toBe("cache_hit_ready");
     expect(result.loadResult?.candlesFetched).toBe(false);
@@ -329,7 +311,7 @@ describe("Phase 3B loader harness", () => {
 
     mockMarketResponses(target);
     const harness = createMarketLoadHarness({ view, viewIdentity });
-    await harness.runLoad({ symbol: report.symbol, timeframe: "5m" });
+    await harness.runLoad({ symbol: report.result.strategy_evaluation.market.ticker, timeframe: "5m" });
 
     expect(fetchCandlesWindow).toHaveBeenCalledTimes(1);
     expect(fetchCandlesWindow.mock.calls[0]?.[0]?.fromMs).toBe(plan.candlesPlan?.fromMs);
@@ -358,7 +340,7 @@ describe("Phase 3B loader harness", () => {
       coverageWindow: target,
       focusKey,
       coverageKey,
-      symbol: report.symbol,
+      symbol: report.result.strategy_evaluation.market.ticker,
       timeframe: "5m",
       signal: new AbortController().signal,
       loadGeneration,
@@ -418,7 +400,7 @@ describe("Phase 3B loader harness", () => {
       coverageWindow: target,
       focusKey,
       coverageKey: focusKey,
-      symbol: report.symbol,
+      symbol: report.result.strategy_evaluation.market.ticker,
       timeframe: "5m",
       signal: abortController.signal,
       loadGeneration,
@@ -455,7 +437,7 @@ describe("Phase 3B loader harness", () => {
       coverageWindow: target,
       focusKey,
       coverageKey: focusKey,
-      symbol: report.symbol,
+      symbol: report.result.strategy_evaluation.market.ticker,
       timeframe: "5m",
       signal: new AbortController().signal,
       loadGeneration,
@@ -484,7 +466,7 @@ describe("Phase 3B loader harness", () => {
       coverageWindow: target,
       focusKey,
       coverageKey: focusKey,
-      symbol: report.symbol,
+      symbol: report.result.strategy_evaluation.market.ticker,
       timeframe: "5m",
       signal: new AbortController().signal,
       loadGeneration,
@@ -518,7 +500,7 @@ describe("Phase 3B loader harness", () => {
       coverageWindow: target,
       focusKey,
       coverageKey: focusKey,
-      symbol: report.symbol,
+      symbol: report.result.strategy_evaluation.market.ticker,
       timeframe: "5m",
       signal: new AbortController().signal,
       loadGeneration,

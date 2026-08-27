@@ -243,13 +243,13 @@ describe("buildTradeFocusIntentKey", () => {
   it("excludes render-window bounds from trade focus intent", () => {
     const intentA = buildTradeFocusIntentKey({
       selectedTradeId: 1,
-      selectedVariantKey: "exp_a",
+      instanceId: "exp_a",
       chartViewMode: "around-trade",
       centerTimeSec: 1_100,
     });
     const intentB = buildTradeFocusIntentKey({
       selectedTradeId: 1,
-      selectedVariantKey: "exp_a",
+      instanceId: "exp_a",
       chartViewMode: "around-trade",
       centerTimeSec: 1_100,
     });
@@ -259,7 +259,7 @@ describe("buildTradeFocusIntentKey", () => {
 
   it("changes when selected trade or center changes", () => {
     const base = {
-      selectedVariantKey: "exp_a",
+      instanceId: "exp_a",
       chartViewMode: "around-trade" as const,
       centerTimeSec: 1_100,
     };
@@ -273,7 +273,7 @@ describe("shouldScheduleTradeViewportApply", () => {
   it("skips when user pan is active and render window bounds changed but intent did not", () => {
     const intentKey = buildTradeFocusIntentKey({
       selectedTradeId: 1,
-      selectedVariantKey: "exp_a",
+      instanceId: "exp_a",
       chartViewMode: "around-trade",
       centerTimeSec: 1_100,
     });

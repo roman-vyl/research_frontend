@@ -12,16 +12,14 @@ import {
   setViewportPlanCandidate,
 } from "./viewportRuntime";
 import { resolveMarketWindowRuntime } from "./marketWindowRuntime";
-import { makePhase6Candles, makePhase6Report, makePhase6Variant } from "./phase6ContractFixtures";
+import { makePhase6Candles, makePhase6RunDetail } from "./phase6ContractFixtures";
 
 describe("Phase 6.1 selection/focus/viewport contract guards", () => {
   it("uses around-trade focus mode when selected trade entry time is present", () => {
-    const report = makePhase6Report();
-    const variant = makePhase6Variant();
+    const report = makePhase6RunDetail();
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant,
       reloadToken: 0,
     });
     const withTrade = resolveMarketWindowRuntime({

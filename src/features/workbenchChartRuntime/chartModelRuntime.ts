@@ -146,7 +146,7 @@ export function resolveChartModelRuntime(input: {
 
 export function chartWindowKeyFromCandles(
   selectedRunId: string,
-  selectedVariantKey: string,
+  instanceId: string,
   candles: readonly { time: number }[],
   effectiveContextOverlayRef: string | null,
 ): string | null {
@@ -156,5 +156,5 @@ export function chartWindowKeyFromCandles(
   const first = candles[0]!.time;
   const last = candles[candles.length - 1]!.time;
   const overlay = effectiveContextOverlayRef ?? "";
-  return `${selectedRunId}:${selectedVariantKey}:${first}:${last}:${overlay}`;
+  return `${selectedRunId}:${instanceId}:${first}:${last}:${overlay}`;
 }

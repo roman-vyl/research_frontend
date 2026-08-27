@@ -16,52 +16,44 @@ import {
 } from "@/features/chart/marketWindowPlanner";
 import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartViewWindow";
 import { resolveRunMarketView } from "@/features/chart/runMarketView";
-import type { RunReport } from "@/api/types";
+import type { RunDetail } from "@/api/types";
 
-const EMPTY_METRICS = {
-  long: { trades: 0, pnl: 0, return_pct: 0, profit_factor: null, win_rate: null },
-  short: { trades: 0, pnl: 0, return_pct: 0, profit_factor: null, win_rate: null },
-  total: {
-    trades: 0,
-    pnl: 0,
-    return_pct: 0,
-    profit_factor: null,
-    win_rate: null,
-    sharpe: 0,
-    max_drawdown: 0,
-  },
-  open_trades: { long: 0, short: 0, total: 0 },
-};
-
-function makeReport(dataRange: { from_open_time_ms: number; to_open_time_ms: number }): RunReport {
+function makeReport(dataRange: { from_open_time_ms: number; to_open_time_ms: number }): RunDetail {
   return {
-    run_id: "run-a",
-    created_at: "2026-01-01T00:00:00Z",
-    report_schema_version: 1,
-    family: "ema_pullback",
-    symbol: "BTCUSDT",
-    timeframe: "5m",
-    candles: 100,
-    data_range: dataRange,
-    variants_count: 1,
-    variants: [
-      {
-        variant: "exp_a",
-        config_id: "cfg_a",
-        symbol: "BTCUSDT",
-        timeframe: "5m",
-        strategy_spec: {
-          anchor_stack: {
-            fast: { period: 200 },
-            anchor: { period: 500 },
-            slow: { period: 1000 },
-          },
+    contract_version: "1.0.0",
+    manifest: {
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      instance_id: "instance_1",
+      created_at_utc: "2026-01-01T00:00:00Z",
+      market_data_hash: null,
+    },
+    result: {
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      instance_id: "instance_1",
+      strategy_evaluation: {
+        contract_version: "1.0.0",
+        strategy_id: "ema_pullback",
+        strategy_version: "1",
+        instance_id: "instance_1",
+        market: {
+          ticker: "BTCUSDT",
+          timeframe: "5m",
+          from_ms: dataRange.from_open_time_ms,
+          to_ms: dataRange.to_open_time_ms,
         },
-        metrics: EMPTY_METRICS,
-        component_counters: [],
-        trade_records: [],
+        bar_count: 100,
+        market_data_hash: "hash",
       },
-    ],
+    },
+    strategy_spec: {
+      anchor_stack: {
+        fast: { period: 200 },
+        anchor: { period: 500 },
+        slow: { period: 1000 },
+      },
+    },
   };
 }
 
@@ -107,15 +99,13 @@ describe("resolveTargetDisplayWindow", () => {
       to_open_time_ms: CHART_RENDER_WINDOW_SIZE * 3_600_000 + 3_600_000,
     });
     const view5m = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
     const view1h = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "1h",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
 
@@ -145,9 +135,8 @@ describe("marketWindowPlanner", () => {
       to_open_time_ms: 1_700_100_000_000,
     });
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
     const target = resolveTargetDisplayWindowForView(view, {
@@ -168,9 +157,8 @@ describe("marketWindowPlanner", () => {
       to_open_time_ms: 1_700_010_000_000,
     });
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
     const target = resolveTargetDisplayWindowForView(view, {
@@ -200,9 +188,8 @@ describe("marketWindowPlanner", () => {
       to_open_time_ms: 1_700_010_000_000,
     });
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
     const target = resolveTargetDisplayWindowForView(view, {
@@ -233,9 +220,8 @@ describe("marketWindowPlanner", () => {
       to_open_time_ms: 1_700_010_000_000,
     });
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
 
@@ -300,9 +286,8 @@ describe("marketWindowPlanner", () => {
       to_open_time_ms: 1_700_010_000_000,
     });
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
     const target = resolveTargetDisplayWindowForView(view, {

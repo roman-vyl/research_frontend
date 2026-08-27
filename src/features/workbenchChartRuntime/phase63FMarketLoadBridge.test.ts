@@ -8,7 +8,7 @@ import {
   hasRuntimeV2ProductionOwner,
   runtimeV2ProductionDomains,
 } from "./chartRuntimeCutoverTelemetry";
-import { makePhase6Report, makePhase6Variant } from "./phase6ContractFixtures";
+import { makePhase6RunDetail } from "./phase6ContractFixtures";
 import {
   collectForbiddenImportViolations,
   readWorkspaceSource,
@@ -60,11 +60,10 @@ describe("Phase 6.3F market/load/cache cutover", () => {
   });
 
   it("resolves market view from report without old pipeline fallback", () => {
-    const report = makePhase6Report();
+    const report = makePhase6RunDetail();
     const resolved = resolvePhase63FMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
     expect(resolved.outcome).toBe("ok");
@@ -115,17 +114,15 @@ describe("Phase 6.3F market/load/cache cutover", () => {
   });
 
   it("resolvePhase63FMarketTargetWindows uses focus when coverageTargetWindow is null", () => {
-    const report = makePhase6Report();
+    const report = makePhase6RunDetail();
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
     const viewIdentity = resolvePhase63FMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
     expect(viewIdentity.outcome).toBe("ok");
@@ -156,17 +153,15 @@ describe("Phase 6.3F market/load/cache cutover", () => {
   });
 
   it("resolvePhase63FMarketTargetWindows preserves expanded coverage when reset key is unchanged", () => {
-    const report = makePhase6Report();
+    const report = makePhase6RunDetail();
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
     const viewIdentity = resolvePhase63FMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
     expect(viewIdentity.outcome).toBe("ok");
@@ -183,7 +178,7 @@ describe("Phase 6.3F market/load/cache cutover", () => {
     const chunkMs = marketWindowChunkMs(300_000);
     const expanded = {
       ...initial.coverageWindow,
-      fromMs: Math.max(report.data_range.from_open_time_ms, initial.coverageWindow.fromMs - chunkMs),
+      fromMs: Math.max(report.result.strategy_evaluation.market.from_ms, initial.coverageWindow.fromMs - chunkMs),
     };
     applyPhase63FPanPrefetchCoverage(owner, expanded);
     const next = resolvePhase63FMarketTargetWindows({
@@ -197,48 +192,15 @@ describe("Phase 6.3F market/load/cache cutover", () => {
   });
 
   it("keeps expanded coverage when selected trade changes within the same focus window", () => {
-    const report = makePhase6Report(
-      makePhase6Variant({
-        trade_records: [
-          {
-            trade_id: 1,
-            direction: "long",
-            status: "closed",
-            entry_time_ms: 1_100_000,
-            exit_time_ms: 1_200_000,
-            entry_price: 100,
-            exit_price: 101,
-            exit_reason: "signal:exit",
-            size: 1,
-            pnl: 1,
-            return_pct: 0.01,
-          },
-          {
-            trade_id: 2,
-            direction: "long",
-            status: "closed",
-            entry_time_ms: 1_300_000,
-            exit_time_ms: 1_400_000,
-            entry_price: 102,
-            exit_price: 103,
-            exit_reason: "signal:exit",
-            size: 1,
-            pnl: 1,
-            return_pct: 0.01,
-          },
-        ],
-      }),
-    );
+    const report = makePhase6RunDetail();
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
     const viewIdentity = resolvePhase63FMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
     expect(viewIdentity.outcome).toBe("ok");
@@ -254,7 +216,7 @@ describe("Phase 6.3F market/load/cache cutover", () => {
     });
     const expanded = {
       ...initial.coverageWindow,
-      fromMs: Math.max(report.data_range.from_open_time_ms, initial.coverageWindow.fromMs - 1_000_000),
+      fromMs: Math.max(report.result.strategy_evaluation.market.from_ms, initial.coverageWindow.fromMs - 1_000_000),
     };
     applyPhase63FPanPrefetchCoverage(owner, expanded);
     const next = resolvePhase63FMarketTargetWindows({
@@ -269,38 +231,27 @@ describe("Phase 6.3F market/load/cache cutover", () => {
   });
 
   it("resets expanded coverage when focus window changes", () => {
-    const report = makePhase6Report(
-      makePhase6Variant({
-        trade_records: [
-          {
-            trade_id: 1,
-            direction: "long",
-            status: "closed",
-            entry_time_ms: 1_100_000,
-            exit_time_ms: 1_200_000,
-            entry_price: 100,
-            exit_price: 101,
-            exit_reason: "signal:exit",
-            size: 1,
-            pnl: 1,
-            return_pct: 0.01,
+    const report = makePhase6RunDetail({
+      result: {
+        ...makePhase6RunDetail().result,
+        strategy_evaluation: {
+          ...makePhase6RunDetail().result.strategy_evaluation,
+          market: {
+            ...makePhase6RunDetail().result.strategy_evaluation.market,
+            from_ms: 1_000_000,
+            to_ms: 50_000_000_000,
           },
-        ],
-      }),
-    );
-    Object.assign(report, {
-      data_range: { from_open_time_ms: 1_000_000, to_open_time_ms: 50_000_000_000 },
+        },
+      },
     });
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
     const viewIdentity = resolvePhase63FMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
     expect(viewIdentity.outcome).toBe("ok");
@@ -316,7 +267,7 @@ describe("Phase 6.3F market/load/cache cutover", () => {
     });
     const expanded = {
       ...initial.coverageWindow,
-      fromMs: Math.max(report.data_range.from_open_time_ms, initial.coverageWindow.fromMs - 1_000_000),
+      fromMs: Math.max(report.result.strategy_evaluation.market.from_ms, initial.coverageWindow.fromMs - 1_000_000),
     };
     applyPhase63FPanPrefetchCoverage(owner, expanded);
     const next = resolvePhase63FMarketTargetWindows({

@@ -2,8 +2,8 @@ import type {
   ChartAuxEmaOverlay,
   ChartBar,
   HtfContextTrace,
-  RunReport,
-  RunVariant,
+  JsonObject,
+  RunDetail,
   SignalTraceBundle,
 } from "@/api/types";
 import { fetchChartOverlayEma } from "@/api/client";
@@ -59,17 +59,17 @@ export function createAuxOverlayRuntimeController(): AuxOverlayRuntimeController
 }
 
 export function resolveAuxEmaSpecsRuntime(input: {
-  selectedVariant: RunVariant | null;
+  strategySpec: JsonObject | null;
   chartTimeframe: string;
   effectiveContextOverlayRef: string | null;
 }): AuxEmaSpec[] {
-  if (input.selectedVariant === null) {
+  if (input.strategySpec === null) {
     return [];
   }
   try {
-    const periods = anchorStackPeriodsFromStrategySpec(input.selectedVariant.strategy_spec);
+    const periods = anchorStackPeriodsFromStrategySpec(input.strategySpec);
     return collectAuxEmaSpecs(
-      input.selectedVariant.strategy_spec,
+      input.strategySpec,
       input.chartTimeframe,
       periods,
       input.effectiveContextOverlayRef,
@@ -248,7 +248,7 @@ export async function loadBffAuxOverlaysRuntime(
   input: {
     chartHeavyIoEnabled: boolean;
     marketLoadStatus: "idle" | "loading" | "ready" | "error";
-    report: RunReport | null;
+    runDetail: RunDetail | null;
     chartTimeframe: string;
     signal?: AbortSignal;
     fetchOverlayEma?: typeof fetchChartOverlayEma;
@@ -257,7 +257,7 @@ export async function loadBffAuxOverlaysRuntime(
   if (!input.chartHeavyIoEnabled) {
     return { outcome: "skipped", reason: "heavy_io_off" };
   }
-  if (input.marketLoadStatus !== "ready" || input.report === null || controller.auxEmaSpecs.length === 0) {
+  if (input.marketLoadStatus !== "ready" || input.runDetail === null || controller.auxEmaSpecs.length === 0) {
     controller.auxEmaOverlays = [];
     return { outcome: "skipped", reason: "market_not_ready" };
   }
@@ -271,15 +271,15 @@ export async function loadBffAuxOverlaysRuntime(
   }
 
   const fetcher = input.fetchOverlayEma ?? fetchChartOverlayEma;
-  const snapshot = input.report;
-  const fromMs = snapshot.data_range.from_open_time_ms;
-  const toOpenTimeMs = snapshot.data_range.to_open_time_ms;
+  const market = input.runDetail.result.strategy_evaluation.market;
+  const fromMs = market.from_ms;
+  const toOpenTimeMs = market.to_ms;
 
   try {
     const loaded = await Promise.all(
       bffSpecs.map(async (spec) => {
         const points = await fetcher({
-          symbol: snapshot.symbol,
+          symbol: market.ticker,
           timeframe: input.chartTimeframe,
           period: spec.period,
           fromMs,

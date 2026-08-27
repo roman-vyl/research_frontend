@@ -8,7 +8,7 @@ import {
   type MarketDisplayWindowMs,
 } from "@/features/chart/workbenchMarketLoad";
 
-import { makePhase6Report } from "./phase6ContractFixtures";
+import { makePhase6RunDetail } from "./phase6ContractFixtures";
 import { readWorkspaceSource } from "./phase6StaticGuardUtils";
 import { findForbiddenAdapterFallbackPatterns } from "./runtimeOutputAdapter.contract";
 import { resolvePhase63AModelRuntimeSlice } from "./phase63AModelAdapterBridge";
@@ -82,12 +82,10 @@ describe("Phase 6.3F EMA overlay regression diagnostics", () => {
   });
 
   it("characterization: candles-only cache yields zero anchor EMA overlays in market bundle", () => {
-    const report = makePhase6Report();
-    const variant = report.variants[0]!;
+    const report = makePhase6RunDetail();
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant,
       reloadToken: 0,
     });
     const times = Array.from({ length: 20 }, (_, i) => 1_300 + i * 300);
@@ -109,12 +107,10 @@ describe("Phase 6.3F EMA overlay regression diagnostics", () => {
   });
 
   it("characterization: seeded anchor EMA overlays survive into market bundle", () => {
-    const report = makePhase6Report();
-    const variant = report.variants[0]!;
+    const report = makePhase6RunDetail();
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant,
       reloadToken: 0,
     });
     const times = Array.from({ length: 20 }, (_, i) => 1_300 + i * 300);
@@ -138,12 +134,10 @@ describe("Phase 6.3F EMA overlay regression diagnostics", () => {
   });
 
   it("characterization: empty bundle anchor EMA yields zero render-window slice overlays", () => {
-    const report = makePhase6Report();
-    const variant = report.variants[0]!;
+    const report = makePhase6RunDetail();
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant,
       reloadToken: 0,
     });
     const times = Array.from({ length: 20 }, (_, i) => 1_300 + i * 300);
@@ -167,7 +161,7 @@ describe("Phase 6.3F EMA overlay regression diagnostics", () => {
       marketLoadStatus: "ready",
       bundleCandles: snapshot.bundle!.candles,
       selectedTradeEntryTimeMs: null,
-      variantKey: variant.variant,
+      instanceId: report.manifest.instance_id,
     });
 
     const slice = resolvePhase63BChartWindowSlice(renderOwner, {
@@ -184,12 +178,10 @@ describe("Phase 6.3F EMA overlay regression diagnostics", () => {
   });
 
   it("characterization: seeded bundle anchor EMA produces nonzero render-window slice overlays", () => {
-    const report = makePhase6Report();
-    const variant = report.variants[0]!;
+    const report = makePhase6RunDetail();
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant,
       reloadToken: 0,
     });
     const times = Array.from({ length: 20 }, (_, i) => 1_300 + i * 300);
@@ -215,7 +207,7 @@ describe("Phase 6.3F EMA overlay regression diagnostics", () => {
       marketLoadStatus: "ready",
       bundleCandles: snapshot.bundle!.candles,
       selectedTradeEntryTimeMs: null,
-      variantKey: variant.variant,
+      instanceId: report.manifest.instance_id,
     });
 
     const slice = resolvePhase63BChartWindowSlice(renderOwner, {

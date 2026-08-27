@@ -6,33 +6,29 @@ import {
   filterTrades,
   matchesTradeDiagnosticsFilters,
 } from "@/features/reports/tradeDiagnosticsFilters";
+import { makeTradeRecord } from "@/features/chart/testFixtures/tradeRecordFixtures";
 
 function makeTrade(overrides: Partial<TradeRecord> = {}): TradeRecord {
-  return {
-    trade_id: 1,
-    direction: "long",
-    status: "closed",
+  return makeTradeRecord({
+    trade_id: "1",
+    side: "long",
     entry_time_ms: 1,
     exit_time_ms: 2,
-    entry_price: 100,
-    exit_price: 101,
-    size: 1,
-    pnl: 10,
-    return_pct: 0.01,
+    entry_price: "100",
+    exit_price: "101",
+    net_pnl: "10",
+    net_return_pct: "0.01",
     exit_reason: "stop_loss:atr_sl_far",
-    entry_profile: "aligned",
-    entry_context_state: "up",
     exit_kind: "stop_loss",
-    exit_group: "always_on",
     ...overrides,
-  };
+  });
 }
 
 describe("tradeDiagnosticsFilters", () => {
   it("filters by direction", () => {
     const trades = [
-      makeTrade({ trade_id: 1, direction: "long" }),
-      makeTrade({ trade_id: 2, direction: "short" }),
+      makeTrade({ trade_id: "1", side: "long" }),
+      makeTrade({ trade_id: "2", side: "short" }),
     ];
     expect(
       filterTrades(trades, { ...DEFAULT_TRADE_DIAGNOSTICS_FILTERS, direction: "long" }),
@@ -42,23 +38,10 @@ describe("tradeDiagnosticsFilters", () => {
     ).toHaveLength(1);
   });
 
-  it("filters by entry_profile", () => {
-    const trades = [
-      makeTrade({ trade_id: 1, entry_profile: "aligned" }),
-      makeTrade({ trade_id: 2, entry_profile: "countertrend" }),
-    ];
-    const filtered = filterTrades(trades, {
-      ...DEFAULT_TRADE_DIAGNOSTICS_FILTERS,
-      entryProfile: "aligned",
-    });
-    expect(filtered).toHaveLength(1);
-    expect(filtered[0].trade_id).toBe(1);
-  });
-
   it("filters by exit_reason prefix stop_loss", () => {
     const trades = [
       makeTrade({ exit_reason: "stop_loss:atr_sl_far" }),
-      makeTrade({ trade_id: 2, exit_reason: "signal:rsi_exit_base", exit_kind: "signal" }),
+      makeTrade({ trade_id: "2", exit_reason: "signal:rsi_exit_base", exit_kind: "signal" }),
     ];
     const filtered = filterTrades(trades, {
       ...DEFAULT_TRADE_DIAGNOSTICS_FILTERS,
@@ -68,11 +51,10 @@ describe("tradeDiagnosticsFilters", () => {
     expect(filtered[0].exit_reason).toBe("stop_loss:atr_sl_far");
   });
 
-  it("filters winners and losers by pnl", () => {
+  it("filters winners and losers by net_pnl", () => {
     const trades = [
-      makeTrade({ trade_id: 1, pnl: 50 }),
-      makeTrade({ trade_id: 2, pnl: -10 }),
-      makeTrade({ trade_id: 3, pnl: null, status: "open", exit_reason: "open" }),
+      makeTrade({ trade_id: "1", net_pnl: "50" }),
+      makeTrade({ trade_id: "2", net_pnl: "-10" }),
     ];
     expect(
       filterTrades(trades, { ...DEFAULT_TRADE_DIAGNOSTICS_FILTERS, outcome: "winners" }),
@@ -96,19 +78,5 @@ describe("tradeDiagnosticsFilters", () => {
         exitKind: "stop",
       }),
     ).toBe(false);
-  });
-
-  it("filters by quality flags", () => {
-    const trades = [
-      makeTrade({ trade_id: 1, quality_flags: ["high_mfe_low_capture"] }),
-      makeTrade({ trade_id: 2, quality_flags: ["signal_exit_winner"] }),
-      makeTrade({ trade_id: 3, quality_flags: null }),
-    ];
-    const filtered = filterTrades(trades, {
-      ...DEFAULT_TRADE_DIAGNOSTICS_FILTERS,
-      qualityFlag: "high_mfe_low_capture",
-    });
-    expect(filtered).toHaveLength(1);
-    expect(filtered[0].trade_id).toBe(1);
   });
 });

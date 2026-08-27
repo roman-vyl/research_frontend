@@ -3,9 +3,11 @@ import type {
   ChartBar,
   ChartEmaOverlay,
   ComponentEvent,
-  RunReport,
-  RunVariant,
+  JsonObject,
+  ManagedPolicyEvent,
+  RunDetail,
   SignalTraceBundle,
+  TradeRecord,
 } from "@/api/types";
 import type { ChartInteractionEvent, ViewportCommand } from "@/features/chart/runtime/types";
 import type { ChartViewModel } from "@/features/chart/runtime/chartViewModel";
@@ -20,11 +22,11 @@ export type ChartRuntimeFocusIntent =
 
 export type ChartRuntimeInput = {
   reportLoadStatus: "loading" | "ready" | "error";
-  report: RunReport | null;
+  runDetail: RunDetail | null;
+  runTrades: TradeRecord[];
+  managedPolicyEvents: ManagedPolicyEvent[];
   selectedRunId: string | null;
   reloadToken: number;
-  selectedVariantKey: string;
-  selectedVariant: RunVariant | null;
   selectedTradeId: number | string | null;
   selectedTradeEntryTimeMs: number | null;
   chartTradeFocusWarning: string | null;
@@ -140,7 +142,7 @@ export type RuntimeMarketFetchPlanDebug = {
 
 export type ChartRuntimeDebugSnapshot = {
   runId: string | null;
-  variantKey: string;
+  instanceId: string | null;
   selectedTradeId: number | string | null;
   selectedTradeEntryTimeMs: number | null;
   chartHeavyIoEnabled: boolean;
@@ -179,7 +181,8 @@ export type ChartRuntimeOutput = {
 };
 
 export type ChartRuntimeCompatibilityInput = {
-  selectedVariant: RunVariant | null;
+  strategySpec: JsonObject | null;
+  runTrades: TradeRecord[];
   selectedTradeId: number | string | null;
   selectedBarTimeSec: number | null;
 };

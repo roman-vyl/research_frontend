@@ -12,17 +12,14 @@ import { formatMoney, formatReturnPct } from "@/features/reports/formatDiagnosti
 import { TradeDirectionChip } from "@/features/reports/TradeDirectionChip";
 import { TradeStatusChip } from "@/features/reports/TradeStatusChip";
 import {
-  buildContextConsumptionDiagnosticFields,
-  buildBreakEvenDiagnosticFields,
   buildTradeDiagnosticFields,
-  EM_DASH,
   type TradeDiagnosticField,
 } from "@/features/reports/tradeDiagnosticsFields";
 
 type Props = {
   trade: TradeRecord | undefined;
   selectedTradeId: number | string;
-  /** 1-based index in variant trade_records for UI labels. */
+  /** 1-based index in run trades for UI labels. */
   tradeDisplayNumber?: number;
   strategySpec: JsonObject | undefined;
   chartEmaOverlays: ChartEmaOverlay[];
@@ -45,11 +42,11 @@ function pnlToneClass(pnl: number | null, returnPct: number | null): string {
 }
 
 function TradeResultSummary({
-  direction,
+  side,
   pnl,
   returnPct,
 }: {
-  direction: TradeRecord["direction"];
+  side: TradeRecord["side"];
   pnl: number | null;
   returnPct: number | null;
 }) {
@@ -69,7 +66,7 @@ function TradeResultSummary({
         {" "}
         ·{" "}
       </span>
-      <TradeDirectionChip direction={direction} />
+      <TradeDirectionChip side={side} />
     </p>
   );
 }
@@ -127,21 +124,15 @@ export function ChartTradeDiagnostics({
           Trade #{tradeDisplayNumberProp ?? selectedTradeId}
         </h3>
         <p className="chart-trade-diagnostics__empty" data-testid="chart-trade-diagnostics-stale">
-          {focusWarning ?? "Trade not found in the current variant."}
+          {focusWarning ?? "Trade not found in the current run."}
         </p>
       </aside>
     );
   }
 
   const { core, diagnostics } = buildTradeDiagnosticFields(trade);
-  const breakEvenFields = buildBreakEvenDiagnosticFields(trade);
   const coreFields = core.filter(
-    (f) =>
-      f.key !== "trade_id" &&
-      f.key !== "status" &&
-      f.key !== "direction" &&
-      f.key !== "pnl" &&
-      f.key !== "return_pct",
+    (f) => f.key !== "trade_id" && f.key !== "net_pnl" && f.key !== "net_return_pct",
   );
   let anchorStack = null;
   try {
@@ -179,42 +170,14 @@ export function ChartTradeDiagnostics({
         <TradeStatusChip status={trade.status} />
       </div>
       <TradeResultSummary
-        direction={trade.direction}
-        pnl={trade.pnl}
-        returnPct={trade.return_pct}
+        side={trade.side}
+        pnl={Number(trade.net_pnl)}
+        returnPct={Number(trade.net_return_pct)}
       />
       <DiagnosticDl fields={coreFields} />
-      {diagnostics.length > 0 ? (
-        <DiagnosticDl title="Diagnostics" fields={diagnostics} />
-      ) : (
-        <p className="chart-trade-diagnostics__hint">Schema v4 diagnostics not present on this trade.</p>
-      )}
-      {breakEvenFields.length > 0 ? (
-        <DiagnosticDl title="Break-even" fields={breakEvenFields} />
-      ) : null}
-      {trade.entry_context_consumption ? (
-        <DiagnosticDl
-          title="Entry context consumption (configured)"
-          fields={buildContextConsumptionDiagnosticFields(
-            trade.entry_context_consumption,
-            "entry",
-          )}
-        />
-      ) : null}
-      {trade.exit_context_consumption ? (
-        <DiagnosticDl
-          title="Exit context consumption (configured)"
-          fields={buildContextConsumptionDiagnosticFields(
-            trade.exit_context_consumption,
-            "exit",
-          )}
-        />
-      ) : null}
+      {diagnostics.length > 0 ? <DiagnosticDl title="Path diagnostics" fields={diagnostics} /> : null}
       <h4 className="trade-detail__subtitle">Active exit components</h4>
       <ActiveExitComponentsList rows={rowsWithEma} warning={warning} />
-      {anchorStack && rowsWithEma.length === 0 && (
-        <p className="chart-trade-diagnostics__hint">{EM_DASH}</p>
-      )}
     </aside>
   );
 }

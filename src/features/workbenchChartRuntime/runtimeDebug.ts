@@ -20,7 +20,7 @@ export const inactiveChartRuntimeOwnerFlags: ChartRuntimeOwnerFlags = {
 
 export function createEmptyRuntimeDebugSnapshot(params: {
   runId: string | null;
-  variantKey: string;
+  instanceId: string | null;
   selectedTradeId: number | string | null;
   selectedTradeEntryTimeMs: number | null;
   chartHeavyIoEnabled: boolean;
@@ -30,7 +30,7 @@ export function createEmptyRuntimeDebugSnapshot(params: {
 
   return {
     runId: params.runId,
-    variantKey: params.variantKey,
+    instanceId: params.instanceId,
     selectedTradeId: params.selectedTradeId,
     selectedTradeEntryTimeMs: params.selectedTradeEntryTimeMs,
     chartHeavyIoEnabled: params.chartHeavyIoEnabled,

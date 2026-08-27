@@ -3,23 +3,19 @@ import { describe, expect, it } from "vitest";
 import type { TradeRecord } from "@/api/types";
 import { attachEmaAvailabilityHints } from "@/features/chart/exitEmaOverlayAvailability";
 import { listActiveExitComponents, resolveExitKind } from "@/features/chart/exitPolicyForTrade";
+import { makeTradeRecord } from "@/features/chart/testFixtures/tradeRecordFixtures";
 
-const baseTrade: TradeRecord = {
-  trade_id: 1,
-  direction: "long",
-  status: "closed",
+const baseTrade: TradeRecord = makeTradeRecord({
+  trade_id: "trade:position-1:1",
   entry_time_ms: 1,
   exit_time_ms: 2,
-  entry_price: 100,
-  exit_price: 101,
+  entry_price: "100",
+  exit_price: "101",
   exit_reason: "signal:rsi_exit_base",
-  size: 1,
-  pnl: 1,
-  return_pct: 0.01,
-  active_exit_profile: "aligned",
-  exit_instance_id: "rsi_exit_base",
+  net_pnl: "1",
   exit_kind: "signal",
-};
+  exit_component_id: "rsi_signal_exit",
+});
 
 const exitPolicy = {
   always_on: {
@@ -50,26 +46,26 @@ const exitPolicy = {
 };
 
 const v4EmaExitPolicy = {
-  always_on: { exits: [] },
+  always_on: {
+    exits: [
+      {
+        instance_id: "ema_close_loss",
+        component_id: "ema_close_loss_exit",
+        exit_kind: "signal",
+        ema: { source: "close", timeframe: "base", period: 500 },
+        confirm_bars: 10,
+      },
+      {
+        instance_id: "ema_cross_loss",
+        component_id: "ema_cross_loss_exit",
+        exit_kind: "signal",
+        fast_ema: { source: "close", timeframe: "base", period: 200 },
+        slow_ema: { source: "close", timeframe: "base", period: 21 },
+      },
+    ],
+  },
   profiles: {
-    aligned: {
-      exits: [
-        {
-          instance_id: "ema_close_loss",
-          component_id: "ema_close_loss_exit",
-          exit_kind: "signal",
-          ema: { source: "close", timeframe: "base", period: 500 },
-          confirm_bars: 10,
-        },
-        {
-          instance_id: "ema_cross_loss",
-          component_id: "ema_cross_loss_exit",
-          exit_kind: "signal",
-          fast_ema: { source: "close", timeframe: "base", period: 200 },
-          slow_ema: { source: "close", timeframe: "base", period: 21 },
-        },
-      ],
-    },
+    aligned: { exits: [] },
     countertrend: { exits: [] },
     neutral: { exits: [] },
   },
@@ -93,26 +89,26 @@ describe("resolveExitKind", () => {
 });
 
 describe("listActiveExitComponents", () => {
-  it("lists always_on and profile exits", () => {
-    const { rows } = listActiveExitComponents(exitPolicy, baseTrade);
-    expect(rows).toHaveLength(2);
+  // Canonical TradeRecord does not track which exit-policy profile was active
+  // for a trade (legacy active_exit_profile has no replacement) — only
+  // always_on rows are ever listed, and the "profile exits omitted" warning
+  // always fires when always_on rows exist.
+  it("lists only always_on exits and marks the closing component", () => {
+    const { rows, warning } = listActiveExitComponents(exitPolicy, baseTrade);
+    expect(rows).toHaveLength(1);
     expect(rows[0].group).toBe("always_on");
-    expect(rows[1].group).toBe("profile");
-    expect(rows[1].profile).toBe("aligned");
+    expect(warning).toContain("active_exit_profile missing");
   });
 
-  it("marks closing component", () => {
-    const { rows } = listActiveExitComponents(exitPolicy, baseTrade);
+  it("marks the closing component via trade.exit_component_id", () => {
+    const trade = makeTradeRecord({ ...baseTrade, exit_component_id: "atr_stop_loss" });
+    const { rows } = listActiveExitComponents(exitPolicy, trade);
     const closing = rows.find((r) => r.isClosing);
-    expect(closing?.instance_id).toBe("rsi_exit_base");
+    expect(closing?.instance_id).toBe("atr_sl");
   });
 
   it("parses ema_close_loss_exit object EMA params", () => {
-    const trade: TradeRecord = {
-      ...baseTrade,
-      exit_instance_id: "ema_close_loss",
-    };
-    const { rows } = listActiveExitComponents(v4EmaExitPolicy, trade);
+    const { rows } = listActiveExitComponents(v4EmaExitPolicy, baseTrade);
     const emaClose = rows.find((r) => r.instance_id === "ema_close_loss");
     expect(emaClose?.parameters.ema).toBe("close/base/500");
     expect(emaClose?.parameters.confirm_bars).toBe("10");
@@ -127,24 +123,14 @@ describe("listActiveExitComponents", () => {
     expect(cross?.emaPeriods).toEqual([200, 21]);
   });
 
-  it("returns always_on rows when active_exit_profile missing", () => {
+  it("returns empty rows with no warning when exit_policy has no always_on exits", () => {
     const policy = {
-      always_on: {
-        exits: [
-          {
-            instance_id: "atr_sl",
-            component_id: "atr_stop_loss",
-            distance: { timeframe: "5m", period: 14, multiplier: 2 },
-          },
-        ],
-      },
+      always_on: { exits: [] },
       profiles: { aligned: { exits: [] }, countertrend: { exits: [] }, neutral: { exits: [] } },
     };
-    const trade: TradeRecord = { ...baseTrade, active_exit_profile: undefined };
-    const { rows, warning } = listActiveExitComponents(policy, trade);
-    expect(rows).toHaveLength(1);
-    expect(rows[0].group).toBe("always_on");
-    expect(warning).toContain("active_exit_profile missing");
+    const { rows, warning } = listActiveExitComponents(policy, baseTrade);
+    expect(rows).toHaveLength(0);
+    expect(warning).toBeNull();
   });
 });
 
@@ -152,8 +138,7 @@ describe("EMA availability with object params", () => {
   const anchorStack = { fast: 200, anchor: 500, slow: 1000 };
 
   it("anchor period 500 shows anchor_stack hint for ema_close_loss", () => {
-    const trade: TradeRecord = { ...baseTrade, exit_instance_id: "ema_close_loss" };
-    const { rows } = listActiveExitComponents(v4EmaExitPolicy, trade);
+    const { rows } = listActiveExitComponents(v4EmaExitPolicy, baseTrade);
     const withHints = attachEmaAvailabilityHints(rows, anchorStack, []);
     const emaClose = withHints.find((r) => r.instance_id === "ema_close_loss");
     expect(emaClose?.emaAvailabilityHint).toContain("anchor stack EMA anchor");

@@ -7,11 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   ChartEventsBundle,
-  RunReport,
+  RunDetail,
   RunSummary,
-  SideMetrics,
-  VariantMetrics,
+  TradeRecord,
 } from "@/api/types";
+import { makeTradeRecord } from "@/features/chart/testFixtures/tradeRecordFixtures";
 import { selectedTradeEntryMarkerInView } from "@/features/chart/chartMarkers";
 import { clearMarketResourceCache } from "@/features/chart/marketResourceCache";
 import { resetChartEventsFlagDisabledNoteForTests } from "@/features/chart/runtime/chartEventsLoad";
@@ -23,7 +23,10 @@ import {
   useWorkbenchChart,
 } from "@/shared/context/WorkbenchContext";
 
-const fetchRunReport = vi.fn<typeof import("@/api/client").fetchRunReport>();
+const fetchRunDetail = vi.fn<typeof import("@/api/client").fetchRunDetail>();
+const fetchRunTrades = vi.fn<typeof import("@/api/client").fetchRunTrades>();
+const fetchRunMetrics = vi.fn<typeof import("@/api/client").fetchRunMetrics>();
+const fetchManagedPolicyEvents = vi.fn<typeof import("@/api/client").fetchManagedPolicyEvents>();
 const fetchRunSummaries = vi.fn<typeof import("@/api/client").fetchRunSummaries>();
 const fetchConfigState = vi.fn<typeof import("@/api/client").fetchConfigState>();
 const fetchCandlesWindow = vi.fn<typeof import("@/api/client").fetchCandlesWindow>();
@@ -42,7 +45,11 @@ vi.mock("@/api/client", () => ({
       this.detail = detail;
     }
   },
-  fetchRunReport: (...args: Parameters<typeof fetchRunReport>) => fetchRunReport(...args),
+  fetchRunDetail: (...args: Parameters<typeof fetchRunDetail>) => fetchRunDetail(...args),
+  fetchRunTrades: (...args: Parameters<typeof fetchRunTrades>) => fetchRunTrades(...args),
+  fetchRunMetrics: (...args: Parameters<typeof fetchRunMetrics>) => fetchRunMetrics(...args),
+  fetchManagedPolicyEvents: (...args: Parameters<typeof fetchManagedPolicyEvents>) =>
+    fetchManagedPolicyEvents(...args),
   fetchRunSummaries: (...args: Parameters<typeof fetchRunSummaries>) => fetchRunSummaries(...args),
   fetchConfigState: (...args: Parameters<typeof fetchConfigState>) => fetchConfigState(...args),
   fetchCandlesWindow: (...args: Parameters<typeof fetchCandlesWindow>) =>
@@ -55,84 +62,75 @@ vi.mock("@/api/client", () => ({
   selectSavedConfig: vi.fn(),
 }));
 
-const EMPTY_SIDE: SideMetrics = {
-  trades: 0,
-  pnl: 0,
-  return_pct: 0,
-  profit_factor: null,
-  win_rate: null,
-};
-
-const EMPTY_METRICS: VariantMetrics = {
-  long: EMPTY_SIDE,
-  short: EMPTY_SIDE,
-  total: { ...EMPTY_SIDE, sharpe: 0, max_drawdown: 0 },
-  open_trades: { long: 0, short: 0, total: 0 },
-};
-
 const THREE_BAR_MARKET = [
   { time: 1100, open: 1, high: 2, low: 0.5, close: 1.5 },
   { time: 1200, open: 1.1, high: 2.1, low: 0.6, close: 1.6 },
   { time: 1300, open: 1.2, high: 2.2, low: 0.7, close: 1.7 },
 ];
 
-function makeReport(runId: string): RunReport {
+function makeReport(runId: string): RunDetail {
   return {
-    run_id: runId,
-    created_at: "2026-01-01T00:00:00Z",
-    report_schema_version: 1,
-    family: "ema_pullback",
-    symbol: "BTCUSDT",
-    timeframe: "5m",
-    candles: 100,
-    data_range: { from_open_time_ms: 1_100_000, to_open_time_ms: 1_300_000 },
-    variants_count: 1,
-    variants: [
-      {
-        variant: "exp_a",
-        config_id: "cfg_a",
-        symbol: "BTCUSDT",
-        timeframe: "5m",
-        strategy_spec: {
-          anchor_stack: {
-            fast: { period: 200 },
-            anchor: { period: 500 },
-            slow: { period: 1000 },
-          },
-        },
-        metrics: EMPTY_METRICS,
-        component_counters: [],
-        trade_records: [
-          {
-            trade_id: 1,
-            direction: "long",
-            status: "closed",
-            entry_time_ms: 1_100_000,
-            exit_time_ms: 1_150_000,
-            entry_price: 100,
-            exit_price: 101,
-            exit_reason: "signal:exit",
-            size: 1,
-            pnl: 1,
-            return_pct: 0.01,
-          },
-          {
-            trade_id: 2,
-            direction: "long",
-            status: "closed",
-            entry_time_ms: 1_300_000,
-            exit_time_ms: 1_350_000,
-            entry_price: 102,
-            exit_price: 103,
-            exit_reason: "signal:exit",
-            size: 1,
-            pnl: 1,
-            return_pct: 0.01,
-          },
-        ],
+    contract_version: "1.0.0",
+    manifest: {
+      contract_version: "1.0.0",
+      run_id: runId,
+      instance_id: "instance_1",
+      created_at_utc: "2026-01-01T00:00:00Z",
+      market_data_hash: null,
+    },
+    result: {
+      contract_version: "1.0.0",
+      run_id: runId,
+      instance_id: "instance_1",
+      strategy_evaluation: {
+        contract_version: "1.0.0",
+        strategy_id: "ema_pullback",
+        strategy_version: "1",
+        instance_id: "instance_1",
+        market: { ticker: "BTCUSDT", timeframe: "5m", from_ms: 1_100_000, to_ms: 1_300_000 },
+        bar_count: 100,
+        market_data_hash: "hash",
       },
-    ],
+    },
+    strategy_spec: {
+      anchor_stack: {
+        fast: { period: 200 },
+        anchor: { period: 500 },
+        slow: { period: 1000 },
+      },
+    },
   };
+}
+
+function makeTrades(): TradeRecord[] {
+  return [
+    makeTradeRecord({
+      trade_id: "1",
+      position_id: "position-1",
+      instance_id: "instance_1",
+      side: "long",
+      entry_time_ms: 1_100_000,
+      exit_time_ms: 1_150_000,
+      entry_price: "100",
+      exit_price: "101",
+      exit_reason: "signal:exit",
+      net_pnl: "1",
+      net_return_pct: "0.01",
+    }),
+    makeTradeRecord({
+      trade_id: "2",
+      position_id: "position-2",
+      instance_id: "instance_1",
+      side: "long",
+      entry_time_ms: 1_300_000,
+      exit_time_ms: 1_350_000,
+      entry_price: "102",
+      exit_price: "103",
+      exit_reason: "signal:exit",
+      net_pnl: "1",
+      net_return_pct: "0.01",
+    }),
+  ];
 }
 
 function createDeferred<T>() {
@@ -205,7 +203,28 @@ describe("chart-events distant trade display apply", () => {
       selected_path: null,
       draft: null,
     });
-    fetchRunReport.mockImplementation(async (runId: string) => makeReport(runId));
+    fetchRunDetail.mockImplementation(async (runId: string) => makeReport(runId));
+    fetchRunTrades.mockImplementation(async (runId: string) => ({
+      contract_version: "1.0.0",
+      run_id: runId,
+      trades: makeTrades(),
+    }));
+    fetchRunMetrics.mockResolvedValue({
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      initial_equity: "1000",
+      final_equity: "1000",
+      realised_trade_count: 0,
+      open_position_count: 0,
+      gross_pnl: "0",
+      fees_paid: "0",
+      net_pnl: "0",
+    });
+    fetchManagedPolicyEvents.mockResolvedValue({
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      events: [],
+    });
     installSplitMarketWindowMocks({
       fetchCandlesWindow,
       fetchEmaWindow,
@@ -263,7 +282,7 @@ describe("chart-events distant trade display apply", () => {
     });
 
     await waitFor(() => {
-      expect(chartSliceRef?.selectedTradeId).toBe(2);
+      expect(chartSliceRef?.selectedTradeId).toBe("2");
     });
 
     await act(async () => {
@@ -303,7 +322,7 @@ describe("chart-events distant trade display apply", () => {
       const candles = chartSliceRef!.chartViewModel.candles;
       expect(
         selectedTradeEntryMarkerInView(
-          chartSliceRef!.selectedVariant!.trade_records,
+          chartSliceRef!.runTrades,
           1,
           candles,
         ),

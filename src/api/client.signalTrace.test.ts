@@ -53,7 +53,7 @@ describe("fetchSignalTrace query params", () => {
 
     await fetchSignalTrace({
       runId: "run-1",
-      variant: "v1",
+      instanceId: "v1",
       fromMs: 1_700_000_000_000,
       toOpenTimeMs: 1_700_000_297_000,
       contextOverlayRef: "ctx_a",
@@ -100,7 +100,7 @@ describe("fetchSignalTrace query params", () => {
 
     await fetchSignalTrace({
       runId: "run-1",
-      variant: "v1",
+      instanceId: "v1",
       fromMs: 1,
       toOpenTimeMs: 2,
       signal: controller.signal,
@@ -184,7 +184,7 @@ describe("fetchChartEvents query params", () => {
 
     await fetchChartEvents({
       runId: "run-1",
-      variant: "v1",
+      instanceId: "v1",
       fromMs: 1_700_000_000_000,
       toOpenTimeMs: 1_700_000_297_000,
       contextOverlayRef: "ctx_a",
@@ -220,7 +220,7 @@ describe("fetchChartEvents query params", () => {
 
     await fetchChartEvents({
       runId: "run-1",
-      variant: "v1",
+      instanceId: "v1",
       fromMs: 1,
       toOpenTimeMs: 2,
       signal: controller.signal,

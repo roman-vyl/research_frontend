@@ -7,11 +7,11 @@ describe("workbenchChartRuntime Phase 2 contracts", () => {
   it("creates an inert initial runtime output without active owner flags", () => {
     const input = createChartRuntimeInput({
       reportLoadStatus: "loading",
-      report: null,
+      runDetail: null,
+      runTrades: [],
+      managedPolicyEvents: [],
       selectedRunId: "run-1",
       reloadToken: 0,
-      selectedVariantKey: "instance_1",
-      selectedVariant: null,
       selectedTradeId: null,
       selectedTradeEntryTimeMs: null,
       chartTradeFocusWarning: null,

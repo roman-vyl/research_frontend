@@ -1,22 +1,39 @@
 import { describe, expect, it } from "vitest";
 
-import type { ChartBar, RunReport, RunVariant } from "@/api/types";
+import type { ChartBar, RunDetail } from "@/api/types";
 import {
   buildRunMarketViewIdentity,
   resolveRunMarketView,
 } from "@/features/chart/runMarketView";
 import {
-  chartWindowKeyMatchesRunVariant,
+  chartWindowKeyMatchesRunInstance,
   evaluateSignalTraceBootstrap,
   resolveSignalTraceFetchSource,
-  variantBelongsToReport,
 } from "@/shared/context/signalTraceBootstrap";
 
-const VARIANT: RunVariant = {
-  variant: "exp_a",
-  config_id: "cfg",
-  symbol: "BTCUSDT",
-  timeframe: "5m",
+const REPORT: RunDetail = {
+  contract_version: "1.0.0",
+  manifest: {
+    contract_version: "1.0.0",
+    run_id: "run-a",
+    instance_id: "exp_a",
+    created_at_utc: "2026-01-01T00:00:00Z",
+    market_data_hash: null,
+  },
+  result: {
+    contract_version: "1.0.0",
+    run_id: "run-a",
+    instance_id: "exp_a",
+    strategy_evaluation: {
+      contract_version: "1.0.0",
+      strategy_id: "ema_pullback",
+      strategy_version: "1",
+      instance_id: "exp_a",
+      market: { ticker: "BTCUSDT", timeframe: "5m", from_ms: 1_000_000, to_ms: 2_000_000 },
+      bar_count: 100,
+      market_data_hash: "hash",
+    },
+  },
   strategy_spec: {
     anchor_stack: {
       fast: { period: 200 },
@@ -24,27 +41,6 @@ const VARIANT: RunVariant = {
       slow: { period: 1000 },
     },
   },
-  metrics: {
-    long: { trades: 0, pnl: 0, return_pct: 0, profit_factor: null, win_rate: null },
-    short: { trades: 0, pnl: 0, return_pct: 0, profit_factor: null, win_rate: null },
-    total: { trades: 0, pnl: 0, return_pct: 0, profit_factor: null, win_rate: null, sharpe: 0, max_drawdown: 0 },
-    open_trades: { long: 0, short: 0, total: 0 },
-  },
-  component_counters: [],
-  trade_records: [],
-};
-
-const REPORT: RunReport = {
-  run_id: "run-a",
-  created_at: "2026-01-01T00:00:00Z",
-  report_schema_version: 1,
-  family: "ema_pullback",
-  symbol: "BTCUSDT",
-  timeframe: "5m",
-  candles: 100,
-  data_range: { from_open_time_ms: 1_000_000, to_open_time_ms: 2_000_000 },
-  variants_count: 1,
-  variants: [VARIANT],
 };
 
 function makeCandles(count: number, start = 1_700_000_000): ChartBar[] {
@@ -57,12 +53,11 @@ function makeCandles(count: number, start = 1_700_000_000): ChartBar[] {
   }));
 }
 
-function marketIdentityForReport(report: RunReport = REPORT): string {
+function marketIdentityForReport(report: RunDetail = REPORT): string {
   return buildRunMarketViewIdentity(
     resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: VARIANT,
       reloadToken: 0,
     }),
   );
@@ -77,10 +72,10 @@ function bootstrapInput(
   const windowKey = `run-a:exp_a:${first}:${last}:`;
   const identity = marketIdentityForReport();
   return {
-    report: REPORT,
+    runDetail: REPORT,
     reportLoadStatus: "ready" as const,
     selectedRunId: "run-a",
-    selectedVariantKey: VARIANT.variant,
+    instanceId: REPORT.manifest.instance_id,
     marketLoadStatus: "ready" as const,
     runMarketViewIdentity: identity,
     expectedRunMarketViewIdentity: identity,
@@ -109,7 +104,7 @@ describe("signalTraceBootstrap", () => {
 
   it("blocks when report is still loading after run switch", () => {
     const result = evaluateSignalTraceBootstrap(
-      bootstrapInput({ reportLoadStatus: "loading", report: null }),
+      bootstrapInput({ reportLoadStatus: "loading", runDetail: null }),
     );
     expect(result).toEqual({ ready: false, reason: "run_switch_not_ready" });
   });
@@ -121,7 +116,7 @@ describe("signalTraceBootstrap", () => {
     expect(result).toEqual({ ready: false, reason: "run_switch_not_ready" });
   });
 
-  it("blocks when render window key does not match current run/variant", () => {
+  it("blocks when render window key does not match current run/instance", () => {
     const candles = makeCandles(10);
     const result = evaluateSignalTraceBootstrap(
       bootstrapInput({
@@ -160,10 +155,8 @@ describe("signalTraceBootstrap", () => {
     expect(resolveSignalTraceFetchSource(null, "run-a:exp_a:1:2:")).toBe("initial");
   });
 
-  it("validates variant membership and window prefix helpers", () => {
-    expect(variantBelongsToReport(REPORT, "exp_a")).toBe(true);
-    expect(variantBelongsToReport(REPORT, "missing")).toBe(false);
-    expect(chartWindowKeyMatchesRunVariant("run-a:exp_a:1:2:", "run-a", "exp_a")).toBe(true);
-    expect(chartWindowKeyMatchesRunVariant("run-b:exp_a:1:2:", "run-a", "exp_a")).toBe(false);
+  it("validates window prefix helper against run/instance", () => {
+    expect(chartWindowKeyMatchesRunInstance("run-a:exp_a:1:2:", "run-a", "exp_a")).toBe(true);
+    expect(chartWindowKeyMatchesRunInstance("run-b:exp_a:1:2:", "run-a", "exp_a")).toBe(false);
   });
 });

@@ -47,7 +47,7 @@ describe("Phase 6.3E aux/HTF overlay cutover", () => {
   it("resolves aux snapshot from v2 render-window candles", () => {
     const owner = createPhase63EAuxOverlayOwnerState();
     syncPhase63EAuxOverlaySpecs(owner, {
-      selectedVariant: null,
+      strategySpec: null,
       chartTimeframe: "5m",
       effectiveContextOverlayRef: null,
     });

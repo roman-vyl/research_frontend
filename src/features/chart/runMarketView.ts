@@ -2,8 +2,7 @@ import type {
   AnchorStackPeriods,
   ChartEmaOverlay,
   ChartMarketBundle,
-  RunReport,
-  RunVariant,
+  RunDetail,
 } from "@/api/types";
 import { anchorStackPeriodsFromStrategySpec } from "@/features/chart/anchorStackFromSpec";
 import {
@@ -31,7 +30,6 @@ export type OverlayResourceRef = {
 
 export type RunMarketView = {
   runId: string;
-  variant: string;
   symbol: string;
   chartTimeframe: string;
   reloadToken: number;
@@ -46,17 +44,19 @@ export type RunMarketViewIdentity = string;
 
 const VIEW_IDENTITY_SEP = "\u001f";
 
+/** One run = one strategy instance: identity/window/spec all come from `RunDetail`. */
 export function resolveRunMarketView(params: {
-  report: RunReport;
+  runDetail: RunDetail;
   chartTimeframe: string;
-  variant: RunVariant;
   reloadToken: number;
 }): RunMarketView {
-  const { report, chartTimeframe, variant, reloadToken } = params;
-  const periods = anchorStackPeriodsFromStrategySpec(variant.strategy_spec);
-  const { from_open_time_ms: fromOpenTimeMs, to_open_time_ms: toOpenTimeMs } = report.data_range;
+  const { runDetail, chartTimeframe, reloadToken } = params;
+  const periods = anchorStackPeriodsFromStrategySpec(runDetail.strategy_spec);
+  const market = runDetail.result.strategy_evaluation.market;
+  const fromOpenTimeMs = market.from_ms;
+  const toOpenTimeMs = market.to_ms;
   const candlesKey = buildCandlesCacheKey({
-    symbol: report.symbol,
+    symbol: market.ticker,
     timeframe: chartTimeframe,
     reloadToken,
   });
@@ -68,7 +68,7 @@ export function resolveRunMarketView(params: {
       role,
       period,
       key: buildOverlayCacheKey({
-        symbol: report.symbol,
+        symbol: market.ticker,
         timeframe: chartTimeframe,
         source: "anchor_stack",
         role,
@@ -78,9 +78,8 @@ export function resolveRunMarketView(params: {
     };
   });
   return {
-    runId: report.run_id,
-    variant: variant.variant,
-    symbol: report.symbol,
+    runId: runDetail.manifest.run_id,
+    symbol: market.ticker,
     chartTimeframe,
     reloadToken,
     fromOpenTimeMs,
@@ -94,7 +93,6 @@ export function resolveRunMarketView(params: {
 export function buildRunMarketViewIdentity(view: RunMarketView): RunMarketViewIdentity {
   return [
     view.runId,
-    view.variant,
     view.candlesKey,
     ...view.overlayRefs.map((ref) => ref.key),
     String(view.reloadToken),

@@ -1,6 +1,11 @@
-import type { ExitProfileLabel, JsonObject, TradeRecord } from "@/api/types";
+import type { JsonObject, TradeRecord } from "@/api/types";
 import { readEmaRuleParams } from "@/features/chart/exitPolicyEmaParams";
-import { EM_DASH } from "@/features/reports/tradeDiagnosticsFields";
+
+const EM_DASH = "—";
+
+/** Exit-policy profile grouping from strategy_spec (`exit_policy.profiles`). Not tracked
+ * per-trade on the canonical TradeRecord — see listActiveExitComponents. */
+export type ExitProfileLabel = "aligned" | "countertrend" | "neutral";
 
 export type ExitComponentGroup = "always_on" | "profile";
 
@@ -77,7 +82,7 @@ function parseExitRules(
   group: ExitComponentGroup,
   profile: ExitProfileLabel | null,
   trade: TradeRecord,
-  closingInstanceId: string | null | undefined,
+  closingComponentId: string | null | undefined,
 ): ExitComponentRow[] {
   if (!Array.isArray(exits)) return [];
   const rows: ExitComponentRow[] = [];
@@ -88,9 +93,9 @@ function parseExitRules(
     const component_id = readString(rule, "component_id");
     if (!instance_id || !component_id) continue;
     const isClosing =
-      closingInstanceId !== null &&
-      closingInstanceId !== undefined &&
-      instance_id === closingInstanceId;
+      closingComponentId !== null &&
+      closingComponentId !== undefined &&
+      component_id === closingComponentId;
     const { parameters, emaPeriods } = ruleParameters(rule);
     rows.push({
       group,
@@ -126,13 +131,19 @@ export function listActiveExitComponents(
     return { rows: [], warning: "exit_policy missing from strategy_spec" };
   }
 
-  const closingInstanceId = trade.exit_instance_id ?? null;
+  // Closest canonical equivalent of the legacy exit_instance_id match: the
+  // exit component (by component_id, not instance_id) that actually caused
+  // this trade to close.
+  const closingComponentId = trade.exit_component_id ?? null;
   const alwaysOn = asObject(exitPolicy.always_on);
   const rows: ExitComponentRow[] = [
-    ...parseExitRules(alwaysOn?.exits, "always_on", null, trade, closingInstanceId),
+    ...parseExitRules(alwaysOn?.exits, "always_on", null, trade, closingComponentId),
   ];
 
-  const activeProfile = trade.active_exit_profile;
+  // Canonical TradeRecord does not track which exit-policy profile was
+  // active for this trade (legacy active_exit_profile has no replacement) —
+  // profile-specific exit rows are always omitted, not guessed.
+  const activeProfile: ExitProfileLabel | null = null;
   if (!activeProfile) {
     return {
       rows,
@@ -143,7 +154,7 @@ export function listActiveExitComponents(
   const profiles = asObject(exitPolicy.profiles);
   const profileBucket = profiles ? asObject(profiles[activeProfile]) : null;
   rows.push(
-    ...parseExitRules(profileBucket?.exits, "profile", activeProfile, trade, closingInstanceId),
+    ...parseExitRules(profileBucket?.exits, "profile", activeProfile, trade, closingComponentId),
   );
 
   return { rows, warning: null };

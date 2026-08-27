@@ -98,12 +98,12 @@ export function buildTraceDisplayApplyInputKey(
 
 export function buildTraceDisplayCacheKeyForRuntime(input: {
   selectedRunId: string;
-  selectedVariantKey: string;
+  instanceId: string;
   effectiveContextOverlayRef: string | null;
 }): string {
   return buildTraceDisplayCacheKey(
     input.selectedRunId,
-    input.selectedVariantKey,
+    input.instanceId,
     input.effectiveContextOverlayRef,
   );
 }

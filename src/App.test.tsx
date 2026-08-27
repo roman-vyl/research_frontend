@@ -8,7 +8,7 @@ import { App } from "@/App";
 import { ApiError } from "@/api/client";
 import { WorkbenchProvider } from "@/shared/context/WorkbenchContext";
 
-const fetchRunReport = vi.fn<typeof import("@/api/client").fetchRunReport>();
+const fetchRunDetail = vi.fn<typeof import("@/api/client").fetchRunDetail>();
 const fetchRunSummaries = vi.fn<typeof import("@/api/client").fetchRunSummaries>();
 const fetchConfigState = vi.fn<typeof import("@/api/client").fetchConfigState>();
 const fetchComponentCatalog = vi.fn<typeof import("@/api/client").fetchComponentCatalog>();
@@ -17,7 +17,10 @@ vi.mock("@/api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/api/client")>();
   return {
     ...actual,
-    fetchRunReport: (...args: Parameters<typeof fetchRunReport>) => fetchRunReport(...args),
+    fetchRunDetail: (...args: Parameters<typeof fetchRunDetail>) => fetchRunDetail(...args),
+    fetchRunTrades: vi.fn().mockResolvedValue({ contract_version: "1.0.0", run_id: "run-prototype", trades: [] }),
+    fetchRunMetrics: vi.fn().mockResolvedValue(null),
+    fetchManagedPolicyEvents: vi.fn().mockResolvedValue({ contract_version: "1.0.0", run_id: "run-prototype", events: [] }),
     fetchRunSummaries: (...args: Parameters<typeof fetchRunSummaries>) =>
       fetchRunSummaries(...args),
     fetchConfigState: (...args: Parameters<typeof fetchConfigState>) =>
@@ -82,7 +85,7 @@ describe("App report vs composer isolation", () => {
         market_data_hash: null,
       },
     ]);
-    fetchRunReport.mockRejectedValue(new ApiError(500, PROTOTYPE_REPORT_ERROR));
+    fetchRunDetail.mockRejectedValue(new ApiError(500, PROTOTYPE_REPORT_ERROR));
     fetchConfigState.mockResolvedValue({
       family: "ema_pullback",
       selected_experiment_id: "draft_ema_pullback",

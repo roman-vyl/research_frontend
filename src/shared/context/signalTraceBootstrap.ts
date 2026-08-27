@@ -1,4 +1,4 @@
-import type { ChartBar, RunReport } from "@/api/types";
+import type { RunDetail, ChartBar } from "@/api/types";
 
 import type { SignalTraceRequest } from "@/shared/context/signalTraceLoadPolicy";
 
@@ -44,29 +44,22 @@ export function resolveSignalTraceFetchSource(
   return "window_shift";
 }
 
-export function variantBelongsToReport(report: RunReport, variantKey: string | null): boolean {
-  if (variantKey === null || variantKey === "") {
-    return false;
-  }
-  return report.variants.some((variant) => variant.variant === variantKey);
-}
-
-export function chartWindowKeyMatchesRunVariant(
+export function chartWindowKeyMatchesRunInstance(
   chartWindowKey: string | null,
   runId: string,
-  variantKey: string,
+  instanceId: string,
 ): boolean {
   if (chartWindowKey === null) {
     return false;
   }
-  return chartWindowKey.startsWith(`${runId}:${variantKey}:`);
+  return chartWindowKey.startsWith(`${runId}:${instanceId}:`);
 }
 
 export function evaluateSignalTraceBootstrap(input: {
-  report: RunReport | null;
+  runDetail: RunDetail | null;
   reportLoadStatus: SignalTraceBootstrapReportStatus;
   selectedRunId: string | null;
-  selectedVariantKey: string | null;
+  instanceId: string | null;
   marketLoadStatus: SignalTraceBootstrapMarketStatus;
   runMarketViewIdentity: string | null;
   expectedRunMarketViewIdentity: string | null;
@@ -78,19 +71,19 @@ export function evaluateSignalTraceBootstrap(input: {
   if (input.selectedRunId === null) {
     return { ready: false, reason: "no_run" };
   }
-  if (input.reportLoadStatus !== "ready" || input.report === null) {
+  if (input.reportLoadStatus !== "ready" || input.runDetail === null) {
     if (input.reportLoadStatus === "loading" || input.reportLoadStatus === "idle") {
       return { ready: false, reason: "run_switch_not_ready" };
     }
     return { ready: false, reason: "no_report" };
   }
-  if (input.report.run_id !== input.selectedRunId) {
+  if (input.runDetail.manifest.run_id !== input.selectedRunId) {
     return { ready: false, reason: "report_run_mismatch" };
   }
-  if (input.selectedVariantKey === null || input.selectedVariantKey === "") {
+  if (input.instanceId === null || input.instanceId === "") {
     return { ready: false, reason: "no_variant" };
   }
-  if (!variantBelongsToReport(input.report, input.selectedVariantKey)) {
+  if (input.runDetail.manifest.instance_id !== input.instanceId) {
     return { ready: false, reason: "no_variant" };
   }
   if (input.marketLoadStatus !== "ready") {
@@ -107,10 +100,10 @@ export function evaluateSignalTraceBootstrap(input: {
     return { ready: false, reason: "no_render_window" };
   }
   if (
-    !chartWindowKeyMatchesRunVariant(
+    !chartWindowKeyMatchesRunInstance(
       input.chartWindowKey,
-      input.report.run_id,
-      input.selectedVariantKey,
+      input.runDetail.manifest.run_id,
+      input.instanceId,
     )
   ) {
     return { ready: false, reason: "render_window_not_ready" };
@@ -125,7 +118,7 @@ export function evaluateSignalTraceBootstrap(input: {
   const request: SignalTraceRequest = {
     windowKey,
     runId: input.selectedRunId,
-    variant: input.selectedVariantKey,
+    variant: input.instanceId,
     fromMs,
     toOpenTimeMs,
   };

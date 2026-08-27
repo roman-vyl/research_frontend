@@ -6,49 +6,44 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { TradeRecord } from "@/api/types";
 import { ChartTradeFocusNav } from "@/features/chart/ChartTradeFocusNav";
+import { makeTradeRecord } from "@/features/chart/testFixtures/tradeRecordFixtures";
 
 afterEach(() => cleanup());
 
 const trades: TradeRecord[] = [
-  {
-    trade_id: 1,
-    direction: "long",
-    status: "closed",
+  makeTradeRecord({
+    trade_id: "1",
+    side: "long",
     entry_time_ms: 1_000,
     exit_time_ms: 2_000,
-    entry_price: 100,
-    exit_price: 101,
-    size: 1,
-    pnl: 1,
-    return_pct: 0.01,
+    entry_price: "100",
+    exit_price: "101",
+    net_pnl: "1",
+    net_return_pct: "0.01",
     exit_reason: "signal:test",
-  },
-  {
-    trade_id: 2,
-    direction: "long",
-    status: "closed",
+  }),
+  makeTradeRecord({
+    trade_id: "2",
+    side: "long",
     entry_time_ms: 3_000,
     exit_time_ms: 4_000,
-    entry_price: 100,
-    exit_price: 102,
-    size: 1,
-    pnl: 2,
-    return_pct: 0.02,
+    entry_price: "100",
+    exit_price: "102",
+    net_pnl: "2",
+    net_return_pct: "0.02",
     exit_reason: "signal:test",
-  },
-  {
-    trade_id: 3,
-    direction: "short",
-    status: "closed",
+  }),
+  makeTradeRecord({
+    trade_id: "3",
+    side: "short",
     entry_time_ms: 5_000,
     exit_time_ms: 6_000,
-    entry_price: 100,
-    exit_price: 99,
-    size: 1,
-    pnl: 1,
-    return_pct: 0.01,
+    entry_price: "100",
+    exit_price: "99",
+    net_pnl: "1",
+    net_return_pct: "0.01",
     exit_reason: "signal:test",
-  },
+  }),
 ];
 
 describe("ChartTradeFocusNav", () => {
@@ -59,10 +54,10 @@ describe("ChartTradeFocusNav", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Previous trade" }));
-    expect(onSelectTrade).toHaveBeenCalledWith(1);
+    expect(onSelectTrade).toHaveBeenCalledWith("1");
 
     fireEvent.click(screen.getByRole("button", { name: "Next trade" }));
-    expect(onSelectTrade).toHaveBeenCalledWith(3);
+    expect(onSelectTrade).toHaveBeenCalledWith("3");
   });
 
   it("jumps to typed trade id on Enter", () => {
@@ -75,7 +70,7 @@ describe("ChartTradeFocusNav", () => {
     fireEvent.change(input, { target: { value: "3" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
-    expect(onSelectTrade).toHaveBeenCalledWith(3);
+    expect(onSelectTrade).toHaveBeenCalledWith("3");
   });
 
   it("commits typed trade id on blur", () => {
@@ -88,7 +83,7 @@ describe("ChartTradeFocusNav", () => {
     fireEvent.change(input, { target: { value: "1" } });
     fireEvent.blur(input);
 
-    expect(onSelectTrade).toHaveBeenCalledWith(1);
+    expect(onSelectTrade).toHaveBeenCalledWith("1");
   });
 
   it("reverts invalid input on blur", () => {

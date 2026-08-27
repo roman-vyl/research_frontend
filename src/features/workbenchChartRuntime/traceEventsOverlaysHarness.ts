@@ -1,4 +1,4 @@
-import type { ChartMarketBundle, RunReport, RunVariant } from "@/api/types";
+import type { ChartMarketBundle, RunDetail } from "@/api/types";
 import type { RunMarketView } from "@/features/chart/runMarketView";
 import type { MarketDisplayWindowMs } from "@/features/chart/workbenchMarketLoad";
 import { candleTimeBounds } from "@/features/chart/chartRenderWindowDisplay";
@@ -55,10 +55,9 @@ export type TraceEventsOverlaysHarnessContext = {
   traceDisplayController: ReturnType<typeof createTraceDisplayRuntimeController>;
   traceController: ReturnType<typeof createTraceRuntimeController>;
   auxOverlayController: ReturnType<typeof createAuxOverlayRuntimeController>;
-  report: RunReport;
-  variant: RunVariant;
+  runDetail: RunDetail;
   selectedRunId: string;
-  selectedVariantKey: string;
+  instanceId: string;
   chartTimeframe: string;
   effectiveContextOverlayRef: string | null;
   reloadToken: number;
@@ -96,8 +95,7 @@ export type TraceEventsOverlaysHarness = {
 };
 
 export function createTraceEventsOverlaysHarness(input: {
-  report: RunReport;
-  variant: RunVariant;
+  runDetail: RunDetail;
   bundle: ChartMarketBundle;
   foundationKey: string;
   view: RunMarketView;
@@ -129,23 +127,23 @@ export function createTraceEventsOverlaysHarness(input: {
   const auxOverlayController = createAuxOverlayRuntimeController();
 
   const auxSpecs = resolveAuxEmaSpecsRuntime({
-    selectedVariant: input.variant,
+    strategySpec: input.runDetail.strategy_spec,
     chartTimeframe: input.chartTimeframe,
     effectiveContextOverlayRef,
   });
   syncAuxOverlaySpecs(auxOverlayController, auxSpecs);
 
   const traceDisplayCacheKey = buildTraceDisplayCacheKeyForRuntime({
-    selectedRunId: input.report.run_id,
-    selectedVariantKey: input.variant.variant,
+    selectedRunId: input.runDetail.manifest.run_id,
+    instanceId: input.runDetail.manifest.instance_id,
     effectiveContextOverlayRef,
   });
   resetTraceDisplayRuntimeCache(traceDisplayController, traceDisplayCacheKey);
   resetTraceCoordinator(traceController);
 
   const sessionIdentity = buildTraceSessionCacheIdentity({
-    selectedRunId: input.report.run_id,
-    selectedVariantKey: input.variant.variant,
+    selectedRunId: input.runDetail.manifest.run_id,
+    instanceId: input.runDetail.manifest.instance_id,
     effectiveContextOverlayRef,
     reloadToken,
     marketIdentity: input.marketIdentity,
@@ -157,10 +155,9 @@ export function createTraceEventsOverlaysHarness(input: {
     traceDisplayController,
     traceController,
     auxOverlayController,
-    report: input.report,
-    variant: input.variant,
-    selectedRunId: input.report.run_id,
-    selectedVariantKey: input.variant.variant,
+    runDetail: input.runDetail,
+    selectedRunId: input.runDetail.manifest.run_id,
+    instanceId: input.runDetail.manifest.instance_id,
     chartTimeframe: input.chartTimeframe,
     effectiveContextOverlayRef,
     reloadToken,
@@ -174,7 +171,7 @@ export function createTraceEventsOverlaysHarness(input: {
     const candles = displayRender.chartWindow.parts.candles;
     const chartWindowKey = chartWindowKeyFromCandles(
       context.selectedRunId,
-      context.selectedVariantKey,
+      context.instanceId,
       candles,
       context.effectiveContextOverlayRef,
     );
@@ -295,9 +292,9 @@ export function createTraceEventsOverlaysHarness(input: {
       const result = await runTraceLoadCycle({
         chartHeavyIoEnabled: runInput.chartHeavyIoEnabled ?? true,
         reportLoadStatus: "ready",
-        report: context.report,
+        runDetail: context.runDetail,
         selectedRunId: context.selectedRunId,
-        selectedVariantKey: context.selectedVariantKey,
+        instanceId: context.instanceId,
         marketLoadStatus: context.marketLoadStatus,
         runMarketViewIdentity: context.marketIdentity,
         expectedRunMarketViewIdentity: context.marketIdentity,
@@ -323,7 +320,7 @@ export function createTraceEventsOverlaysHarness(input: {
       return loadBffAuxOverlaysRuntime(context.auxOverlayController, {
         chartHeavyIoEnabled: loadInput.chartHeavyIoEnabled ?? true,
         marketLoadStatus: context.marketLoadStatus,
-        report: context.report,
+        runDetail: context.runDetail,
         chartTimeframe: context.chartTimeframe,
         signal: loadInput.signal,
         fetchOverlayEma: loadInput.fetchOverlayEma,
@@ -339,8 +336,7 @@ export function createTraceEventsOverlaysHarness(input: {
 
 /** Shadow-only resolver for production-mounted debug without production cache writes. */
 export function resolveTraceEventsOverlaysShadow(input: {
-  report: RunReport | null;
-  variant: RunVariant | null;
+  runDetail: RunDetail | null;
   bundle: ChartMarketBundle | null;
   foundationKey: string | null;
   view: RunMarketView | null;
@@ -354,8 +350,7 @@ export function resolveTraceEventsOverlaysShadow(input: {
   selectedTradeEntryTimeMs: number | null;
 }): TraceEventsOverlaysSnapshot | null {
   if (
-    input.report === null ||
-    input.variant === null ||
+    input.runDetail === null ||
     input.bundle === null ||
     input.foundationKey === null ||
     input.view === null ||
@@ -368,8 +363,7 @@ export function resolveTraceEventsOverlaysShadow(input: {
   }
 
   const harness = createTraceEventsOverlaysHarness({
-    report: input.report,
-    variant: input.variant,
+    runDetail: input.runDetail,
     bundle: input.bundle,
     foundationKey: input.foundationKey,
     view: input.view,

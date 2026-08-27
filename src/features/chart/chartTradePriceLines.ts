@@ -10,8 +10,8 @@ export type TradePriceLineSpec = {
   options: CreatePriceLineOptions;
 };
 
-function entryLineColor(direction: TradeRecord["direction"]): string {
-  return direction === "long" ? "#22c55e" : "#ef4444";
+function entryLineColor(side: TradeRecord["side"]): string {
+  return side === "long" ? "#22c55e" : "#ef4444";
 }
 
 function exitLineColor(): string {
@@ -38,37 +38,29 @@ export function buildExitPriceLineTitle(trade: TradeRecord, displayNumber?: numb
 export function buildTradePriceLineSpecs(trade: TradeRecord, displayNumber?: number): TradePriceLineSpec[] {
   const specs: TradePriceLineSpec[] = [];
 
-  if (trade.entry_price !== null && trade.entry_price !== undefined) {
-    specs.push({
-      kind: "entry",
-      options: {
-        price: trade.entry_price,
-        color: entryLineColor(trade.direction),
-        lineWidth: 2,
-        lineStyle: 0,
-        axisLabelVisible: true,
-        title: buildEntryPriceLineTitle(trade, displayNumber),
-      },
-    });
-  }
+  specs.push({
+    kind: "entry",
+    options: {
+      price: Number(trade.entry_price),
+      color: entryLineColor(trade.side),
+      lineWidth: 2,
+      lineStyle: 0,
+      axisLabelVisible: true,
+      title: buildEntryPriceLineTitle(trade, displayNumber),
+    },
+  });
 
-  if (
-    trade.status === "closed" &&
-    trade.exit_price !== null &&
-    trade.exit_price !== undefined
-  ) {
-    specs.push({
-      kind: "exit",
-      options: {
-        price: trade.exit_price,
-        color: exitLineColor(),
-        lineWidth: 2,
-        lineStyle: 2,
-        axisLabelVisible: true,
-        title: buildExitPriceLineTitle(trade, displayNumber),
-      },
-    });
-  }
+  specs.push({
+    kind: "exit",
+    options: {
+      price: Number(trade.exit_price),
+      color: exitLineColor(),
+      lineWidth: 2,
+      lineStyle: 2,
+      axisLabelVisible: true,
+      title: buildExitPriceLineTitle(trade, displayNumber),
+    },
+  });
 
   return specs;
 }
