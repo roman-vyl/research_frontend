@@ -138,6 +138,16 @@ import {
   type Phase63DTraceEventsOwnerState,
 } from "@/features/workbenchChartRuntime/phase63DTraceEventsBridge";
 export type ReportLoadStatus = "loading" | "ready" | "error";
+/**
+ * managed-policy-events is an optional chart-diagnostics projection, not part
+ * of core run identity — a legacy artifact bundle (predates
+ * managed_policy_events.json) or a transient failure here must not block the
+ * run from loading. "unavailable" is the backend's explicit
+ * managed_policy_trace_unavailable (404) for legacy bundles, distinguished
+ * from "error" (unexpected failure) and "ready" with an empty array (managed
+ * policy simply wasn't enabled for this run).
+ */
+export type ManagedPolicyEventsLoadStatus = "idle" | "loading" | "ready" | "unavailable" | "error";
 export type ConfigLoadStatus = "loading" | "ready" | "empty" | "error";
 export type MarketLoadStatus = "idle" | "loading" | "ready" | "error";
 export type CandlesSource = "market" | "unavailable";
@@ -163,6 +173,7 @@ type WorkbenchState = {
   runTrades: TradeRecord[];
   runMetrics: RunMetrics | null;
   managedPolicyEvents: ManagedPolicyEvent[];
+  managedPolicyEventsLoadStatus: ManagedPolicyEventsLoadStatus;
   /** Renderer-facing projection; prefer over individual chart* fields in ChartPanel. */
   chartViewModel: ChartViewModel;
   htfAuxEmaOverlayStale: boolean;
@@ -267,6 +278,7 @@ type WorkbenchChartState = Pick<
   | "runTrades"
   | "runMetrics"
   | "managedPolicyEvents"
+  | "managedPolicyEventsLoadStatus"
   | "selectedTradeId"
   | "selectTrade"
   | "contextOverlayRef"
@@ -377,6 +389,8 @@ function WorkbenchProviderInner({
   const [runTrades, setRunTrades] = useState<TradeRecord[]>([]);
   const [runMetrics, setRunMetrics] = useState<RunMetrics | null>(null);
   const [managedPolicyEvents, setManagedPolicyEvents] = useState<ManagedPolicyEvent[]>([]);
+  const [managedPolicyEventsLoadStatus, setManagedPolicyEventsLoadStatus] =
+    useState<ManagedPolicyEventsLoadStatus>("idle");
   const [selectedTradeId, setSelectedTradeId] = useState<number | string | null>(null);
   const [selectedBarTimeSec, setSelectedBarTimeSec] = useState<number | null>(null);
   const [signalTrace, setSignalTrace] = useState<SignalTraceBundle | null>(null);
@@ -479,17 +493,15 @@ function WorkbenchProviderInner({
       setReportError(null);
       resetPhase63FMarketLoadOwner(phase63FMarketLoadOwner());
       try {
-        const [detail, trades, metrics, managedEvents] = await Promise.all([
+        const [detail, trades, metrics] = await Promise.all([
           fetchRunDetail(runId),
           fetchRunTrades(runId),
           fetchRunMetrics(runId),
-          fetchManagedPolicyEvents({ runId }),
         ]);
         if (cancelled) return;
         setRunDetail(detail);
         setRunTrades(trades.trades);
         setRunMetrics(metrics);
-        setManagedPolicyEvents(managedEvents.events);
         setReportLoadStatus("ready");
       } catch (err) {
         if (cancelled) return;
@@ -502,13 +514,45 @@ function WorkbenchProviderInner({
         setRunDetail(null);
         setRunTrades([]);
         setRunMetrics(null);
-        setManagedPolicyEvents([]);
         setReportError(message);
         setReportLoadStatus("error");
       }
     }
 
     void loadReportRemote();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRunId, reloadToken]);
+
+  // Optional chart-diagnostics projection — must not gate core run loading
+  // (reportLoadStatus above). A legacy artifact bundle without
+  // managed_policy_events.json, or a transient failure here, leaves the run
+  // itself fully usable; only chart-layer managed-policy markers go missing.
+  useEffect(() => {
+    if (selectedRunId === null) {
+      setManagedPolicyEvents([]);
+      setManagedPolicyEventsLoadStatus("idle");
+      return;
+    }
+    const runId = selectedRunId;
+    let cancelled = false;
+
+    async function loadManagedPolicyEventsRemote() {
+      setManagedPolicyEventsLoadStatus("loading");
+      try {
+        const trace = await fetchManagedPolicyEvents({ runId });
+        if (cancelled) return;
+        setManagedPolicyEvents(trace.events);
+        setManagedPolicyEventsLoadStatus("ready");
+      } catch (err) {
+        if (cancelled) return;
+        setManagedPolicyEvents([]);
+        setManagedPolicyEventsLoadStatus(err instanceof ApiError && err.status === 404 ? "unavailable" : "error");
+      }
+    }
+
+    void loadManagedPolicyEventsRemote();
     return () => {
       cancelled = true;
     };
@@ -547,6 +591,7 @@ function WorkbenchProviderInner({
           setRunTrades([]);
           setRunMetrics(null);
           setManagedPolicyEvents([]);
+          setManagedPolicyEventsLoadStatus("idle");
           setSelectedRunIdState(null);
           setReportError(EMPTY_RUNS_HINT);
           setReportLoadStatus("error");
@@ -1004,6 +1049,7 @@ function WorkbenchProviderInner({
         runTrades={runTrades}
         runMetrics={runMetrics}
         managedPolicyEvents={managedPolicyEvents}
+        managedPolicyEventsLoadStatus={managedPolicyEventsLoadStatus}
         selectedTradeId={selectedTradeId}
         setSelectedTradeId={setSelectedTradeId}
         selectedBarTimeSec={selectedBarTimeSec}
@@ -1089,6 +1135,7 @@ type WorkbenchProviderContextsProps = {
   runTrades: TradeRecord[];
   runMetrics: RunMetrics | null;
   managedPolicyEvents: ManagedPolicyEvent[];
+  managedPolicyEventsLoadStatus: ManagedPolicyEventsLoadStatus;
   selectedTradeId: number | string | null;
   setSelectedTradeId: (id: number | string | null) => void;
   selectedBarTimeSec: number | null;
@@ -1168,6 +1215,7 @@ function WorkbenchProviderContexts({
   runTrades,
   runMetrics,
   managedPolicyEvents,
+  managedPolicyEventsLoadStatus,
   selectedTradeId,
   setSelectedTradeId,
   selectedBarTimeSec,
@@ -1817,6 +1865,7 @@ function WorkbenchProviderContexts({
       runTrades,
       runMetrics,
       managedPolicyEvents,
+      managedPolicyEventsLoadStatus,
       contextOverlayRef,
       setContextOverlayRef,
       effectiveContextOverlayRef,
@@ -1846,6 +1895,7 @@ function WorkbenchProviderContexts({
       runTrades,
       runMetrics,
       managedPolicyEvents,
+      managedPolicyEventsLoadStatus,
       contextOverlayRef,
       effectiveContextOverlayRef,
       contextOverlayRefOptions,

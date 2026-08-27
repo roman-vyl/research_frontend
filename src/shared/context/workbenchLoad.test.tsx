@@ -373,6 +373,25 @@ describe("Workbench report-load invariant", () => {
     expect(fetchRunDetail).toHaveBeenCalledWith("run-a");
   });
 
+  it("run still becomes ready when managed-policy-events fetch fails (optional projection, not core run load)", async () => {
+    const { ApiError } = await import("@/api/client");
+    fetchManagedPolicyEvents.mockRejectedValue(new ApiError(404, "managed-policy trace unavailable"));
+
+    render(
+      <Host>
+        <WorkbenchCapture />
+        <ChartSliceCapture />
+      </Host>,
+    );
+
+    await waitFor(() => {
+      expect(workbenchRef?.reportLoadStatus).toBe("ready");
+    });
+    expect(workbenchRef?.runDetail).not.toBeNull();
+    expect(chartSliceRef?.managedPolicyEventsLoadStatus).toBe("unavailable");
+    expect(chartSliceRef?.managedPolicyEvents).toEqual([]);
+  });
+
   it("selects the first entry from GET /runs as the default run (backend contract: newest created_at_utc first)", async () => {
     fetchRunSummaries.mockResolvedValue([
       makeRunSummary("run-newest", "2026-01-03T00:00:00Z"),

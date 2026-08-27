@@ -4,7 +4,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { RunDetail, RunMetrics, TradeRecord } from "@/api/types";
+import type { ManagedPolicyEvent, RunDetail, RunMetrics, TradeRecord } from "@/api/types";
 import { ReportsPanel } from "@/features/reports/ReportsPanel";
 import { makeTradeRecord } from "@/features/chart/testFixtures/tradeRecordFixtures";
 
@@ -90,6 +90,7 @@ const tradeShort = makeTradeRecord({
 function mockWorkbench(overrides: {
   runTrades: TradeRecord[];
   runMetrics?: RunMetrics | null;
+  managedPolicyEvents?: ManagedPolicyEvent[];
   selectedTradeId?: number | string | null;
   selectTrade?: (id: number | string | null) => void;
 }) {
@@ -103,6 +104,7 @@ function mockWorkbench(overrides: {
   mockUseWorkbenchChart.mockReturnValue({
     runTrades: overrides.runTrades,
     runMetrics: overrides.runMetrics === undefined ? makeMetrics() : overrides.runMetrics,
+    managedPolicyEvents: overrides.managedPolicyEvents ?? [],
   });
   return { selectTrade };
 }
@@ -115,9 +117,9 @@ describe("ReportsPanel", () => {
   it("renders summary cards from runMetrics", () => {
     mockWorkbench({ runTrades: [tradeLong, tradeShort] });
     render(<ReportsPanel />);
-    expect(screen.getByText("Net PnL")).toBeTruthy();
-    expect(screen.getByText("100.00")).toBeTruthy();
-    expect(screen.getByText("Trades")).toBeTruthy();
+    expect(screen.getAllByText("Net PnL").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("100.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Trades").length).toBeGreaterThan(0);
     expect(screen.getByTestId("filter-direction")).toBeTruthy();
   });
 
@@ -133,7 +135,7 @@ describe("ReportsPanel", () => {
     fireEvent.click(
       within(screen.getByTestId("filter-direction")).getByRole("button", { name: "long" }),
     );
-    const tradeTable = document.querySelector(".trade-table");
+    const tradeTable = document.querySelector(".trade-table:not(.breakdown-table)");
     const rows = within(tradeTable as HTMLElement).getAllByRole("row").slice(1);
     expect(rows.length).toBe(1);
     for (const row of rows) {
@@ -144,7 +146,7 @@ describe("ReportsPanel", () => {
   it("filtered row click calls selectTrade with trade id", () => {
     const { selectTrade } = mockWorkbench({ runTrades: [tradeLong, tradeShort] });
     render(<ReportsPanel />);
-    const tradeTable = document.querySelector(".trade-table");
+    const tradeTable = document.querySelector(".trade-table:not(.breakdown-table)");
     const row = within(tradeTable as HTMLElement).getByText("signal:rsi_exit_base").closest("tr");
     expect(row).toBeTruthy();
     fireEvent.click(row!);
@@ -163,5 +165,49 @@ describe("ReportsPanel", () => {
     render(<ReportsPanel />);
     fireEvent.click(screen.getByLabelText("Show diagnostics columns"));
     expect(screen.getAllByText("stop_loss").length).toBeGreaterThan(0);
+  });
+
+  it("renders fee diagnostics and exit reason breakdown from trades", () => {
+    mockWorkbench({ runTrades: [tradeLong, tradeShort] });
+    render(<ReportsPanel />);
+    expect(screen.getByText("Fee diagnostics")).toBeTruthy();
+    expect(screen.getByText("Total fees")).toBeTruthy();
+    expect(screen.getByText("Exit reason breakdown")).toBeTruthy();
+    expect(screen.getAllByText("signal:rsi_exit_base").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("stop_loss:atr_sl").length).toBeGreaterThan(0);
+  });
+
+  it("renders trade management diagnostics from managed-policy events", () => {
+    mockWorkbench({
+      runTrades: [tradeLong, tradeShort],
+      managedPolicyEvents: [
+        {
+          position_id: "position-1",
+          side: "long",
+          time_ms: 1_500,
+          bar_index: 1,
+          event_type: "phase_changed",
+          from_phase: "initial_risk",
+          to_phase: "runner",
+          rule_id: null,
+          component_id: null,
+          price: null,
+          metadata: {},
+        },
+      ],
+    });
+    render(<ReportsPanel />);
+    expect(screen.getByTestId("trade-management-diagnostics")).toBeTruthy();
+    expect(screen.getByText("Phase reached breakdown")).toBeTruthy();
+    expect(screen.getByText("runner")).toBeTruthy();
+    expect(screen.getByText("Exit layer breakdown")).toBeTruthy();
+  });
+
+  it("omits breakdown sections when there are no trades", () => {
+    mockWorkbench({ runTrades: [] });
+    render(<ReportsPanel />);
+    expect(screen.queryByText("Fee diagnostics")).toBeNull();
+    expect(screen.queryByText("Exit reason breakdown")).toBeNull();
+    expect(screen.queryByTestId("trade-management-diagnostics")).toBeNull();
   });
 });

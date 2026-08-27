@@ -1,12 +1,21 @@
 import { useMemo, useState } from "react";
 
 import type { TradeRecord } from "@/api/types";
+import { ExitReasonBreakdownTable } from "@/features/reports/ExitReasonBreakdownTable";
 import {
   EXIT_REASON_FILTER_OPTIONS,
   type ExitReasonFilterId,
 } from "@/features/reports/exitReasonFilters";
+import { FeeDiagnosticsSummary } from "@/features/reports/FeeDiagnosticsSummary";
 import { EM_DASH } from "@/features/reports/formatDiagnostics";
+import { TradeManagementBreakdownPanel } from "@/features/reports/TradeManagementBreakdownPanel";
 import { TradeStatusChip } from "@/features/reports/TradeStatusChip";
+import {
+  buildExitLayerBreakdown,
+  buildExitReasonBreakdown,
+  buildFeeDiagnostics,
+  buildPhaseReachedBreakdown,
+} from "@/features/reports/tradeAggregates";
 import { buildTradeDiagnosticFields, formatMs, formatNum } from "@/features/reports/tradeDiagnosticsFields";
 import {
   DEFAULT_TRADE_DIAGNOSTICS_FILTERS,
@@ -21,15 +30,18 @@ import { findTradeById, tradeDisplayNumber, tradeIdsEqual } from "@/features/cha
 import { useWorkbenchChart, useWorkbenchReport } from "@/shared/context/WorkbenchContext";
 
 /**
- * Canonical RunTrades/RunMetrics view. The old monolith's variant-level
- * diagnostic breakdowns (profile/exit-reason/fee/quality-flag/trade-
- * management aggregates) were server-computed on the legacy report and have
- * no equivalent on canonical RunMetrics — they are not reconstructed here.
- * See the F2/F3 migration audit for the full field-by-field accounting.
+ * Canonical RunTrades/RunMetrics view. Exit-reason breakdown, fee
+ * diagnostics, exit-layer breakdown, and phase-reached breakdown are
+ * recomputed client-side from RunTrades/managed-policy-events (see
+ * tradeAggregates.ts) — all of that data is present on canonical fields.
+ * Two things are NOT reconstructed anywhere here: entry-profile-scoped
+ * breakdown (canonical TradeRecord has no entry_profile field) and
+ * baseline-vs-managed comparison (needs an unmanaged-replay baseline the
+ * backend does not produce). Both are genuine backend gaps, not omissions.
  */
 export function ReportsPanel() {
   const { runDetail, selectedTradeId, selectTrade } = useWorkbenchReport();
-  const { runTrades, runMetrics } = useWorkbenchChart();
+  const { runTrades, runMetrics, managedPolicyEvents } = useWorkbenchChart();
   const [filters, setFilters] = useState<TradeDiagnosticsFilterState>(
     DEFAULT_TRADE_DIAGNOSTICS_FILTERS,
   );
@@ -38,6 +50,14 @@ export function ReportsPanel() {
   const exitKindOptions = useMemo(() => distinctExitKinds(runTrades), [runTrades]);
 
   const trades = useMemo(() => filterTrades(runTrades, filters), [runTrades, filters]);
+
+  const exitReasonBreakdown = useMemo(() => buildExitReasonBreakdown(runTrades), [runTrades]);
+  const feeDiagnostics = useMemo(() => buildFeeDiagnostics(runTrades), [runTrades]);
+  const exitLayerBreakdown = useMemo(() => buildExitLayerBreakdown(runTrades), [runTrades]);
+  const phaseReachedBreakdown = useMemo(
+    () => buildPhaseReachedBreakdown(managedPolicyEvents),
+    [managedPolicyEvents],
+  );
 
   if (!runDetail) {
     return null;
@@ -75,6 +95,21 @@ export function ReportsPanel() {
           <strong>{runMetrics ? runMetrics.open_position_count : EM_DASH}</strong>
         </div>
       </div>
+
+      {runTrades.length > 0 && (
+        <>
+          <h3 className="trade-detail__subtitle">Fee diagnostics</h3>
+          <FeeDiagnosticsSummary feeDiagnostics={feeDiagnostics} />
+
+          <h3 className="trade-detail__subtitle">Exit reason breakdown</h3>
+          <ExitReasonBreakdownTable exitReasonBreakdown={exitReasonBreakdown} />
+
+          <TradeManagementBreakdownPanel
+            exitLayerBreakdown={exitLayerBreakdown}
+            phaseReachedBreakdown={phaseReachedBreakdown}
+          />
+        </>
+      )}
 
       <div className="filter-row" data-testid="filter-direction">
         <span>side</span>
