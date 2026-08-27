@@ -7,7 +7,7 @@ import {
   PHASE_63D_DOMAIN_OWNERS,
 } from "./chartRuntimeCutoverConfig";
 import { chartWindowKeyFromCandles } from "./chartModelRuntime";
-import { makePhase6Candles, makePhase6Report } from "./phase6ContractFixtures";
+import { makePhase6Candles, makePhase6RunDetail } from "./phase6ContractFixtures";
 import {
   collectForbiddenImportViolations,
   readWorkspaceSource,
@@ -37,14 +37,14 @@ describe("Phase 6.3D trace/events cutover", () => {
   });
 
   it("blocks trace bootstrap until market and render-window are ready", () => {
-    const report = makePhase6Report();
+    const report = makePhase6RunDetail();
     const candles = makePhase6Candles(12);
-    const windowKey = chartWindowKeyFromCandles(report.run_id, report.variants[0]!.variant, candles, null);
+    const windowKey = chartWindowKeyFromCandles(report.manifest.run_id, report.manifest.instance_id, candles, null);
     const blocked = evaluateSignalTraceBootstrap({
-      report,
+      runDetail: report,
       reportLoadStatus: "ready",
-      selectedRunId: report.run_id,
-      selectedVariantKey: report.variants[0]!.variant,
+      selectedRunId: report.manifest.run_id,
+      instanceId: report.manifest.instance_id,
       marketLoadStatus: "loading",
       runMarketViewIdentity: "identity-a",
       expectedRunMarketViewIdentity: "identity-a",
@@ -60,7 +60,7 @@ describe("Phase 6.3D trace/events cutover", () => {
     const owner = createPhase63DTraceEventsOwnerState();
     const cacheKey = buildTraceDisplayCacheKeyForRuntime({
       selectedRunId: "run-a",
-      selectedVariantKey: "exp_a",
+      instanceId: "exp_a",
       effectiveContextOverlayRef: null,
     });
     resetTraceDisplayRuntimeCache(owner.traceDisplayController, cacheKey);
@@ -90,7 +90,7 @@ describe("Phase 6.3D trace/events cutover", () => {
       controller,
       buildTraceDisplayCacheKeyForRuntime({
         selectedRunId: "run-a",
-        selectedVariantKey: "exp_a",
+        instanceId: "exp_a",
         effectiveContextOverlayRef: null,
       }),
     );

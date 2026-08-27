@@ -1,32 +1,37 @@
 import type {
   ComponentCatalog,
   ComponentSchema,
+  DeployableStrategyInstance,
   JsonObject,
   StrategyConfigDraft,
-  StrategyInstanceDraft,
   ValidationErrorItem,
 } from "@/api/types";
 import { createBlankExitManagement } from "@/features/composer/composerExitManagementProduct";
 
-export const COMPOSER_DEFAULT_FAMILY = "ema_pullback";
+export const COMPOSER_DEFAULT_STRATEGY_ID = "ema_pullback";
 export const COMPOSER_DEFAULT_EXPERIMENT_ID = "draft_ema_pullback";
+export const COMPOSER_DEFAULT_TICKER = "BTCUSDT.P";
+export const COMPOSER_DEFAULT_BASE_TIMEFRAME = "5m";
 
-export function createBlankConfigDraft(family = COMPOSER_DEFAULT_FAMILY): StrategyConfigDraft {
+export function createBlankConfigDraft(
+  strategyId = COMPOSER_DEFAULT_STRATEGY_ID,
+): StrategyConfigDraft {
   return {
     config_version: 1,
     experiment_id: COMPOSER_DEFAULT_EXPERIMENT_ID,
-    family,
+    strategy_id: strategyId,
     execution: {},
-    instances: [createDefaultInstance("instance_1")],
+    instances: [createDefaultInstance()],
   };
 }
 
-export function createDefaultInstance(instanceId: string): StrategyInstanceDraft {
+export function createDefaultInstance(): DeployableStrategyInstance {
   return {
-    instance_id: instanceId,
-    variant: instanceId,
-    market: { symbol: "BTCUSDT", base_timeframe: "5m" },
-    strategy: {
+    enabled: true,
+    strategy_id: COMPOSER_DEFAULT_STRATEGY_ID,
+    ticker: COMPOSER_DEFAULT_TICKER,
+    base_timeframe: COMPOSER_DEFAULT_BASE_TIMEFRAME,
+    raw_spec: {
       trade_sides: { long: true, short: false },
       anchor_stack: {
         source: "close",
@@ -76,28 +81,16 @@ export function createDefaultInstance(instanceId: string): StrategyInstanceDraft
   };
 }
 
+/** Instance identity is derived (strategy_id/ticker/base_timeframe/raw_spec)
+ * -- there is no caller-assigned id to carry forward. Duplicating just
+ * deep-clones raw_spec so edits to the copy don't alias the source. */
 export function duplicateInstance(
-  source: StrategyInstanceDraft,
-  newId: string,
-): StrategyInstanceDraft {
+  source: DeployableStrategyInstance,
+): DeployableStrategyInstance {
   return {
     ...source,
-    instance_id: newId,
-    variant: newId,
-    strategy: structuredClone(source.strategy),
+    raw_spec: structuredClone(source.raw_spec),
   };
-}
-
-export function nextInstanceId(draft: StrategyConfigDraft): string {
-  const base = "instance";
-  let n = draft.instances.length + 1;
-  let candidate = `${base}_${n}`;
-  const ids = new Set(draft.instances.map((i) => i.instance_id));
-  while (ids.has(candidate)) {
-    n += 1;
-    candidate = `${base}_${n}`;
-  }
-  return candidate;
 }
 
 import {
@@ -196,12 +189,15 @@ export function instancePath(index: number): string {
 
 export function instanceMetaPath(
   index: number,
-  field: "instance_id" | "variant",
+  field: "enabled" | "strategy_id" | "ticker" | "base_timeframe",
 ): string {
   return `${instancePath(index)}.${field}`;
 }
 
-/** Validation paths for instance_id / variant only (not market, strategy, …). */
+const INSTANCE_META_FIELDS = ["enabled", "strategy_id", "ticker", "base_timeframe"] as const;
+
+/** Validation paths for the deployable-instance identity fields only
+ * (enabled/strategy_id/ticker/base_timeframe) -- not raw_spec. */
 export function errorsForInstanceMeta(
   errors: ValidationErrorItem[],
   index: number,
@@ -213,13 +209,8 @@ export function errorsForInstanceMeta(
       return false;
     }
     const rest = path.slice(prefix.length + 1);
-    return (
-      rest === "instance_id" ||
-      rest.startsWith("instance_id.") ||
-      rest.startsWith("instance_id[") ||
-      rest === "variant" ||
-      rest.startsWith("variant.") ||
-      rest.startsWith("variant[")
+    return INSTANCE_META_FIELDS.some(
+      (field) => rest === field || rest.startsWith(`${field}.`) || rest.startsWith(`${field}[`),
     );
   });
 }
@@ -237,7 +228,7 @@ export function anyInstanceMetaHasError(
 }
 
 export function strategyPath(index: number): string {
-  return `${instancePath(index)}.strategy`;
+  return `${instancePath(index)}.raw_spec`;
 }
 
 export function listSlotPath(

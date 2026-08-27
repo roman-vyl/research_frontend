@@ -1,19 +1,21 @@
 import { dbgTimed } from "@/shared/diagnostics/pipelineDebug";
 import {
-  assertSupportedReportSchema,
   type CandlesWindowBundle,
   type ChartBar,
   type ChartMarketBundle,
   type EmaWindowBundle,
   type ComponentCatalog,
   type IndicatorPoint,
-  type RunCompactSummaryReport,
-  type RunReport,
+  type ManagedPolicyEventTrace,
+  type RunDetail,
+  type RunMetrics,
   type RunSummary,
+  type RunTrades,
   type SignalTraceBundle,
   type ChartEventsBundle,
   type BacktestResult,
   type ConfigStateResponse,
+  type RunBacktestRequest,
   type SaveConfigResult,
   type SerializeResult,
   type StrategyConfigDraft,
@@ -69,41 +71,63 @@ export async function fetchRunSummaries(): Promise<RunSummary[]> {
   return requestJson<RunSummary[]>("/api/research/runs");
 }
 
-export async function fetchLatestRunReport(): Promise<RunReport> {
-  const report = await requestJson<RunReport>("/api/research/runs/latest");
-  assertSupportedReportSchema(report.report_schema_version);
-  return report;
-}
-
-export async function fetchRunReport(runId: string): Promise<RunReport> {
-  return dbgTimed("api.fetchRunReport", async () => {
-    const report = await requestJson<RunReport>(
-      `/api/research/runs/${encodeURIComponent(runId)}`,
-    );
-    assertSupportedReportSchema(report.report_schema_version);
-    return report;
-  });
-}
-
-export async function fetchRunSummaryReport(runId: string): Promise<RunCompactSummaryReport> {
-  const report = await requestJson<RunCompactSummaryReport>(
-    `/api/research/runs/${encodeURIComponent(runId)}/summary`,
+/** Canonical run identity/result/strategy_spec — one run, one strategy instance. */
+export async function fetchRunDetail(runId: string): Promise<RunDetail> {
+  return dbgTimed("api.fetchRunDetail", () =>
+    requestJson<RunDetail>(`/api/research/runs/${encodeURIComponent(runId)}`),
   );
-  assertSupportedReportSchema(report.report_schema_version);
-  return report;
 }
 
-/** Per-bar entry pipeline trace for Chart Bar Inspector (phase 5). */
+/** Canonical realised trades for one run. */
+export async function fetchRunTrades(runId: string): Promise<RunTrades> {
+  return dbgTimed("api.fetchRunTrades", () =>
+    requestJson<RunTrades>(`/api/research/runs/${encodeURIComponent(runId)}/trades`),
+  );
+}
+
+/** Canonical accounting summary for one run. */
+export async function fetchRunMetrics(runId: string): Promise<RunMetrics> {
+  return dbgTimed("api.fetchRunMetrics", () =>
+    requestJson<RunMetrics>(`/api/research/runs/${encodeURIComponent(runId)}/metrics`),
+  );
+}
+
+/** Canonical managed-policy event trace, optionally scoped to one trade's `position_id`. */
+export async function fetchManagedPolicyEvents(params: {
+  runId: string;
+  positionId?: string | null;
+  signal?: AbortSignal;
+}): Promise<ManagedPolicyEventTrace> {
+  const qs = new URLSearchParams();
+  if (params.positionId) {
+    qs.set("position_id", params.positionId);
+  }
+  const query = qs.toString();
+  return dbgTimed("api.fetchManagedPolicyEvents", () =>
+    requestJson<ManagedPolicyEventTrace>(
+      `/api/research/runs/${encodeURIComponent(params.runId)}/managed-policy-events${query ? `?${query}` : ""}`,
+      { signal: params.signal },
+    ),
+  );
+}
+
+/**
+ * Per-bar entry pipeline trace for Chart Bar Inspector.
+ *
+ * The `instance_id` wire query param is Research Service's diagnostics
+ * identity — it validates equality against the run's own `instance_id`
+ * (see signal_trace projection).
+ */
 export async function fetchSignalTrace(params: {
   runId: string;
-  variant: string;
+  instanceId: string;
   fromMs: number;
   toOpenTimeMs: number;
   contextOverlayRef?: string | null;
   signal?: AbortSignal;
 }): Promise<SignalTraceBundle> {
   const qs = new URLSearchParams({
-    variant: params.variant,
+    instance_id: params.instanceId,
     from: String(params.fromMs),
     to_open_time_ms: String(params.toOpenTimeMs),
   });
@@ -118,17 +142,17 @@ export async function fetchSignalTrace(params: {
   );
 }
 
-/** Sparse chart display bundle (markers + HTF overlays). */
+/** Sparse chart display bundle (markers + HTF overlays). See `fetchSignalTrace` re: `instance_id` param. */
 export async function fetchChartEvents(params: {
   runId: string;
-  variant: string;
+  instanceId: string;
   fromMs: number;
   toOpenTimeMs: number;
   contextOverlayRef?: string | null;
   signal?: AbortSignal;
 }): Promise<ChartEventsBundle> {
   const qs = new URLSearchParams({
-    variant: params.variant,
+    instance_id: params.instanceId,
     from: String(params.fromMs),
     to_open_time_ms: String(params.toOpenTimeMs),
   });
@@ -261,9 +285,9 @@ export async function fetchChartOverlayEma(params: {
 }
 
 export async function fetchComponentCatalog(
-  family = "ema_pullback",
+  strategyId = "ema_pullback",
 ): Promise<ComponentCatalog> {
-  const qs = new URLSearchParams({ family });
+  const qs = new URLSearchParams({ strategy_id: strategyId });
   return requestJson<ComponentCatalog>(`/api/research/component-catalog?${qs.toString()}`);
 }
 
@@ -290,24 +314,24 @@ export async function saveConfigDraft(
   return postJson<SaveConfigResult>("/api/research/config/save", { draft });
 }
 
-export async function fetchConfigState(family = "ema_pullback"): Promise<ConfigStateResponse> {
-  const qs = new URLSearchParams({ family });
+export async function fetchConfigState(
+  strategyId = "ema_pullback",
+): Promise<ConfigStateResponse> {
+  const qs = new URLSearchParams({ strategy_id: strategyId });
   return requestJson<ConfigStateResponse>(`/api/research/configs/state?${qs.toString()}`);
 }
 
 export async function selectSavedConfig(
-  family: string,
+  strategyId: string,
   experimentId: string,
 ): Promise<ConfigStateResponse> {
   return requestJson<ConfigStateResponse>("/api/research/configs/selected", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ family, experiment_id: experimentId }),
+    body: JSON.stringify({ strategy_id: strategyId, experiment_id: experimentId }),
   });
 }
 
-export async function runBacktest(
-  body: { draft: StrategyConfigDraft } | { config_path: string },
-): Promise<BacktestResult> {
+export async function runBacktest(body: RunBacktestRequest): Promise<BacktestResult> {
   return dbgTimed("api.runBacktest", () => postJson<BacktestResult>("/api/research/backtests", body));
 }

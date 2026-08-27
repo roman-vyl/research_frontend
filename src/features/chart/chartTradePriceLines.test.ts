@@ -6,24 +6,22 @@ import {
   buildExitPriceLineTitle,
   buildTradePriceLineSpecs,
 } from "@/features/chart/chartTradePriceLines";
+import { makeTradeRecord } from "@/features/chart/testFixtures/tradeRecordFixtures";
 
-const closedLong: TradeRecord = {
-  trade_id: 7,
-  direction: "long",
-  status: "closed",
+const closedLong: TradeRecord = makeTradeRecord({
+  trade_id: "trade:position-7:1",
+  side: "long",
   entry_time_ms: 1,
   exit_time_ms: 2,
-  entry_price: 100,
-  exit_price: 105,
+  entry_price: "100",
+  exit_price: "105",
   exit_reason: "stop_loss:atr_sl",
   exit_kind: "stop_loss",
-  size: 1,
-  pnl: 5,
-  return_pct: 0.05,
-};
+  net_pnl: "5",
+});
 
 describe("buildTradePriceLineSpecs", () => {
-  it("builds entry and exit lines for closed trade", () => {
+  it("builds entry and exit lines for a closed trade", () => {
     const specs = buildTradePriceLineSpecs(closedLong);
     expect(specs).toHaveLength(2);
     expect(specs[0].kind).toBe("entry");
@@ -31,16 +29,11 @@ describe("buildTradePriceLineSpecs", () => {
     expect(specs[1].kind).toBe("exit");
     expect(specs[1].options.price).toBe(105);
   });
-
-  it("skips exit line for open trade", () => {
-    const open: TradeRecord = { ...closedLong, status: "open", exit_time_ms: null, exit_price: null };
-    expect(buildTradePriceLineSpecs(open)).toHaveLength(1);
-  });
 });
 
 describe("price line titles", () => {
   it("formats entry and exit labels", () => {
-    expect(buildEntryPriceLineTitle(closedLong)).toBe("Entry #7");
-    expect(buildExitPriceLineTitle(closedLong)).toBe("Exit #7 · stop_loss");
+    expect(buildEntryPriceLineTitle(closedLong)).toBe(`Entry #${closedLong.trade_id}`);
+    expect(buildExitPriceLineTitle(closedLong)).toBe(`Exit #${closedLong.trade_id} · stop_loss`);
   });
 });

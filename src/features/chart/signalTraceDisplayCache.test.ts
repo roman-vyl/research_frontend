@@ -47,7 +47,7 @@ function makeBundle(partial: Partial<SignalTraceBundle> & Pick<SignalTraceBundle
   const times = partial.times;
   return {
     meta: {
-      variant: "v1",
+      instance_id: "v1",
       component_ids: {
         direction: "dir",
         setups: [],
@@ -134,7 +134,7 @@ function makeChartEventsBundle(
   const times = partial.times;
   return {
     meta: {
-      variant: "v1",
+      instance_id: "v1",
       component_ids: {
         direction: "dir",
         setups: [],

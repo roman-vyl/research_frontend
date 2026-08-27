@@ -38,11 +38,11 @@ describe("Phase 6.1 single-owner contract guards", () => {
   it("keeps production-mounted runtime v2 owner flags inactive before cutover", () => {
     const input = createChartRuntimeInput({
       reportLoadStatus: "ready",
-      report: null,
+      runDetail: null,
+      runTrades: [],
+      managedPolicyEvents: [],
       selectedRunId: "run-a",
       reloadToken: 0,
-      selectedVariantKey: "exp_a",
-      selectedVariant: null,
       selectedTradeId: 1,
       selectedTradeEntryTimeMs: 1_200_000,
       chartTradeFocusWarning: null,
@@ -63,11 +63,11 @@ describe("Phase 6.1 single-owner contract guards", () => {
     const output = createInitialChartRuntimeOutput(
       createChartRuntimeInput({
         reportLoadStatus: "loading",
-        report: null,
+        runDetail: null,
+        runTrades: [],
+        managedPolicyEvents: [],
         selectedRunId: "run-a",
         reloadToken: 0,
-        selectedVariantKey: "exp_a",
-        selectedVariant: null,
         selectedTradeId: null,
         selectedTradeEntryTimeMs: null,
         chartTradeFocusWarning: null,

@@ -29,7 +29,7 @@ export type MarketViewRuntimeBoundary =
   | MarketViewRuntimeOutput;
 
 export function resolveMarketViewRuntime(input: ChartRuntimeInput): MarketViewRuntimeOutput {
-  if (input.report === null || input.selectedVariant === null) {
+  if (input.runDetail === null) {
     return {
       implemented: true,
       view: null,
@@ -41,16 +41,15 @@ export function resolveMarketViewRuntime(input: ChartRuntimeInput): MarketViewRu
 
   try {
     const view = resolveRunMarketView({
-      report: input.report,
+      runDetail: input.runDetail,
       chartTimeframe: input.chartTimeframe,
-      variant: input.selectedVariant,
       reloadToken: input.reloadToken,
     });
     const marketIdentity = buildRunMarketViewIdentity(view);
     const expectedMarketIdentity =
       input.reportLoadStatus === "ready" &&
       input.selectedRunId !== null &&
-      input.report.run_id === input.selectedRunId
+      input.runDetail.manifest.run_id === input.selectedRunId
         ? marketIdentity
         : null;
 

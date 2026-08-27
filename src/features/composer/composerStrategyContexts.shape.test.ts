@@ -15,8 +15,8 @@ import {
 
 describe("createDefaultInstance target shape", () => {
   it("uses strategy.contexts and no exit_policy.context", () => {
-    const inst = createDefaultInstance("i1");
-    const strategy = inst.strategy as Record<string, unknown>;
+    const inst = createDefaultInstance();
+    const strategy = inst.raw_spec as Record<string, unknown>;
     expect(strategy.contexts).toEqual({});
     const exitPolicy = (
       (strategy.trade_management as Record<string, unknown>)?.exit_policy ?? {}
@@ -98,8 +98,8 @@ describe("prepareConfigDraftForApi", () => {
   it("blocks draft with exit_policy.context from passing client validation", () => {
     const draft = createBlankConfigDraft();
     const inst = draft.instances[0]!;
-    inst.strategy = {
-      ...inst.strategy,
+    inst.raw_spec = {
+      ...inst.raw_spec,
       trade_management: {
         exit_policy: {
           context: { component_id: "htf_context" },
@@ -115,16 +115,16 @@ describe("prepareConfigDraftForApi", () => {
     expect(collectComposerDraftErrors(draft).some((e) => e.path.includes("exit_policy.context")))
       .toBe(true);
     const prepared = prepareConfigDraftForApi(draft);
-    expect(readExitPolicy(prepared.instances[0]!.strategy).context).toBeDefined();
+    expect(readExitPolicy(prepared.instances[0]!.raw_spec).context).toBeDefined();
   });
 });
 
 describe("exitPolicyRequiresContextConsumption", () => {
   it("is false for always_on-only default instance", () => {
-    const inst = createDefaultInstance("i1");
-    expect(exitPolicyRequiresContextConsumption(inst.strategy as Record<string, unknown>)).toBe(
+    const inst = createDefaultInstance();
+    expect(exitPolicyRequiresContextConsumption(inst.raw_spec as Record<string, unknown>)).toBe(
       false,
     );
-    expect(readStrategyContexts(inst.strategy as Record<string, unknown>)).toEqual({});
+    expect(readStrategyContexts(inst.raw_spec as Record<string, unknown>)).toEqual({});
   });
 });

@@ -1,4 +1,4 @@
-import type { ChartBar, RunReport, RunVariant, SignalTraceBundle } from "@/api/types";
+import type { ChartBar, JsonObject, RunDetail, SignalTraceBundle } from "@/api/types";
 import type { HtfContextTraceSlice } from "@/features/chart/signalTraceDisplayCache";
 import type { SignalTraceLoadStatus } from "@/shared/context/signalTraceLoadPolicy";
 import { PIPELINE_DEBUG_STEPS as DBG } from "@/shared/diagnostics/pipelineDebug";
@@ -51,7 +51,7 @@ export function resetPhase63EAuxOverlayOwner(owner: Phase63EAuxOverlayOwnerState
 export function syncPhase63EAuxOverlaySpecs(
   owner: Phase63EAuxOverlayOwnerState,
   input: {
-    selectedVariant: RunVariant | null;
+    strategySpec: JsonObject | null;
     chartTimeframe: string;
     effectiveContextOverlayRef: string | null;
   },
@@ -59,7 +59,7 @@ export function syncPhase63EAuxOverlaySpecs(
   syncAuxOverlaySpecs(
     owner.controller,
     resolveAuxEmaSpecsRuntime({
-      selectedVariant: input.selectedVariant,
+      strategySpec: input.strategySpec,
       chartTimeframe: input.chartTimeframe,
       effectiveContextOverlayRef: input.effectiveContextOverlayRef,
     }),
@@ -211,7 +211,7 @@ export async function runPhase63ELoadBffAuxOverlays(
   input: {
     chartHeavyIoEnabled: boolean;
     marketLoadStatus: "idle" | "loading" | "ready" | "error";
-    report: RunReport | null;
+    runDetail: RunDetail | null;
     chartTimeframe: string;
     signal?: AbortSignal;
   },

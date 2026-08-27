@@ -8,7 +8,7 @@ import { App } from "@/App";
 import { ApiError } from "@/api/client";
 import { WorkbenchProvider } from "@/shared/context/WorkbenchContext";
 
-const fetchRunReport = vi.fn<typeof import("@/api/client").fetchRunReport>();
+const fetchRunDetail = vi.fn<typeof import("@/api/client").fetchRunDetail>();
 const fetchRunSummaries = vi.fn<typeof import("@/api/client").fetchRunSummaries>();
 const fetchConfigState = vi.fn<typeof import("@/api/client").fetchConfigState>();
 const fetchComponentCatalog = vi.fn<typeof import("@/api/client").fetchComponentCatalog>();
@@ -17,7 +17,10 @@ vi.mock("@/api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/api/client")>();
   return {
     ...actual,
-    fetchRunReport: (...args: Parameters<typeof fetchRunReport>) => fetchRunReport(...args),
+    fetchRunDetail: (...args: Parameters<typeof fetchRunDetail>) => fetchRunDetail(...args),
+    fetchRunTrades: vi.fn().mockResolvedValue({ contract_version: "1.0.0", run_id: "run-prototype", trades: [] }),
+    fetchRunMetrics: vi.fn().mockResolvedValue(null),
+    fetchManagedPolicyEvents: vi.fn().mockResolvedValue({ contract_version: "1.0.0", run_id: "run-prototype", events: [] }),
     fetchRunSummaries: (...args: Parameters<typeof fetchRunSummaries>) =>
       fetchRunSummaries(...args),
     fetchConfigState: (...args: Parameters<typeof fetchConfigState>) =>
@@ -65,30 +68,41 @@ describe("App report vs composer isolation", () => {
     vi.clearAllMocks();
     fetchRunSummaries.mockResolvedValue([
       {
+        contract_version: "research_run_summary.v1",
         run_id: "run-prototype",
-        created_at: "2026-01-01T00:00:00Z",
-        family: "ema_pullback",
-        symbol: "BTCUSDT",
+        created_at_utc: "2026-01-01T00:00:00Z",
+        instance_id: "instance_1",
+        strategy_id: "ema_pullback",
+        strategy_version: "1",
+        ticker: "BTCUSDT.P",
         timeframe: "5m",
+        from_ms: 1_000_000,
+        to_ms: 2_000_000,
+        realised_trade_count: 0,
+        open_position_count: 0,
+        final_equity: "10000",
+        net_pnl: "0",
+        market_data_hash: null,
       },
     ]);
-    fetchRunReport.mockRejectedValue(new ApiError(500, PROTOTYPE_REPORT_ERROR));
+    fetchRunDetail.mockRejectedValue(new ApiError(500, PROTOTYPE_REPORT_ERROR));
     fetchConfigState.mockResolvedValue({
-      family: "ema_pullback",
+      strategy_id: "ema_pullback",
       selected_experiment_id: "draft_ema_pullback",
       selected_path: "research/experiments/configs/ema_pullback/draft_ema_pullback.json",
       configs: [],
       draft: {
         config_version: 1,
         experiment_id: "draft_ema_pullback",
-        family: "ema_pullback",
+        strategy_id: "ema_pullback",
         execution: {},
         instances: [
           {
-            instance_id: "instance_1",
-            variant: "instance_1",
-            market: { symbol: "BTCUSDT", base_timeframe: "5m" },
-            strategy: {
+            enabled: true,
+            strategy_id: "ema_pullback",
+            ticker: "BTCUSDT.P",
+            base_timeframe: "5m",
+            raw_spec: {
               trade_sides: { long: true, short: false },
               anchor_stack: { source: "close", timeframe: "base", fast: 200, anchor: 500, slow: 1000 },
               direction: { component_id: "ema_anchor_stack_trend" },
@@ -117,7 +131,7 @@ describe("App report vs composer isolation", () => {
       },
     });
     fetchComponentCatalog.mockResolvedValue({
-      family: "ema_pullback",
+      strategy_id: "ema_pullback",
       schema_version: 1,
       sections: [{ section_id: "strategy_contexts", label: "Strategy contexts" }],
       components: [],

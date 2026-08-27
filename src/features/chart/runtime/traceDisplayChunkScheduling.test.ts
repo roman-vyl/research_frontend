@@ -25,7 +25,7 @@ function makeTraceBundle(times: number[]) {
   return {
     times,
     meta: {
-      variant: "exp_a",
+      instance_id: "exp_a",
       component_ids: {
         direction: "d",
         setups: [],

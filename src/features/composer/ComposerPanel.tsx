@@ -15,7 +15,7 @@ import type {
   ContextConsumptionPolicySchema,
   JsonObject,
   StrategyConfigDraft,
-  StrategyInstanceDraft,
+  DeployableStrategyInstance,
   ValidationErrorItem,
   ValidationResult,
 } from "@/api/types";
@@ -31,9 +31,7 @@ import {
   findComponentSchema,
   anyInstanceMetaHasError,
   errorsForInstanceMeta,
-  instancePath,
   listSlotPath,
-  nextInstanceId,
   strategyPath,
 } from "./composerDraft";
 import {
@@ -99,14 +97,10 @@ function SectionErrors({
 function firstPipelineSectionFromErrors(errors: ValidationErrorItem[]): string | null {
   for (const err of errors) {
     const path = err.path ?? "";
-    if (/instances\[\d+\]\.(instance_id|variant)\b/.test(path)) {
+    if (/instances\[\d+\]\.(enabled|strategy_id|ticker|base_timeframe)\b/.test(path)) {
       return "instance-meta";
     }
-    const marketMatch = path.match(/instances\[\d+\]\.market\b/);
-    if (marketMatch) {
-      return "instance-setup";
-    }
-    const strategyMatch = path.match(/instances\[\d+\]\.strategy\.([^.[]+)/);
+    const strategyMatch = path.match(/instances\[\d+\]\.raw_spec\.([^.[]+)/);
     if (!strategyMatch) {
       continue;
     }
@@ -325,19 +319,19 @@ function ComposerInstanceGrid({
   selectedIndex,
   children,
 }: {
-  instances: StrategyInstanceDraft[];
+  instances: DeployableStrategyInstance[];
   selectedIndex: number;
-  children: (index: number, inst: StrategyInstanceDraft) => ReactNode;
+  children: (index: number, inst: DeployableStrategyInstance) => ReactNode;
 }) {
   return (
     <div className="composer-instance-grid">
       {instances.map((inst, index) => (
         <div
-          key={`${inst.instance_id}-${index}`}
+          key={index}
           className={`composer-instance-card${index === selectedIndex ? " is-selected" : ""}`}
         >
-          <div className="composer-instance-card__title" title={inst.instance_id}>
-            {inst.instance_id}
+          <div className="composer-instance-card__title" title={`${inst.ticker} · ${inst.base_timeframe}`}>
+            {inst.ticker} · {inst.base_timeframe}
           </div>
           <div className="composer-instance-card__body">{children(index, inst)}</div>
         </div>
@@ -411,7 +405,7 @@ export function ComposerPanel() {
       return;
     }
     let cancelled = false;
-    void fetchComponentCatalog(configDraft.family)
+    void fetchComponentCatalog(configDraft.strategy_id)
       .then((c) => {
         if (!cancelled) {
           setCatalog(c);
@@ -427,7 +421,7 @@ export function ComposerPanel() {
     return () => {
       cancelled = true;
     };
-  }, [configDraft?.family]);
+  }, [configDraft?.strategy_id]);
 
   useEffect(() => {
     if (!configDraft || !catalog) {
@@ -491,7 +485,7 @@ export function ComposerPanel() {
   );
 
   const patchInstance = useCallback(
-    (index: number, patch: Partial<StrategyInstanceDraft>) => {
+    (index: number, patch: Partial<DeployableStrategyInstance>) => {
       if (!configDraft) return;
       setValidation(null);
       setSerializeContent(null);
@@ -510,7 +504,7 @@ export function ComposerPanel() {
       if (!configDraft) return;
       const inst = configDraft.instances[index];
       if (!inst) return;
-      patchInstance(index, { strategy: { ...inst.strategy, ...patch } });
+      patchInstance(index, { raw_spec: { ...inst.raw_spec, ...patch } });
     },
     [configDraft, patchInstance],
   );
@@ -614,34 +608,46 @@ export function ComposerPanel() {
       setBusy(null);
       return;
     }
+    const strategy = apiDraft.instances[selectedIndex];
+    if (!strategy) {
+      setActionError("Select an instance to backtest.");
+      setBusy(null);
+      return;
+    }
+    const execDraft = configDraft.execution;
     try {
-      const result = await runBacktest({ draft: apiDraft });
-      if (!result.ok) {
-        setValidation({ ok: false, errors: result.errors });
-        return;
-      }
-      if (!result.run_id) {
-        setActionError("Backtest finished without a run id.");
-        return;
-      }
+      const result = await runBacktest({
+        strategy,
+        range_policy: "full_available",
+        execution:
+          execDraft.slippage === undefined
+            ? undefined
+            : { entry_slippage_rate: String(execDraft.slippage) },
+        accounting:
+          execDraft.init_cash === undefined && execDraft.fees === undefined
+            ? undefined
+            : {
+                ...(execDraft.init_cash === undefined
+                  ? {}
+                  : { initial_equity: String(execDraft.init_cash) }),
+                ...(execDraft.fees === undefined
+                  ? {}
+                  : { entry_fee_rate: String(execDraft.fees), exit_fee_rate: String(execDraft.fees) }),
+              },
+      });
       await refreshRunsAndSelectRun(result.run_id);
-      setBacktestMessage(
-        result.config_path
-          ? `Backtest complete — run ${result.run_id} (config: ${result.config_path})`
-          : `Backtest complete — run ${result.run_id}`,
-      );
+      setBacktestMessage(`Backtest complete — run ${result.run_id}`);
       setActiveTab("reports");
     } catch (err) {
       setActionError(err instanceof ApiError ? err.detail : "Backtest failed.");
     } finally {
       setBusy(null);
     }
-  }, [apiDraft, catalog, configDraft, refreshRunsAndSelectRun, setActiveTab]);
+  }, [apiDraft, catalog, configDraft, refreshRunsAndSelectRun, selectedIndex, setActiveTab]);
 
   const addInstance = () => {
     if (!configDraft) return;
-    const id = nextInstanceId(configDraft);
-    const instances = [...configDraft.instances, createDefaultInstance(id)];
+    const instances = [...configDraft.instances, createDefaultInstance()];
     patchDraft({ instances });
     setSelectedIndex(instances.length - 1);
   };
@@ -657,8 +663,7 @@ export function ComposerPanel() {
     if (!configDraft) return;
     const source = configDraft.instances[selectedIndex];
     if (!source) return;
-    const id = nextInstanceId(configDraft);
-    const instances = [...configDraft.instances, duplicateInstance(source, id)];
+    const instances = [...configDraft.instances, duplicateInstance(source)];
     patchDraft({ instances });
     setSelectedIndex(instances.length - 1);
   };
@@ -694,9 +699,9 @@ export function ComposerPanel() {
     if (!configDraft) return;
     const inst = configDraft.instances[index];
     if (!inst) return;
-    const strategy = inst.strategy as JsonObject;
+    const strategy = inst.raw_spec as JsonObject;
     if (role === "blockers" || role === "setups") {
-      const list = [...((inst.strategy[role] as JsonObject[] | undefined) ?? [])];
+      const list = [...((inst.raw_spec[role] as JsonObject[] | undefined) ?? [])];
       list[slotIndex] = nextSlot;
       patchStrategy(index, { [role]: list });
       return;
@@ -704,50 +709,50 @@ export function ComposerPanel() {
     if (role === "exits") {
       const list = [...readAlwaysOnExits(strategy)];
       list[slotIndex] = nextSlot;
-      patchInstance(index, { strategy: writeAlwaysOnExits(strategy, list) });
+      patchInstance(index, { raw_spec: writeAlwaysOnExits(strategy, list) });
       return;
     }
     if (role === "aligned_exits") {
       const list = [...readProfileExits(strategy, "aligned")];
       list[slotIndex] = nextSlot;
-      patchInstance(index, { strategy: writeProfileExits(strategy, "aligned", list) });
+      patchInstance(index, { raw_spec: writeProfileExits(strategy, "aligned", list) });
       return;
     }
     if (role === "countertrend_exits") {
       const list = [...readProfileExits(strategy, "countertrend")];
       list[slotIndex] = nextSlot;
-      patchInstance(index, { strategy: writeProfileExits(strategy, "countertrend", list) });
+      patchInstance(index, { raw_spec: writeProfileExits(strategy, "countertrend", list) });
       return;
     }
     if (role === "neutral_exits") {
       const list = [...readProfileExits(strategy, "neutral")];
       list[slotIndex] = nextSlot;
-      patchInstance(index, { strategy: writeProfileExits(strategy, "neutral", list) });
+      patchInstance(index, { raw_spec: writeProfileExits(strategy, "neutral", list) });
       return;
     }
     if (role === "always_on_management") {
       const list = [...readAlwaysOnManagementRules(strategy)];
       list[slotIndex] = nextSlot;
-      patchInstance(index, { strategy: writeAlwaysOnManagementRules(strategy, list) });
+      patchInstance(index, { raw_spec: writeAlwaysOnManagementRules(strategy, list) });
       return;
     }
     if (role === "aligned_management") {
       const list = [...readProfileManagementRules(strategy, "aligned")];
       list[slotIndex] = nextSlot;
-      patchInstance(index, { strategy: writeProfileManagementRules(strategy, "aligned", list) });
+      patchInstance(index, { raw_spec: writeProfileManagementRules(strategy, "aligned", list) });
       return;
     }
     if (role === "countertrend_management") {
       const list = [...readProfileManagementRules(strategy, "countertrend")];
       list[slotIndex] = nextSlot;
       patchInstance(index, {
-        strategy: writeProfileManagementRules(strategy, "countertrend", list),
+        raw_spec: writeProfileManagementRules(strategy, "countertrend", list),
       });
       return;
     }
     const list = [...readProfileManagementRules(strategy, "neutral")];
     list[slotIndex] = nextSlot;
-    patchInstance(index, { strategy: writeProfileManagementRules(strategy, "neutral", list) });
+    patchInstance(index, { raw_spec: writeProfileManagementRules(strategy, "neutral", list) });
   };
 
   const addListSlot = (
@@ -775,51 +780,51 @@ export function ComposerPanel() {
     }
     const inst = configDraft.instances[index];
     if (!inst) return;
-    const strategy = inst.strategy as JsonObject;
+    const strategy = inst.raw_spec as JsonObject;
     if (role === "blockers" || role === "setups") {
-      const list = [...((inst.strategy[role] as JsonObject[] | undefined) ?? []), nextSlot];
+      const list = [...((inst.raw_spec[role] as JsonObject[] | undefined) ?? []), nextSlot];
       patchStrategy(index, { [role]: list });
       return;
     }
     if (role === "exits") {
       const list = [...readAlwaysOnExits(strategy), nextSlot];
-      patchInstance(index, { strategy: writeAlwaysOnExits(strategy, list) });
+      patchInstance(index, { raw_spec: writeAlwaysOnExits(strategy, list) });
       return;
     }
     if (role === "aligned_exits") {
       const list = [...readProfileExits(strategy, "aligned"), nextSlot];
-      patchInstance(index, { strategy: writeProfileExits(strategy, "aligned", list) });
+      patchInstance(index, { raw_spec: writeProfileExits(strategy, "aligned", list) });
       return;
     }
     if (role === "countertrend_exits") {
       const list = [...readProfileExits(strategy, "countertrend"), nextSlot];
-      patchInstance(index, { strategy: writeProfileExits(strategy, "countertrend", list) });
+      patchInstance(index, { raw_spec: writeProfileExits(strategy, "countertrend", list) });
       return;
     }
     if (role === "neutral_exits") {
       const list = [...readProfileExits(strategy, "neutral"), nextSlot];
-      patchInstance(index, { strategy: writeProfileExits(strategy, "neutral", list) });
+      patchInstance(index, { raw_spec: writeProfileExits(strategy, "neutral", list) });
       return;
     }
     if (role === "always_on_management") {
       const list = [...readAlwaysOnManagementRules(strategy), nextSlot];
-      patchInstance(index, { strategy: writeAlwaysOnManagementRules(strategy, list) });
+      patchInstance(index, { raw_spec: writeAlwaysOnManagementRules(strategy, list) });
       return;
     }
     if (role === "aligned_management") {
       const list = [...readProfileManagementRules(strategy, "aligned"), nextSlot];
-      patchInstance(index, { strategy: writeProfileManagementRules(strategy, "aligned", list) });
+      patchInstance(index, { raw_spec: writeProfileManagementRules(strategy, "aligned", list) });
       return;
     }
     if (role === "countertrend_management") {
       const list = [...readProfileManagementRules(strategy, "countertrend"), nextSlot];
       patchInstance(index, {
-        strategy: writeProfileManagementRules(strategy, "countertrend", list),
+        raw_spec: writeProfileManagementRules(strategy, "countertrend", list),
       });
       return;
     }
     const list = [...readProfileManagementRules(strategy, "neutral"), nextSlot];
-    patchInstance(index, { strategy: writeProfileManagementRules(strategy, "neutral", list) });
+    patchInstance(index, { raw_spec: writeProfileManagementRules(strategy, "neutral", list) });
   };
 
   const removeListSlot = (
@@ -840,9 +845,9 @@ export function ComposerPanel() {
     if (!configDraft) return;
     const inst = configDraft.instances[index];
     if (!inst) return;
-    const strategy = inst.strategy as JsonObject;
+    const strategy = inst.raw_spec as JsonObject;
     if (role === "blockers" || role === "setups") {
-      const list = ((inst.strategy[role] as JsonObject[] | undefined) ?? []).filter(
+      const list = ((inst.raw_spec[role] as JsonObject[] | undefined) ?? []).filter(
         (_, i) => i !== slotIndex,
       );
       patchStrategy(index, { [role]: list });
@@ -850,32 +855,32 @@ export function ComposerPanel() {
     }
     if (role === "exits") {
       const list = readAlwaysOnExits(strategy).filter((_, i) => i !== slotIndex);
-      patchInstance(index, { strategy: writeAlwaysOnExits(strategy, list) });
+      patchInstance(index, { raw_spec: writeAlwaysOnExits(strategy, list) });
       return;
     }
     if (role === "aligned_exits") {
       const list = readProfileExits(strategy, "aligned").filter((_, i) => i !== slotIndex);
-      patchInstance(index, { strategy: writeProfileExits(strategy, "aligned", list) });
+      patchInstance(index, { raw_spec: writeProfileExits(strategy, "aligned", list) });
       return;
     }
     if (role === "countertrend_exits") {
       const list = readProfileExits(strategy, "countertrend").filter((_, i) => i !== slotIndex);
-      patchInstance(index, { strategy: writeProfileExits(strategy, "countertrend", list) });
+      patchInstance(index, { raw_spec: writeProfileExits(strategy, "countertrend", list) });
       return;
     }
     if (role === "neutral_exits") {
       const list = readProfileExits(strategy, "neutral").filter((_, i) => i !== slotIndex);
-      patchInstance(index, { strategy: writeProfileExits(strategy, "neutral", list) });
+      patchInstance(index, { raw_spec: writeProfileExits(strategy, "neutral", list) });
       return;
     }
     if (role === "always_on_management") {
       const list = readAlwaysOnManagementRules(strategy).filter((_, i) => i !== slotIndex);
-      patchInstance(index, { strategy: writeAlwaysOnManagementRules(strategy, list) });
+      patchInstance(index, { raw_spec: writeAlwaysOnManagementRules(strategy, list) });
       return;
     }
     if (role === "aligned_management") {
       const list = readProfileManagementRules(strategy, "aligned").filter((_, i) => i !== slotIndex);
-      patchInstance(index, { strategy: writeProfileManagementRules(strategy, "aligned", list) });
+      patchInstance(index, { raw_spec: writeProfileManagementRules(strategy, "aligned", list) });
       return;
     }
     if (role === "countertrend_management") {
@@ -883,12 +888,12 @@ export function ComposerPanel() {
         (_, i) => i !== slotIndex,
       );
       patchInstance(index, {
-        strategy: writeProfileManagementRules(strategy, "countertrend", list),
+        raw_spec: writeProfileManagementRules(strategy, "countertrend", list),
       });
       return;
     }
     const list = readProfileManagementRules(strategy, "neutral").filter((_, i) => i !== slotIndex);
-    patchInstance(index, { strategy: writeProfileManagementRules(strategy, "neutral", list) });
+    patchInstance(index, { raw_spec: writeProfileManagementRules(strategy, "neutral", list) });
   };
 
   if (configLoadStatus === "loading") {
@@ -906,7 +911,7 @@ export function ComposerPanel() {
           <h2>Strategy Composer</h2>
           <p className="panel__hint">
             No saved config on disk yet. Create one here, then Save to write{" "}
-            <code>research/experiments/configs/{"{family}"}/{"{experiment_id}"}.json</code>.
+            <code>research/experiments/configs/{"{strategy_id}"}/{"{experiment_id}"}.json</code>.
           </p>
         </div>
         {configLoadError && <p className="banner banner--error">{configLoadError}</p>}
@@ -1025,17 +1030,17 @@ export function ComposerPanel() {
           <div className="composer-instance-chips" role="tablist" aria-label="Strategy instances">
             {configDraft.instances.map((inst, i) => (
               <button
-                key={inst.instance_id}
+                key={i}
                 type="button"
                 role="tab"
                 aria-selected={i === selectedIndex}
                 className={
                   i === selectedIndex ? "composer-instance-chip is-active" : "composer-instance-chip"
                 }
-                title={inst.instance_id}
+                title={`${inst.ticker} · ${inst.base_timeframe}`}
                 onClick={() => setSelectedIndex(i)}
               >
-                {inst.instance_id}
+                {`instance ${i + 1}`}
               </button>
             ))}
             <button type="button" className="composer-instance-chip composer-instance-chip--add" onClick={addInstance}>
@@ -1090,8 +1095,8 @@ export function ComposerPanel() {
               />
             </label>
             <label className="field">
-              <span>family</span>
-              <input value={configDraft.family} readOnly />
+              <span>strategy_id</span>
+              <input value={configDraft.strategy_id} readOnly />
             </label>
             <label className="field">
               <span>init_cash</span>
@@ -1148,7 +1153,7 @@ export function ComposerPanel() {
                 id="instance-meta"
                 title="Instance"
                 summary={joinInstanceSummaries(
-                  configDraft.instances.map((inst) => inst.variant || inst.instance_id),
+                  configDraft.instances.map((inst) => `${inst.ticker} · ${inst.base_timeframe}`),
                 )}
                 open={openPipelineSections.has("instance-meta")}
                 onToggle={togglePipeline}
@@ -1167,18 +1172,26 @@ export function ComposerPanel() {
                         errors={validationErrors}
                         scoped={errorsForInstanceMeta(validationErrors, index)}
                       />
-                      <label className="field">
-                        <span>instance_id</span>
+                      <label className="field composer-field--checkbox">
                         <input
-                          value={inst.instance_id}
-                          onChange={(e) => patchInstance(index, { instance_id: e.target.value })}
+                          type="checkbox"
+                          checked={inst.enabled}
+                          onChange={(e) => patchInstance(index, { enabled: e.target.checked })}
+                        />
+                        <span>enabled</span>
+                      </label>
+                      <label className="field">
+                        <span>ticker</span>
+                        <input
+                          value={inst.ticker}
+                          onChange={(e) => patchInstance(index, { ticker: e.target.value })}
                         />
                       </label>
                       <label className="field">
-                        <span>variant</span>
+                        <span>base_timeframe</span>
                         <input
-                          value={inst.variant}
-                          onChange={(e) => patchInstance(index, { variant: e.target.value })}
+                          value={inst.base_timeframe}
+                          onChange={(e) => patchInstance(index, { base_timeframe: e.target.value })}
                         />
                       </label>
                     </>
@@ -1188,20 +1201,13 @@ export function ComposerPanel() {
 
               <ComposerCollapsible
                 id="instance-setup"
-                title="Market & anchor"
+                title="Anchor & sides"
                 summary={joinInstanceSummaries(
-                  configDraft.instances.map(
-                    (inst) => `${inst.market.symbol} · ${inst.market.base_timeframe}`,
-                  ),
+                  configDraft.instances.map(() => ""),
                 )}
                 open={openPipelineSections.has("instance-setup")}
                 onToggle={togglePipeline}
                 hasError={
-                  anyInstancePathHasError(
-                    validationErrors,
-                    configDraft.instances.length,
-                    (i) => `${instancePath(i)}.market`,
-                  ) ||
                   anyInstancePathHasError(
                     validationErrors,
                     configDraft.instances.length,
@@ -1219,32 +1225,9 @@ export function ComposerPanel() {
                   selectedIndex={selectedIndex}
                 >
                   {(index, inst) => {
-                    const instStrategy = (inst.strategy ?? {}) as JsonObject;
+                    const instStrategy = (inst.raw_spec ?? {}) as JsonObject;
                     return (
                       <>
-                        <h4 className="composer-subhead">Market</h4>
-                        <label className="field">
-                          <span>symbol</span>
-                          <input
-                            value={inst.market.symbol}
-                            onChange={(e) =>
-                              patchInstance(index, {
-                                market: { ...inst.market, symbol: e.target.value },
-                              })
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span>base_timeframe</span>
-                          <input
-                            value={inst.market.base_timeframe}
-                            onChange={(e) =>
-                              patchInstance(index, {
-                                market: { ...inst.market, base_timeframe: e.target.value },
-                              })
-                            }
-                          />
-                        </label>
                         <h4 className="composer-subhead">Anchor stack</h4>
                         <AnchorStackFields
                           stack={(instStrategy.anchor_stack as JsonObject) ?? {}}
@@ -1268,7 +1251,7 @@ export function ComposerPanel() {
                 title="Direction"
                 summary={joinInstanceSummaries(
                   configDraft.instances.map((inst) =>
-                    singletonSummary((inst.strategy.direction as JsonObject) ?? {}),
+                    singletonSummary((inst.raw_spec.direction as JsonObject) ?? {}),
                   ),
                 )}
                 open={openPipelineSections.has("direction")}
@@ -1284,7 +1267,7 @@ export function ComposerPanel() {
                   selectedIndex={selectedIndex}
                 >
                   {(index, inst) => {
-                    const instStrategy = (inst.strategy ?? {}) as JsonObject;
+                    const instStrategy = (inst.raw_spec ?? {}) as JsonObject;
                     return (
                       <SingletonComponentSection
                         compact
@@ -1308,7 +1291,7 @@ export function ComposerPanel() {
                 title="Setup"
                 summary={joinInstanceSummaries(
                   configDraft.instances.map((inst) =>
-                    listSummary(((inst.strategy.setups as JsonObject[]) ?? []) as JsonObject[]),
+                    listSummary(((inst.raw_spec.setups as JsonObject[]) ?? []) as JsonObject[]),
                   ),
                 )}
                 open={openPipelineSections.has("setup")}
@@ -1324,7 +1307,7 @@ export function ComposerPanel() {
                   selectedIndex={selectedIndex}
                 >
                   {(index, inst) => {
-                    const instStrategy = (inst.strategy ?? {}) as JsonObject;
+                    const instStrategy = (inst.raw_spec ?? {}) as JsonObject;
                     return (
                       <ListComponentSection
                         compact
@@ -1350,7 +1333,7 @@ export function ComposerPanel() {
                 title="Trigger"
                 summary={joinInstanceSummaries(
                   configDraft.instances.map((inst) =>
-                    singletonSummary((inst.strategy.trigger as JsonObject) ?? {}),
+                    singletonSummary((inst.raw_spec.trigger as JsonObject) ?? {}),
                   ),
                 )}
                 open={openPipelineSections.has("trigger")}
@@ -1366,7 +1349,7 @@ export function ComposerPanel() {
                   selectedIndex={selectedIndex}
                 >
                   {(index, inst) => {
-                    const instStrategy = (inst.strategy ?? {}) as JsonObject;
+                    const instStrategy = (inst.raw_spec ?? {}) as JsonObject;
                     return (
                       <SingletonComponentSection
                         compact
@@ -1390,7 +1373,7 @@ export function ComposerPanel() {
                 title="Blockers"
                 summary={joinInstanceSummaries(
                   configDraft.instances.map((inst) =>
-                    listSummary(((inst.strategy.blockers as JsonObject[]) ?? []) as JsonObject[]),
+                    listSummary(((inst.raw_spec.blockers as JsonObject[]) ?? []) as JsonObject[]),
                   ),
                 )}
                 open={openPipelineSections.has("blockers")}
@@ -1406,7 +1389,7 @@ export function ComposerPanel() {
                   selectedIndex={selectedIndex}
                 >
                   {(index, inst) => {
-                    const instStrategy = (inst.strategy ?? {}) as JsonObject;
+                    const instStrategy = (inst.raw_spec ?? {}) as JsonObject;
                     return (
                       <ListComponentSection
                         compact
@@ -1431,7 +1414,7 @@ export function ComposerPanel() {
                 title="Risk"
                 summary={joinInstanceSummaries(
                   configDraft.instances.map((inst) =>
-                    singletonSummary((inst.strategy.risk as JsonObject) ?? {}),
+                    singletonSummary((inst.raw_spec.risk as JsonObject) ?? {}),
                   ),
                 )}
                 open={openPipelineSections.has("risk")}
@@ -1447,7 +1430,7 @@ export function ComposerPanel() {
                   selectedIndex={selectedIndex}
                 >
                   {(index, inst) => {
-                    const instStrategy = (inst.strategy ?? {}) as JsonObject;
+                    const instStrategy = (inst.raw_spec ?? {}) as JsonObject;
                     return (
                       <SingletonComponentSection
                         compact
@@ -1471,7 +1454,7 @@ export function ComposerPanel() {
                 title="Strategy contexts"
                 summary={joinInstanceSummaries(
                   configDraft.instances.map((inst) =>
-                    contextsSummary(readStrategyContexts((inst.strategy ?? {}) as JsonObject)),
+                    contextsSummary(readStrategyContexts((inst.raw_spec ?? {}) as JsonObject)),
                   ),
                 )}
                 open={openPipelineSections.has("strategy_contexts")}
@@ -1487,7 +1470,7 @@ export function ComposerPanel() {
                   selectedIndex={selectedIndex}
                 >
                   {(index, inst) => {
-                    const instStrategy = (inst.strategy ?? {}) as JsonObject;
+                    const instStrategy = (inst.raw_spec ?? {}) as JsonObject;
                     return (
                       <StrategyContextsSection
                         compact
@@ -1497,7 +1480,7 @@ export function ComposerPanel() {
                         errors={validationErrors}
                         onChange={(contexts) =>
                           patchInstance(index, {
-                            strategy: writeStrategyContexts(instStrategy, contexts),
+                            raw_spec: writeStrategyContexts(instStrategy, contexts),
                           })
                         }
                       />
@@ -1511,7 +1494,7 @@ export function ComposerPanel() {
                 title="Trade management / Exit policy"
                 summary={joinInstanceSummaries(
                   configDraft.instances.map((inst) =>
-                    listSummary(readAlwaysOnExits((inst.strategy ?? {}) as JsonObject)),
+                    listSummary(readAlwaysOnExits((inst.raw_spec ?? {}) as JsonObject)),
                   ),
                 )}
                 open={openPipelineSections.has("exits")}
@@ -1527,7 +1510,7 @@ export function ComposerPanel() {
                   selectedIndex={selectedIndex}
                 >
                   {(index, inst) => {
-                    const instStrategy = (inst.strategy ?? {}) as JsonObject;
+                    const instStrategy = (inst.raw_spec ?? {}) as JsonObject;
                     return (
                       <div className="composer-collapsible-inner">
                         <ExitPolicyContextConsumptionSection
@@ -1538,7 +1521,7 @@ export function ComposerPanel() {
                           errors={validationErrors}
                           onChange={(consumption) =>
                             patchInstance(index, {
-                              strategy: writeExitPolicyContextConsumption(instStrategy, consumption),
+                              raw_spec: writeExitPolicyContextConsumption(instStrategy, consumption),
                             })
                           }
                         />
@@ -1609,7 +1592,7 @@ export function ComposerPanel() {
                 title="Trade management / Exit management runtime"
                 summary={joinInstanceSummaries(
                   configDraft.instances.map((inst) => {
-                    const em = readExitManagement((inst.strategy ?? {}) as JsonObject);
+                    const em = readExitManagement((inst.raw_spec ?? {}) as JsonObject);
                     const s = summarizeExitManagementProduct(em);
                     if (exitManagementHasLegacyKeys(em)) {
                       return `unsupported legacy; rules=${s.legacyRulesCount}`;
@@ -1630,7 +1613,7 @@ export function ComposerPanel() {
                   selectedIndex={selectedIndex}
                 >
                   {(index, inst) => {
-                    const strategy = (inst.strategy ?? {}) as JsonObject;
+                    const strategy = (inst.raw_spec ?? {}) as JsonObject;
                     const pathPrefix = strategyPath(index);
                     return (
                       <ExitManagementProductPanel
@@ -1640,7 +1623,7 @@ export function ComposerPanel() {
                         errors={validationErrors}
                         onChange={(nextExitManagement) => {
                           patchInstance(index, {
-                            strategy: writeExitManagementOnStrategy(strategy, nextExitManagement),
+                            raw_spec: writeExitManagementOnStrategy(strategy, nextExitManagement),
                           });
                         }}
                       />

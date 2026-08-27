@@ -13,7 +13,7 @@ import {
   resolveChartWindowRuntime,
 } from "./chartWindowRuntime";
 import { resolveMarketWindowRuntime } from "./marketWindowRuntime";
-import { makePhase6Candles, makePhase6Report, makePhase6Variant } from "./phase6ContractFixtures";
+import { makePhase6Candles, makePhase6RunDetail } from "./phase6ContractFixtures";
 
 describe("Phase 6.1 reference stability contract guards", () => {
   beforeEach(() => {
@@ -63,9 +63,8 @@ describe("Phase 6.1 reference stability contract guards", () => {
 
   it("does not expand coverage on programmatic viewport suppression", () => {
     const view = resolveRunMarketView({
-      report: makePhase6Report(),
+      runDetail: makePhase6RunDetail(),
       chartTimeframe: "5m",
-      variant: makePhase6Variant(),
       reloadToken: 0,
     });
     const coverageWindow = {
@@ -91,12 +90,10 @@ describe("Phase 6.1 reference stability contract guards", () => {
   });
 
   it("does not promote market ready state again on repeated cache-hit cycles", async () => {
-    const report = makePhase6Report();
-    const variant = makePhase6Variant();
+    const report = makePhase6RunDetail();
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant,
       reloadToken: 0,
     });
     const viewIdentity = buildRunMarketViewIdentity(view);
@@ -114,13 +111,13 @@ describe("Phase 6.1 reference stability contract guards", () => {
 
     const harness = createMarketLoadHarness({ view, viewIdentity });
     const first = await harness.runLoad({
-      symbol: report.symbol,
+      symbol: report.result.strategy_evaluation.market.ticker,
       timeframe: "5m",
       executeLoad: async () => ({ candlesFetched: false, emaFetched: 0 }),
     });
     const candlesRevisionBefore = harness.context.controller.candlesRevision;
     const second = await harness.runLoad({
-      symbol: report.symbol,
+      symbol: report.result.strategy_evaluation.market.ticker,
       timeframe: "5m",
       executeLoad: async () => ({ candlesFetched: false, emaFetched: 0 }),
     });
@@ -229,12 +226,10 @@ describe("Phase 6.1 reference stability contract guards", () => {
   });
 
   it("preserves market window state when reset key is unchanged", () => {
-    const report = makePhase6Report();
-    const variant = makePhase6Variant();
+    const report = makePhase6RunDetail();
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant,
       reloadToken: 0,
     });
     const first = resolveMarketWindowRuntime({

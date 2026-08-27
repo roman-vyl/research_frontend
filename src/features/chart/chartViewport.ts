@@ -472,7 +472,7 @@ export function shouldSuppressPanShiftRequest(
 
 export type TradeFocusIntentKeyParams = {
   selectedTradeId: number | null;
-  selectedVariantKey: string;
+  instanceId: string;
   chartViewMode: ChartViewMode;
   centerTimeSec: number | null;
 };
@@ -491,7 +491,7 @@ export function isStaleViewportCommand(requestedSeq: number, currentSeq: number)
 
 /** User trade-focus intent — excludes render-window bounds (first/last/count). */
 export function buildTradeFocusIntentKey(params: TradeFocusIntentKeyParams): string {
-  return `${params.selectedTradeId ?? "none"}|${params.selectedVariantKey}|${params.chartViewMode}|${params.centerTimeSec ?? "none"}`;
+  return `${params.selectedTradeId ?? "none"}|${params.instanceId}|${params.chartViewMode}|${params.centerTimeSec ?? "none"}`;
 }
 
 export function tradeFocusIntentChanged(

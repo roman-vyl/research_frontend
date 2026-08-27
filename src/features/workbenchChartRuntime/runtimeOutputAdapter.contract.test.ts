@@ -61,7 +61,8 @@ describe("Phase 6.1 runtime output adapter contract", () => {
     expect(output.overlays).toBe(runtime.overlays);
     expect(output.viewport).toBe(runtime.viewport);
     expect(output.interaction).toBe(runtime.interaction);
-    expect(output.selectedVariant).toBe(compatibility.selectedVariant);
+    expect(output.strategySpec).toBe(compatibility.strategySpec);
+    expect(output.runTrades).toBe(compatibility.runTrades);
     expect(output.selectedTradeId).toBe(compatibility.selectedTradeId);
     expect(output.selectedBarTimeSec).toBe(compatibility.selectedBarTimeSec);
     expectDefinedFunctions(output);
@@ -106,7 +107,7 @@ describe("Phase 6.1 runtime output adapter contract", () => {
 
   it("documents provider-owned fields that must remain outside runtime lifecycle", () => {
     expect(PROVIDER_OWNED_WORKBENCH_CHART_FIELD_KEYS).toContain("selectTrade");
-    expect(PROVIDER_OWNED_WORKBENCH_CHART_FIELD_KEYS).toContain("selectedVariant");
+    expect(PROVIDER_OWNED_WORKBENCH_CHART_FIELD_KEYS).toContain("runTrades");
     expect(PROVIDER_OWNED_WORKBENCH_CHART_FIELD_KEYS).not.toContain("chartViewModel");
   });
 

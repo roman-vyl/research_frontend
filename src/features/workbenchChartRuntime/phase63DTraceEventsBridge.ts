@@ -1,4 +1,4 @@
-import type { ChartBar, ComponentEvent, RunReport, SignalTraceBundle, HtfContextTrace } from "@/api/types";
+import type { ChartBar, ComponentEvent, RunDetail, SignalTraceBundle, HtfContextTrace } from "@/api/types";
 import { candleTimeBounds } from "@/features/chart/chartRenderWindowDisplay";
 import type { RenderWindowInteractionState } from "@/features/chart/runtime/types";
 import {
@@ -62,7 +62,7 @@ export function resetPhase63DTraceSessionCache(
 
 export function buildPhase63DTraceDisplayCacheKey(input: {
   selectedRunId: string;
-  selectedVariantKey: string;
+  instanceId: string;
   effectiveContextOverlayRef: string | null;
 }): string {
   return buildTraceDisplayCacheKeyForRuntime(input);
@@ -70,7 +70,7 @@ export function buildPhase63DTraceDisplayCacheKey(input: {
 
 export function buildPhase63DSessionCacheIdentity(input: {
   selectedRunId: string;
-  selectedVariantKey: string;
+  instanceId: string;
   effectiveContextOverlayRef: string | null;
   reloadToken: number;
   marketIdentity: string | null;
@@ -223,16 +223,16 @@ export async function runPhase63DTraceLoadCycle(
   owner: Phase63DTraceEventsOwnerState,
   input: Omit<TraceLoadCycleInput, "traceController" | "displayController"> & {
     coalescedWindowKey?: string | null;
-    report: RunReport | null;
+    runDetail: RunDetail | null;
     reportLoadStatus: "idle" | "loading" | "ready" | "error";
     telemetryMeta: Phase63DTraceLoadTelemetryMeta;
   },
 ): Promise<TraceLoadCycleResult> {
   const bootstrap = evaluateSignalTraceBootstrap({
-    report: input.report as Parameters<typeof evaluateSignalTraceBootstrap>[0]["report"],
+    runDetail: input.runDetail,
     reportLoadStatus: input.reportLoadStatus,
     selectedRunId: input.selectedRunId,
-    selectedVariantKey: input.selectedVariantKey,
+    instanceId: input.instanceId,
     marketLoadStatus: input.marketLoadStatus,
     runMarketViewIdentity: input.runMarketViewIdentity,
     expectedRunMarketViewIdentity: input.expectedRunMarketViewIdentity,

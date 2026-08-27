@@ -54,7 +54,7 @@ describe("trace display apply lifecycle", () => {
       {
         times: bars.map((bar) => bar.time),
         meta: {
-          variant: "v1",
+          instance_id: "v1",
           component_ids: {
             direction: "d",
             setups: [],
@@ -109,7 +109,7 @@ describe("trace display apply lifecycle", () => {
     mergeDisplayChunkFromResponse(cache, {
       times: coveredBars.map((bar) => bar.time),
       meta: {
-        variant: "v1",
+        instance_id: "v1",
         component_ids: {
           direction: "d",
           setups: [],
@@ -183,7 +183,7 @@ describe("trace display apply lifecycle", () => {
     mergeDisplayChunkFromResponse(cache, {
       times: coveredBars.map((bar) => bar.time),
       meta: {
-        variant: "v1",
+        instance_id: "v1",
         component_ids: {
           direction: "d",
           setups: [],

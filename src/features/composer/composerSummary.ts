@@ -1,4 +1,4 @@
-import type { ComponentCatalog, JsonObject, StrategyInstanceDraft } from "@/api/types";
+import type { ComponentCatalog, DeployableStrategyInstance, JsonObject } from "@/api/types";
 
 import { findComponentSchema } from "./composerDraft";
 
@@ -97,10 +97,10 @@ export function buildPipelineSteps(
 }
 
 export function instanceCardMeta(
-  inst: StrategyInstanceDraft,
+  inst: DeployableStrategyInstance,
   catalog: ComponentCatalog,
 ): { sides: string; blockerCount: number; exitCount: number; direction: string } {
-  const strategy = inst.strategy as JsonObject;
+  const strategy = inst.raw_spec as JsonObject;
   const blockers = (strategy.blockers as JsonObject[] | undefined) ?? [];
   const tradeManagement = (strategy.trade_management as JsonObject | undefined) ?? {};
   const exitPolicy = (tradeManagement.exit_policy as JsonObject | undefined) ?? {};

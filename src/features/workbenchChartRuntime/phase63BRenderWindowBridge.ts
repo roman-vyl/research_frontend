@@ -41,7 +41,7 @@ export function runPhase63BRenderWindowInit(
     marketLoadStatus: RuntimeLoadStatus;
     bundleCandles: readonly ChartBar[];
     selectedTradeEntryTimeMs: number | null;
-    variantKey: string;
+    instanceId: string;
   },
 ): boolean {
   const initialized = initializeRenderWindowRuntime(state.controller, {
@@ -53,7 +53,7 @@ export function runPhase63BRenderWindowInit(
   if (initialized && input.marketLoadStatus !== "error") {
     dbgMarkCutover(DBG.load.renderWindowInit, "render_window", {
       fullLength: input.bundleCandles.length,
-      variant: input.variantKey,
+      instanceId: input.instanceId,
     });
   }
   return initialized;

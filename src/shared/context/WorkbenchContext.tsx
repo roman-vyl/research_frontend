@@ -16,8 +16,11 @@ import {
 import {
   ApiError,
   fetchConfigState,
-  fetchRunReport,
+  fetchManagedPolicyEvents,
+  fetchRunDetail,
+  fetchRunMetrics,
   fetchRunSummaries,
+  fetchRunTrades,
   selectSavedConfig,
 } from "@/api/client";
 import {
@@ -25,16 +28,17 @@ import {
   type ChartBar,
   type ConfigListEntry,
   type ConfigStateResponse,
-  type RunReport,
+  type ManagedPolicyEvent,
+  type RunDetail,
+  type RunMetrics,
   type RunSummary,
-  type RunVariant,
   type TradeRecord,
   type SignalTraceBundle,
   type ComponentEvent,
   type StrategyConfigDraft,
   type WorkbenchTab,
 } from "@/api/types";
-import { COMPOSER_DEFAULT_FAMILY, createBlankConfigDraft } from "@/features/composer/composerDraft";
+import { COMPOSER_DEFAULT_STRATEGY_ID, createBlankConfigDraft } from "@/features/composer/composerDraft";
 import { resolveChartTimeframeMs } from "@/features/chart/chartTimeframeMs";
 import { getCandles } from "@/features/chart/marketResourceCache";
 import type { WindowCommitResult } from "@/features/chart/runtime/chartRuntime";
@@ -63,16 +67,13 @@ import {
 } from "@/features/chart/traceDisplayApply";
 import {
   defaultClosedTradeSelection,
-  deriveSelectedVariant,
   findTradeById,
   formatTradeDisplayNumber,
-  isTradeInVariant,
+  isKnownTrade,
   resolveSelectedTradeEntryTimeMs,
   resolveTradeEntryTimeMs,
-  resolveVariantKeyForReport,
-  tradeIdsEqual,
 } from "@/features/chart/tradeLookup";
-import { hasTradeManagementEvents } from "@/features/chart/tradeManagementChartEvents";
+import { hasManagedPolicyEvents } from "@/features/chart/tradeManagementChartEvents";
 import {
   buildRunMarketViewIdentity,
   resolveRunMarketView,
@@ -137,6 +138,16 @@ import {
   type Phase63DTraceEventsOwnerState,
 } from "@/features/workbenchChartRuntime/phase63DTraceEventsBridge";
 export type ReportLoadStatus = "loading" | "ready" | "error";
+/**
+ * managed-policy-events is an optional chart-diagnostics projection, not part
+ * of core run identity — a legacy artifact bundle (predates
+ * managed_policy_events.json) or a transient failure here must not block the
+ * run from loading. "unavailable" is the backend's explicit
+ * managed_policy_trace_unavailable (404) for legacy bundles, distinguished
+ * from "error" (unexpected failure) and "ready" with an empty array (managed
+ * policy simply wasn't enabled for this run).
+ */
+export type ManagedPolicyEventsLoadStatus = "idle" | "loading" | "ready" | "unavailable" | "error";
 export type ConfigLoadStatus = "loading" | "ready" | "empty" | "error";
 export type MarketLoadStatus = "idle" | "loading" | "ready" | "error";
 export type CandlesSource = "market" | "unavailable";
@@ -157,7 +168,12 @@ type WorkbenchState = {
   runs: RunSummary[];
   selectedRunId: string | null;
   setSelectedRunId: (runId: string) => void;
-  report: RunReport | null;
+  runDetail: RunDetail | null;
+  instanceId: string | null;
+  runTrades: TradeRecord[];
+  runMetrics: RunMetrics | null;
+  managedPolicyEvents: ManagedPolicyEvent[];
+  managedPolicyEventsLoadStatus: ManagedPolicyEventsLoadStatus;
   /** Renderer-facing projection; prefer over individual chart* fields in ChartPanel. */
   chartViewModel: ChartViewModel;
   htfAuxEmaOverlayStale: boolean;
@@ -176,11 +192,8 @@ type WorkbenchState = {
   marketCandlesCount: number;
   fullCandleRange: { min: number; max: number } | null;
   candlesSource: CandlesSource;
-  selectedVariantKey: string;
-  setSelectedVariantKey: (key: string) => void;
   selectedTradeId: number | string | null;
   selectTrade: (tradeId: number | string | null) => void;
-  selectedVariant: RunVariant | null;
   configDraft: StrategyConfigDraft | null;
   setConfigDraft: (draft: StrategyConfigDraft) => void;
   configLoadStatus: ConfigLoadStatus;
@@ -213,15 +226,13 @@ type WorkbenchReportState = Pick<
   WorkbenchState,
   | "symbol"
   | "timeframe"
-  | "report"
+  | "runDetail"
+  | "instanceId"
   | "runs"
   | "selectedRunId"
   | "setSelectedRunId"
-  | "selectedVariantKey"
-  | "setSelectedVariantKey"
   | "selectedTradeId"
   | "selectTrade"
-  | "selectedVariant"
 >;
 
 type WorkbenchComposerState = Pick<
@@ -263,7 +274,11 @@ type WorkbenchChartState = Pick<
   | "marketCandlesCount"
   | "fullCandleRange"
   | "candlesSource"
-  | "selectedVariant"
+  | "runDetail"
+  | "runTrades"
+  | "runMetrics"
+  | "managedPolicyEvents"
+  | "managedPolicyEventsLoadStatus"
   | "selectedTradeId"
   | "selectTrade"
   | "contextOverlayRef"
@@ -294,6 +309,7 @@ const EMPTY_RUNS_HINT =
   "python -m research.strategies.ema_pullback.run --config <path>, " +
   "then refresh.";
 
+/** Backend returns runs newest-first by created_at_utc; the first entry is the default run. */
 function pickDefaultRunId(runs: RunSummary[]): string | null {
   if (runs.length === 0) return null;
   return runs[0].run_id;
@@ -369,8 +385,12 @@ function WorkbenchProviderInner({
     useState(false);
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [selectedRunId, setSelectedRunIdState] = useState<string | null>(null);
-  const [report, setReport] = useState<RunReport | null>(null);
-  const [selectedVariantKey, setSelectedVariantKeyState] = useState("");
+  const [runDetail, setRunDetail] = useState<RunDetail | null>(null);
+  const [runTrades, setRunTrades] = useState<TradeRecord[]>([]);
+  const [runMetrics, setRunMetrics] = useState<RunMetrics | null>(null);
+  const [managedPolicyEvents, setManagedPolicyEvents] = useState<ManagedPolicyEvent[]>([]);
+  const [managedPolicyEventsLoadStatus, setManagedPolicyEventsLoadStatus] =
+    useState<ManagedPolicyEventsLoadStatus>("idle");
   const [selectedTradeId, setSelectedTradeId] = useState<number | string | null>(null);
   const [selectedBarTimeSec, setSelectedBarTimeSec] = useState<number | null>(null);
   const [signalTrace, setSignalTrace] = useState<SignalTraceBundle | null>(null);
@@ -381,9 +401,7 @@ function WorkbenchProviderInner({
   const selectedTradeIdRef = useRef<number | string | null>(null);
   const applyTraceDisplayRef = useRef<() => void>(() => {});
   const [reloadToken, setReloadToken] = useState(0);
-  const prevVariantKeyRef = useRef("");
   const prevRunIdForTradeBootstrapRef = useRef<string | null>(null);
-  const selectedVariantKeyRef = useRef("");
 
   useEffect(() => {
     if (activeTab === "chart") {
@@ -393,30 +411,11 @@ function WorkbenchProviderInner({
 
   const chartHeavyIoEnabled = activeTab === "chart" || hasChartEverActivated;
 
-  useEffect(() => {
-    selectedVariantKeyRef.current = selectedVariantKey;
-  }, [selectedVariantKey]);
-
   const applyTradeFocusSelection = useCallback((trades: readonly TradeRecord[]) => {
     const { tradeId, barTimeSec } = defaultClosedTradeSelection(trades);
     setSelectedTradeId(tradeId);
     setSelectedBarTimeSec(barTimeSec);
   }, []);
-
-  const setSelectedVariantKey = useCallback(
-    (key: string) => {
-      selectedVariantKeyRef.current = key;
-      setSelectedVariantKeyState(key);
-      if (report === null) {
-        return;
-      }
-      const variant = deriveSelectedVariant(report, key);
-      if (variant !== null) {
-        applyTradeFocusSelection(variant.trade_records);
-      }
-    },
-    [report, applyTradeFocusSelection],
-  );
 
   const applyConfigState = useCallback((state: ConfigStateResponse) => {
     setConfigList(state.configs);
@@ -440,7 +439,7 @@ function WorkbenchProviderInner({
   const reloadConfig = useCallback(async () => {
     setConfigLoadStatus((status) => (status === "ready" ? status : "loading"));
     try {
-      const state = await fetchConfigState(COMPOSER_DEFAULT_FAMILY);
+      const state = await fetchConfigState(COMPOSER_DEFAULT_STRATEGY_ID);
       applyConfigState(state);
     } catch (err) {
       setConfigLoadError(
@@ -453,7 +452,7 @@ function WorkbenchProviderInner({
   const selectConfig = useCallback(
     async (experimentId: string) => {
       try {
-        const state = await selectSavedConfig(COMPOSER_DEFAULT_FAMILY, experimentId);
+        const state = await selectSavedConfig(COMPOSER_DEFAULT_STRATEGY_ID, experimentId);
         applyConfigState(state);
         setConfigLoadError(null);
       } catch (err) {
@@ -466,7 +465,7 @@ function WorkbenchProviderInner({
   );
 
   const createNewConfig = useCallback(() => {
-    setConfigDraft(createBlankConfigDraft(COMPOSER_DEFAULT_FAMILY));
+    setConfigDraft(createBlankConfigDraft(COMPOSER_DEFAULT_STRATEGY_ID));
     setSelectedConfigPath(null);
     setConfigLoadStatus("ready");
     setConfigLoadError(null);
@@ -477,7 +476,7 @@ function WorkbenchProviderInner({
   }, [reloadConfig]);
 
   const chartTimeframe = CHART_MARKET_TIMEFRAME;
-  const reportTimeframe = report?.timeframe ?? null;
+  const reportTimeframe = runDetail?.result.strategy_evaluation.market.timeframe ?? null;
   const timeframeMismatch =
     reportTimeframe !== null && reportTimeframe !== chartTimeframe;
 
@@ -494,9 +493,15 @@ function WorkbenchProviderInner({
       setReportError(null);
       resetPhase63FMarketLoadOwner(phase63FMarketLoadOwner());
       try {
-        const loaded = await fetchRunReport(runId);
+        const [detail, trades, metrics] = await Promise.all([
+          fetchRunDetail(runId),
+          fetchRunTrades(runId),
+          fetchRunMetrics(runId),
+        ]);
         if (cancelled) return;
-        setReport(loaded);
+        setRunDetail(detail);
+        setRunTrades(trades.trades);
+        setRunMetrics(metrics);
         setReportLoadStatus("ready");
       } catch (err) {
         if (cancelled) return;
@@ -506,13 +511,48 @@ function WorkbenchProviderInner({
             : err instanceof Error
               ? err.message
               : "Failed to load run report.";
-        setReport(null);
+        setRunDetail(null);
+        setRunTrades([]);
+        setRunMetrics(null);
         setReportError(message);
         setReportLoadStatus("error");
       }
     }
 
     void loadReportRemote();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRunId, reloadToken]);
+
+  // Optional chart-diagnostics projection — must not gate core run loading
+  // (reportLoadStatus above). A legacy artifact bundle without
+  // managed_policy_events.json, or a transient failure here, leaves the run
+  // itself fully usable; only chart-layer managed-policy markers go missing.
+  useEffect(() => {
+    if (selectedRunId === null) {
+      setManagedPolicyEvents([]);
+      setManagedPolicyEventsLoadStatus("idle");
+      return;
+    }
+    const runId = selectedRunId;
+    let cancelled = false;
+
+    async function loadManagedPolicyEventsRemote() {
+      setManagedPolicyEventsLoadStatus("loading");
+      try {
+        const trace = await fetchManagedPolicyEvents({ runId });
+        if (cancelled) return;
+        setManagedPolicyEvents(trace.events);
+        setManagedPolicyEventsLoadStatus("ready");
+      } catch (err) {
+        if (cancelled) return;
+        setManagedPolicyEvents([]);
+        setManagedPolicyEventsLoadStatus(err instanceof ApiError && err.status === 404 ? "unavailable" : "error");
+      }
+    }
+
+    void loadManagedPolicyEventsRemote();
     return () => {
       cancelled = true;
     };
@@ -547,7 +587,11 @@ function WorkbenchProviderInner({
         setRuns(listed);
         const defaultRunId = pickDefaultRunId(listed);
         if (defaultRunId === null) {
-          setReport(null);
+          setRunDetail(null);
+          setRunTrades([]);
+          setRunMetrics(null);
+          setManagedPolicyEvents([]);
+          setManagedPolicyEventsLoadStatus("idle");
           setSelectedRunIdState(null);
           setReportError(EMPTY_RUNS_HINT);
           setReportLoadStatus("error");
@@ -579,72 +623,53 @@ function WorkbenchProviderInner({
     };
   }, [reloadToken]);
 
-  const selectedVariant = useMemo(
-    () => deriveSelectedVariant(report, selectedVariantKey),
-    [report, selectedVariantKey],
-  );
+  const instanceId = runDetail?.manifest.instance_id ?? null;
 
   const expectedRunMarketViewIdentity = useMemo((): RunMarketViewIdentity | null => {
     if (
       reportLoadStatus !== "ready" ||
-      report === null ||
-      selectedVariant === null ||
+      runDetail === null ||
       selectedRunId === null ||
-      report.run_id !== selectedRunId
+      runDetail.manifest.run_id !== selectedRunId
     ) {
       return null;
     }
     try {
       return buildRunMarketViewIdentity(
         resolveRunMarketView({
-          report,
+          runDetail,
           chartTimeframe,
-          variant: selectedVariant,
           reloadToken,
         }),
       );
     } catch {
       return null;
     }
-  }, [reportLoadStatus, report, selectedVariant, selectedRunId, chartTimeframe, reloadToken]);
+  }, [reportLoadStatus, runDetail, selectedRunId, chartTimeframe, reloadToken]);
 
+  // Default/refresh trade focus whenever the run (and therefore its trades) changes.
   useEffect(() => {
-    if (report === null) {
+    if (runDetail === null) {
       return;
     }
-    const next = resolveVariantKeyForReport(report, selectedVariantKeyRef.current);
-    setSelectedVariantKeyState(next);
-    selectedVariantKeyRef.current = next;
-  }, [report]);
-
-  useEffect(() => {
-    if (report === null) {
-      return;
-    }
-    const variant = deriveSelectedVariant(report, selectedVariantKey);
-    if (variant === null) {
-      return;
-    }
-    const runId = report.run_id;
-    const variantChanged = prevVariantKeyRef.current !== selectedVariantKey;
+    const runId = runDetail.manifest.run_id;
     const runChanged = prevRunIdForTradeBootstrapRef.current !== runId;
-    if (!variantChanged && !runChanged) {
+    if (!runChanged) {
       return;
     }
-    prevVariantKeyRef.current = selectedVariantKey;
     prevRunIdForTradeBootstrapRef.current = runId;
-    applyTradeFocusSelection(variant.trade_records);
-  }, [report, report?.run_id, selectedVariantKey, applyTradeFocusSelection]);
+    applyTradeFocusSelection(runTrades);
+  }, [runDetail, runTrades, applyTradeFocusSelection]);
 
   useLayoutEffect(() => {
-    if (!selectedVariant || selectedTradeId === null) {
+    if (selectedTradeId === null) {
       return;
     }
-    if (isTradeInVariant(selectedVariant.trade_records, selectedTradeId)) {
+    if (isKnownTrade(runTrades, selectedTradeId)) {
       return;
     }
-    applyTradeFocusSelection(selectedVariant.trade_records);
-  }, [selectedVariant, selectedTradeId, selectedVariantKey, applyTradeFocusSelection]);
+    applyTradeFocusSelection(runTrades);
+  }, [runTrades, selectedTradeId, applyTradeFocusSelection]);
 
   const chartTimeframeMs = useMemo(
     () => resolveChartTimeframeMs(chartTimeframe),
@@ -666,50 +691,46 @@ function WorkbenchProviderInner({
   }, []);
 
   const selectedTradeResolution = useMemo(() => {
-    if (selectedTradeId === null || !selectedVariant) {
+    if (selectedTradeId === null) {
       return {
         trade: undefined,
         entryTimeMs: null as number | null,
         warning: null as string | null,
       };
     }
-    const { trade, entryTimeMs } = resolveSelectedTradeEntryTimeMs(
-      selectedVariant.trade_records,
-      selectedTradeId,
-    );
+    const { trade, entryTimeMs } = resolveSelectedTradeEntryTimeMs(runTrades, selectedTradeId);
     if (!trade) {
       return {
         trade: undefined,
         entryTimeMs: null,
-        warning: `Trade #${formatTradeDisplayNumber(selectedVariant.trade_records, selectedTradeId)} not found in variant trade_records.`,
+        warning: `Trade #${formatTradeDisplayNumber(runTrades, selectedTradeId)} not found in run trades.`,
       };
     }
     if (entryTimeMs === null) {
       return {
         trade,
         entryTimeMs: null,
-        warning: `Trade #${formatTradeDisplayNumber(selectedVariant.trade_records, trade.trade_id)} has no valid entry_time_ms in report.`,
+        warning: `Trade #${formatTradeDisplayNumber(runTrades, trade.trade_id)} has no valid entry_time_ms in run trades.`,
       };
     }
     return { trade, entryTimeMs, warning: null };
-  }, [selectedVariant, selectedTradeId]);
+  }, [runTrades, selectedTradeId]);
 
   const selectedTradeEntryTimeMs = selectedTradeResolution.entryTimeMs;
   const chartTradeFocusWarning = selectedTradeResolution.warning;
 
   const intendedRunMarketView = useMemo((): RunMarketView | null => {
-    if (report === null || selectedVariant === null) return null;
+    if (runDetail === null) return null;
     try {
       return resolveRunMarketView({
-        report,
+        runDetail,
         chartTimeframe,
-        variant: selectedVariant,
         reloadToken,
       });
     } catch {
       return null;
     }
-  }, [report, selectedVariant, chartTimeframe, reloadToken]);
+  }, [runDetail, chartTimeframe, reloadToken]);
 
   const intendedRunMarketViewIdentity = useMemo((): RunMarketViewIdentity | null => {
     if (intendedRunMarketView === null) return null;
@@ -744,7 +765,7 @@ function WorkbenchProviderInner({
   const marketCoverageWindowKey = marketTargetWindows?.coverageWindowKey ?? null;
 
   useEffect(() => {
-    if (report === null || reportLoadStatus !== "ready" || selectedVariant === null) {
+    if (runDetail === null || reportLoadStatus !== "ready") {
       return;
     }
     if (!chartHeavyIoEnabled) {
@@ -757,13 +778,12 @@ function WorkbenchProviderInner({
       return;
     }
 
-    const snapshot: RunReport = report;
+    const snapshot: RunDetail = runDetail;
     const abortController = new AbortController();
     const owner = phase63FMarketLoadOwner();
     const resolvedView = resolvePhase63FMarketView({
-      report: snapshot,
+      runDetail: snapshot,
       chartTimeframe,
-      variant: selectedVariant,
       reloadToken,
     });
     if (resolvedView.outcome === "error") {
@@ -780,7 +800,7 @@ function WorkbenchProviderInner({
         viewIdentity,
         focusWindow,
         coverageWindow,
-        symbol: snapshot.symbol,
+        symbol: snapshot.result.strategy_evaluation.market.ticker,
         timeframe: chartTimeframe,
         signal: abortController.signal,
         onChunkSeeded: () => {
@@ -808,11 +828,10 @@ function WorkbenchProviderInner({
       cancelPhase63FMarketLoad(owner);
     };
   }, [
-    report,
+    runDetail,
     reportLoadStatus,
     chartTimeframe,
     reloadToken,
-    selectedVariantKey,
     chartHeavyIoEnabled,
     marketCoverageWindowKey,
   ]);
@@ -874,15 +893,13 @@ function WorkbenchProviderInner({
       if (slice.length > 0 && selectedRunId !== null) {
         const overlay =
           contextOverlayRef ??
-          (selectedVariant
-            ? defaultChartContextOverlayRef(selectedVariant.strategy_spec)
-            : null) ??
+          (runDetail ? defaultChartContextOverlayRef(runDetail.strategy_spec) : null) ??
           "";
-        const windowKey = `${selectedRunId}:${selectedVariantKey}:${slice[0]!.time}:${slice[slice.length - 1]!.time}:${overlay}`;
+        const windowKey = `${selectedRunId}:${instanceId ?? ""}:${slice[0]!.time}:${slice[slice.length - 1]!.time}:${overlay}`;
         queueTraceFetchIntent(windowKey);
       }
     },
-    [selectedRunId, selectedVariantKey, contextOverlayRef, selectedVariant],
+    [selectedRunId, instanceId, contextOverlayRef, runDetail],
   );
 
   const onPanPrefetch = useCallback(
@@ -935,7 +952,7 @@ function WorkbenchProviderInner({
       marketFocusWindow,
       marketCoverageWindow,
       selectedRunId,
-      selectedVariantKey,
+      instanceId,
       selectedTradeEntryTimeMs,
       selectedTradeId,
       chartHeavyIoEnabled,
@@ -958,7 +975,7 @@ function WorkbenchProviderInner({
       marketFocusWindow,
       marketCoverageWindow,
       selectedRunId,
-      selectedVariantKey,
+      instanceId,
       selectedTradeEntryTimeMs,
       selectedTradeId,
       chartHeavyIoEnabled,
@@ -1027,9 +1044,12 @@ function WorkbenchProviderInner({
         runs={runs}
         selectedRunId={selectedRunId}
         setSelectedRunId={setSelectedRunId}
-        report={report}
-        selectedVariantKey={selectedVariantKey}
-        setSelectedVariantKey={setSelectedVariantKey}
+        runDetail={runDetail}
+        instanceId={instanceId}
+        runTrades={runTrades}
+        runMetrics={runMetrics}
+        managedPolicyEvents={managedPolicyEvents}
+        managedPolicyEventsLoadStatus={managedPolicyEventsLoadStatus}
         selectedTradeId={selectedTradeId}
         setSelectedTradeId={setSelectedTradeId}
         selectedBarTimeSec={selectedBarTimeSec}
@@ -1047,7 +1067,6 @@ function WorkbenchProviderInner({
         applyTraceDisplayRef={applyTraceDisplayRef}
         reloadReport={reloadReport}
         refreshRunsAndSelectRun={refreshRunsAndSelectRun}
-        selectedVariant={selectedVariant}
         chartTradeFocusWarning={chartTradeFocusWarning}
         chartHeavyIoEnabled={chartHeavyIoEnabled}
         chartTimeframe={chartTimeframe}
@@ -1111,9 +1130,12 @@ type WorkbenchProviderContextsProps = {
   runs: RunSummary[];
   selectedRunId: string | null;
   setSelectedRunId: (runId: string) => void;
-  report: RunReport | null;
-  selectedVariantKey: string;
-  setSelectedVariantKey: (key: string) => void;
+  runDetail: RunDetail | null;
+  instanceId: string | null;
+  runTrades: TradeRecord[];
+  runMetrics: RunMetrics | null;
+  managedPolicyEvents: ManagedPolicyEvent[];
+  managedPolicyEventsLoadStatus: ManagedPolicyEventsLoadStatus;
   selectedTradeId: number | string | null;
   setSelectedTradeId: (id: number | string | null) => void;
   selectedBarTimeSec: number | null;
@@ -1131,7 +1153,6 @@ type WorkbenchProviderContextsProps = {
   applyTraceDisplayRef: MutableRefObject<() => void>;
   reloadReport: () => void;
   refreshRunsAndSelectRun: (runId: string) => Promise<void>;
-  selectedVariant: RunVariant | null;
   chartTradeFocusWarning: string | null;
   chartHeavyIoEnabled: boolean;
   chartTimeframe: string;
@@ -1189,9 +1210,12 @@ function WorkbenchProviderContexts({
   runs,
   selectedRunId,
   setSelectedRunId,
-  report,
-  selectedVariantKey,
-  setSelectedVariantKey,
+  runDetail,
+  instanceId,
+  runTrades,
+  runMetrics,
+  managedPolicyEvents,
+  managedPolicyEventsLoadStatus,
   selectedTradeId,
   setSelectedTradeId,
   selectedBarTimeSec,
@@ -1209,7 +1233,6 @@ function WorkbenchProviderContexts({
   applyTraceDisplayRef,
   reloadReport,
   refreshRunsAndSelectRun,
-  selectedVariant,
   chartTradeFocusWarning,
   chartHeavyIoEnabled,
   chartTimeframe,
@@ -1230,14 +1253,14 @@ function WorkbenchProviderContexts({
   const traceDisplayCache = () => phase63DTraceOwner().traceDisplayController.cache;
 
   const contextOverlayRefOptions = useMemo(() => {
-    if (!selectedVariant) return [];
-    return strategyContextRefOptions(selectedVariant.strategy_spec);
-  }, [selectedVariant]);
+    if (!runDetail) return [];
+    return strategyContextRefOptions(runDetail.strategy_spec);
+  }, [runDetail]);
 
   const defaultContextOverlayRef = useMemo(() => {
-    if (!selectedVariant) return null;
-    return defaultChartContextOverlayRef(selectedVariant.strategy_spec);
-  }, [selectedVariant]);
+    if (!runDetail) return null;
+    return defaultChartContextOverlayRef(runDetail.strategy_spec);
+  }, [runDetail]);
 
   /** Resolved ref for trace + HTF overlays (avoids one-frame null before default effect runs). */
   const effectiveContextOverlayRef = contextOverlayRef ?? defaultContextOverlayRef;
@@ -1249,21 +1272,21 @@ function WorkbenchProviderContexts({
   }, [contextOverlayRef, contextOverlayRefOptions]);
 
   useEffect(() => {
-    if (!selectedVariant) {
+    if (!runDetail) {
       setContextOverlayRef(null);
       return;
     }
-    setContextOverlayRef(defaultChartContextOverlayRef(selectedVariant.strategy_spec));
-  }, [selectedRunId, selectedVariantKey, selectedVariant]);
+    setContextOverlayRef(defaultChartContextOverlayRef(runDetail.strategy_spec));
+  }, [selectedRunId, runDetail]);
 
   useEffect(() => {
     syncPhase63EAuxOverlaySpecs(phase63EAuxOverlayOwner(), {
-      selectedVariant,
+      strategySpec: runDetail?.strategy_spec ?? null,
       chartTimeframe,
       effectiveContextOverlayRef,
     });
     setAuxOverlayRevision((revision) => revision + 1);
-  }, [selectedVariant, chartTimeframe, effectiveContextOverlayRef]);
+  }, [runDetail, chartTimeframe, effectiveContextOverlayRef]);
 
   const finalizeTraceDisplayUpdate = useCallback(() => {
     applyTraceDisplayRef.current();
@@ -1277,9 +1300,9 @@ function WorkbenchProviderContexts({
     const candles = chartView.candles;
     const selectedTradeIdSnapshot = selectedTradeIdRef.current;
     const selectedTradeEntryTimeSec =
-      selectedTradeIdSnapshot !== null && selectedVariant
+      selectedTradeIdSnapshot !== null
         ? (() => {
-            const trade = findTradeById(selectedVariant.trade_records, selectedTradeIdSnapshot);
+            const trade = findTradeById(runTrades, selectedTradeIdSnapshot);
             const entryMs = trade ? resolveTradeEntryTimeMs(trade) : null;
             return entryMs !== null ? Math.floor(entryMs / 1000) : null;
           })()
@@ -1291,12 +1314,8 @@ function WorkbenchProviderContexts({
       selectedTradeId: selectedTradeIdSnapshot,
       selectedTradeEntryTimeSec,
       selectedTradeEntryMarkerInView:
-        selectedVariant !== null && selectedTradeIdSnapshot !== null
-          ? selectedTradeEntryMarkerInView(
-              selectedVariant.trade_records,
-              selectedTradeIdSnapshot,
-              candles,
-            )
+        selectedTradeIdSnapshot !== null
+          ? selectedTradeEntryMarkerInView(runTrades, selectedTradeIdSnapshot, candles)
           : false,
     });
 
@@ -1311,7 +1330,7 @@ function WorkbenchProviderContexts({
       }
     }
   }, [
-    selectedVariant,
+    runTrades,
     phase63DTraceOwner,
     chartView.candles,
     signalTraceStatusRef,
@@ -1349,7 +1368,7 @@ function WorkbenchProviderContexts({
     const owner = phase63EAuxOverlayOwner();
     if (
       marketLoadStatus !== "ready" ||
-      report === null ||
+      runDetail === null ||
       owner.controller.auxEmaSpecs.length === 0
     ) {
       resetPhase63EAuxOverlayOwner(owner);
@@ -1364,7 +1383,7 @@ function WorkbenchProviderContexts({
       const result = await runPhase63ELoadBffAuxOverlays(owner, {
         chartHeavyIoEnabled,
         marketLoadStatus,
-        report,
+        runDetail,
         chartTimeframe,
         signal: abortController.signal,
       });
@@ -1385,7 +1404,7 @@ function WorkbenchProviderContexts({
       cancelled = true;
       abortController.abort();
     };
-  }, [marketLoadStatus, report, chartTimeframe, chartHeavyIoEnabled, selectedVariant, effectiveContextOverlayRef]);
+  }, [marketLoadStatus, runDetail, chartTimeframe, chartHeavyIoEnabled, effectiveContextOverlayRef]);
 
   useEffect(() => {
     const changed = runPhase63ESyncHtfOverlaysFromTraceFallback(phase63EAuxOverlayOwner(), {
@@ -1406,15 +1425,11 @@ function WorkbenchProviderContexts({
   ]);
 
   const traceDisplayCacheKey = useMemo(() => {
-    if (selectedRunId === null || selectedVariantKey === "") {
+    if (selectedRunId === null || instanceId === null) {
       return null;
     }
-    return buildTraceDisplayCacheKey(
-      selectedRunId,
-      selectedVariantKey,
-      effectiveContextOverlayRef,
-    );
-  }, [selectedRunId, selectedVariantKey, effectiveContextOverlayRef]);
+    return buildTraceDisplayCacheKey(selectedRunId, instanceId, effectiveContextOverlayRef);
+  }, [selectedRunId, instanceId, effectiveContextOverlayRef]);
 
   useEffect(() => {
     if (traceDisplayCacheKey === null) {
@@ -1429,19 +1444,19 @@ function WorkbenchProviderContexts({
   }, [traceDisplayCacheKey, reloadToken]);
 
   const sessionCacheIdentity = useMemo(() => {
-    if (selectedRunId === null || selectedVariantKey === "") {
+    if (selectedRunId === null || instanceId === null) {
       return null;
     }
     return buildSessionCacheIdentity(
       selectedRunId,
-      selectedVariantKey,
+      instanceId,
       effectiveContextOverlayRef,
       reloadToken,
       intendedRunMarketViewIdentity ?? runMarketViewIdentity,
     );
   }, [
     selectedRunId,
-    selectedVariantKey,
+    instanceId,
     effectiveContextOverlayRef,
     reloadToken,
     intendedRunMarketViewIdentity,
@@ -1462,8 +1477,8 @@ function WorkbenchProviderContexts({
     const first = chartView.candles[0]!.time;
     const last = chartView.candles[chartView.candles.length - 1]!.time;
     const overlay = effectiveContextOverlayRef ?? "";
-    return `${selectedRunId}:${selectedVariantKey}:${first}:${last}:${overlay}`;
-  }, [chartView.candles, selectedRunId, selectedVariantKey, effectiveContextOverlayRef]);
+    return `${selectedRunId}:${instanceId ?? ""}:${first}:${last}:${overlay}`;
+  }, [chartView.candles, selectedRunId, instanceId, effectiveContextOverlayRef]);
 
   const renderWindowBoundsKey = useMemo(() => {
     if (renderWindowBounds === null || chartView.count === 0) {
@@ -1595,8 +1610,8 @@ function WorkbenchProviderContexts({
   const selectTrade = useCallback(
     (tradeId: number | string | null) => {
       let entryTimeSec: number | null = null;
-      if (tradeId !== null && selectedVariant) {
-        const trade = findTradeById(selectedVariant.trade_records, tradeId);
+      const trade = tradeId !== null ? findTradeById(runTrades, tradeId) : undefined;
+      if (trade) {
         const entryTimeMs = resolveTradeEntryTimeMs(trade);
         if (entryTimeMs !== null) {
           entryTimeSec = Math.floor(entryTimeMs / 1000);
@@ -1604,12 +1619,9 @@ function WorkbenchProviderContexts({
       }
       setSelectedTradeId(tradeId);
       if (
-        tradeId !== null &&
-        selectedVariant &&
-        hasTradeManagementEvents(selectedVariant.trade_management_events) &&
-        selectedVariant.trade_management_events!.some((event) =>
-          tradeIdsEqual(tradeId, event.trade_id),
-        )
+        trade &&
+        hasManagedPolicyEvents(managedPolicyEvents) &&
+        managedPolicyEvents.some((event) => event.position_id === trade.position_id)
       ) {
         setChartShowTradeManagementPhaseMarkers(true);
         setChartShowTradeManagementExitMarkers(true);
@@ -1621,7 +1633,7 @@ function WorkbenchProviderContexts({
         }
       }
     },
-    [selectedVariant, hasChartEverActivated, setActiveTab],
+    [runTrades, managedPolicyEvents, hasChartEverActivated, setActiveTab],
   );
 
   const selectBar = useCallback((timeSec: number | null) => {
@@ -1649,10 +1661,10 @@ function WorkbenchProviderContexts({
     }
 
     const bootstrapPreview = evaluateSignalTraceBootstrap({
-      report,
+      runDetail,
       reportLoadStatus,
       selectedRunId,
-      selectedVariantKey: selectedVariantKey || null,
+      instanceId,
       marketLoadStatus,
       runMarketViewIdentity,
       expectedRunMarketViewIdentity,
@@ -1670,9 +1682,9 @@ function WorkbenchProviderContexts({
       const result = await runPhase63DTraceLoadCycle(owner, {
         chartHeavyIoEnabled,
         reportLoadStatus,
-        report,
+        runDetail,
         selectedRunId: selectedRunId ?? "",
-        selectedVariantKey: selectedVariantKey || "",
+        instanceId: instanceId ?? "",
         marketLoadStatus,
         runMarketViewIdentity,
         expectedRunMarketViewIdentity,
@@ -1740,9 +1752,9 @@ function WorkbenchProviderContexts({
     };
   }, [
     reportLoadStatus,
-    report,
+    runDetail,
     selectedRunId,
-    selectedVariantKey,
+    instanceId,
     chartWindowKey,
     chartWindowSnapshotRevision,
     renderWindowBoundsKey,
@@ -1758,7 +1770,7 @@ function WorkbenchProviderContexts({
     rv,
   ]);
 
-  const symbol = report?.symbol ?? "—";
+  const symbol = runDetail?.result.strategy_evaluation.market.ticker ?? "—";
   const timeframe = chartTimeframe;
 
   const shellValue = useMemo<WorkbenchShellState>(
@@ -1776,26 +1788,23 @@ function WorkbenchProviderContexts({
     () => ({
       symbol,
       timeframe,
-      report,
+      runDetail,
+      instanceId,
       runs,
       selectedRunId,
       setSelectedRunId,
-      selectedVariantKey,
-      setSelectedVariantKey,
       selectedTradeId,
       selectTrade,
-      selectedVariant,
     }),
     [
       symbol,
       timeframe,
-      report,
+      runDetail,
+      instanceId,
       runs,
       selectedRunId,
-      selectedVariantKey,
       selectedTradeId,
       selectTrade,
-      selectedVariant,
     ],
   );
 
@@ -1852,7 +1861,11 @@ function WorkbenchProviderContexts({
       candlesSource,
       selectedTradeId,
       selectTrade,
-      selectedVariant,
+      runDetail,
+      runTrades,
+      runMetrics,
+      managedPolicyEvents,
+      managedPolicyEventsLoadStatus,
       contextOverlayRef,
       setContextOverlayRef,
       effectiveContextOverlayRef,
@@ -1878,7 +1891,11 @@ function WorkbenchProviderContexts({
       candlesSource,
       selectedTradeId,
       selectTrade,
-      selectedVariant,
+      runDetail,
+      runTrades,
+      runMetrics,
+      managedPolicyEvents,
+      managedPolicyEventsLoadStatus,
       contextOverlayRef,
       effectiveContextOverlayRef,
       contextOverlayRefOptions,

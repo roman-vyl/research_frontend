@@ -50,7 +50,7 @@ describe("Phase 6.3B render-window cutover", () => {
       marketLoadStatus: "ready",
       bundleCandles: bundle.candles,
       selectedTradeEntryTimeMs: null,
-      variantKey: "exp_a",
+      instanceId: "exp_a",
     });
     expect(initialized).toBe(true);
 
@@ -73,7 +73,7 @@ describe("Phase 6.3B render-window cutover", () => {
       marketLoadStatus: "ready",
       bundleCandles: bundle.candles,
       selectedTradeEntryTimeMs: null,
-      variantKey: "exp_a",
+      instanceId: "exp_a",
     });
 
     const entryTimeMs = bundle.candles[2]!.time * 1000;
@@ -106,7 +106,7 @@ describe("Phase 6.3B render-window cutover", () => {
       marketLoadStatus: "ready" as const,
       bundleCandles: bundle.candles,
       selectedTradeEntryTimeMs: null,
-      variantKey: "exp_a",
+      instanceId: "exp_a",
     };
     expect(runPhase63BRenderWindowInit(state, input)).toBe(true);
     expect(runPhase63BRenderWindowInit(state, input)).toBe(false);

@@ -9,19 +9,19 @@ import {
   createTraceDisplayRuntimeController,
   resetTraceDisplayRuntimeCache,
 } from "./traceDisplayRuntime";
-import { makePhase6Candles, makePhase6Report, makePhase6Variant } from "./phase6ContractFixtures";
+import { makePhase6Candles, makePhase6RunDetail } from "./phase6ContractFixtures";
 
 function bootstrapInput(
   overrides: Partial<Parameters<typeof evaluateSignalTraceBootstrap>[0]> = {},
 ): Parameters<typeof evaluateSignalTraceBootstrap>[0] {
-  const report = makePhase6Report();
+  const report = makePhase6RunDetail();
   const candles = makePhase6Candles(20);
-  const windowKey = chartWindowKeyFromCandles(report.run_id, report.variants[0]!.variant, candles, null);
+  const windowKey = chartWindowKeyFromCandles(report.manifest.run_id, report.manifest.instance_id, candles, null);
   return {
-    report,
+    runDetail: report,
     reportLoadStatus: "ready",
-    selectedRunId: report.run_id,
-    selectedVariantKey: report.variants[0]!.variant,
+    selectedRunId: report.manifest.run_id,
+    instanceId: report.manifest.instance_id,
     marketLoadStatus: "ready",
     runMarketViewIdentity: "identity-a",
     expectedRunMarketViewIdentity: "identity-a",
@@ -63,7 +63,7 @@ describe("Phase 6.1 market/trace readiness contract guards", () => {
       return;
     }
     expect(ready.request.runId).toBe("run-a");
-    expect(ready.windowKey).toContain("run-a:exp_a:");
+    expect(ready.windowKey).toContain("run-a:instance_1:");
   });
 
   it("keeps chart-events and dense fallback request keys stable for unchanged inputs", () => {
@@ -78,13 +78,13 @@ describe("Phase 6.1 market/trace readiness contract guards", () => {
     expect(
       buildTraceDisplayCacheKeyForRuntime({
         selectedRunId: "run-a",
-        selectedVariantKey: "exp_a",
+        instanceId: "exp_a",
         effectiveContextOverlayRef: "overlay-a",
       }),
     ).toBe(
       buildTraceDisplayCacheKeyForRuntime({
         selectedRunId: "run-a",
-        selectedVariantKey: "exp_a",
+        instanceId: "exp_a",
         effectiveContextOverlayRef: "overlay-a",
       }),
     );
@@ -94,7 +94,7 @@ describe("Phase 6.1 market/trace readiness contract guards", () => {
     const controller = createTraceDisplayRuntimeController();
     const cacheKey = buildTraceDisplayCacheKeyForRuntime({
       selectedRunId: "run-a",
-      selectedVariantKey: makePhase6Variant().variant,
+      instanceId: makePhase6RunDetail().manifest.instance_id,
       effectiveContextOverlayRef: null,
     });
     resetTraceDisplayRuntimeCache(controller, cacheKey);

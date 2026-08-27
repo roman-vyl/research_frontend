@@ -45,7 +45,7 @@ describe("display cache pan-back", () => {
     const makeBundle = (times: number[], eventTime: number) => ({
       times,
       meta: {
-        variant: "v1",
+        instance_id: "v1",
         component_ids: { direction: "d", setups: [], trigger: "t", risk: "r" },
         setup_params: [],
         blocker_instances: [],

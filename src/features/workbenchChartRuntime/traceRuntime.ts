@@ -96,14 +96,14 @@ export function createTraceRuntimeController(): TraceRuntimeController {
 
 export function buildTraceSessionCacheIdentity(input: {
   selectedRunId: string;
-  selectedVariantKey: string;
+  instanceId: string;
   effectiveContextOverlayRef: string | null;
   reloadToken: number;
   marketIdentity: string | null;
 }): string {
   return buildSessionCacheIdentity(
     input.selectedRunId,
-    input.selectedVariantKey,
+    input.instanceId,
     input.effectiveContextOverlayRef,
     input.reloadToken,
     input.marketIdentity,
@@ -210,9 +210,9 @@ function traceErrorMessage(err: unknown): string {
 export type TraceLoadCycleInput = {
   chartHeavyIoEnabled: boolean;
   reportLoadStatus: "idle" | "loading" | "ready" | "error";
-  report: { run_id: string } | null;
+  runDetail: { manifest: { run_id: string; instance_id: string } } | null;
   selectedRunId: string;
-  selectedVariantKey: string;
+  instanceId: string;
   marketLoadStatus: "idle" | "loading" | "ready" | "error";
   runMarketViewIdentity: string | null;
   expectedRunMarketViewIdentity: string | null;
@@ -247,10 +247,10 @@ export async function runTraceLoadCycle(input: TraceLoadCycleInput): Promise<Tra
   }
 
   const bootstrap = evaluateSignalTraceBootstrap({
-    report: input.report as Parameters<typeof evaluateSignalTraceBootstrap>[0]["report"],
+    runDetail: input.runDetail as Parameters<typeof evaluateSignalTraceBootstrap>[0]["runDetail"],
     reportLoadStatus: input.reportLoadStatus,
     selectedRunId: input.selectedRunId,
-    selectedVariantKey: input.selectedVariantKey,
+    instanceId: input.instanceId,
     marketLoadStatus: input.marketLoadStatus,
     runMarketViewIdentity: input.runMarketViewIdentity,
     expectedRunMarketViewIdentity: input.expectedRunMarketViewIdentity,

@@ -221,7 +221,7 @@ export function normalizeConfigDraftForEditing(
     ...draft,
     instances: draft.instances.map((inst) => ({
       ...inst,
-      strategy: normalizeStrategyForEditing(inst.strategy, catalog),
+      raw_spec: normalizeStrategyForEditing(inst.raw_spec, catalog),
     })),
   };
 }

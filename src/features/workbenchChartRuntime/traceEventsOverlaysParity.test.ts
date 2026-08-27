@@ -4,8 +4,7 @@ import type {
   ChartBar,
   ChartEventsBundle,
   ComponentEvent,
-  RunReport,
-  RunVariant,
+  RunDetail,
   SignalTraceBundle,
 } from "@/api/types";
 import { clearMarketResourceCache, mergeCandlesWindowBundle } from "@/features/chart/marketResourceCache";
@@ -45,23 +44,8 @@ vi.mock("@/api/client", async (importOriginal) => {
   };
 });
 
-const EMPTY_METRICS = {
-  long: { trades: 0, pnl: 0, return_pct: 0, profit_factor: null, win_rate: null },
-  short: { trades: 0, pnl: 0, return_pct: 0, profit_factor: null, win_rate: null },
-  total: {
-    trades: 0,
-    pnl: 0,
-    return_pct: 0,
-    profit_factor: null,
-    win_rate: null,
-    sharpe: 0,
-    max_drawdown: 0,
-  },
-  open_trades: { long: 0, short: 0, total: 0 },
-};
-
 const TRACE_META: SignalTraceBundle["meta"] = {
-  variant: "exp_a",
+  instance_id: "exp_a",
   component_ids: { direction: "d", setups: [], trigger: "t", risk: "r" },
   setup_params: [],
   blocker_instances: [],
@@ -92,30 +76,33 @@ function makeCandles(count: number, startSec = 1_000): ChartBar[] {
   }));
 }
 
-function makeReport(runId = "run-a", variant = makeVariant()): RunReport {
+function makeReport(runId = "run-a"): RunDetail {
   const candles = makeCandles(200, 1_000);
   const firstMs = candles[0]!.time * 1000;
   const lastMs = candles[candles.length - 1]!.time * 1000;
   return {
-    run_id: runId,
-    created_at: "2026-01-01T00:00:00Z",
-    report_schema_version: 1,
-    family: "ema_pullback",
-    symbol: "BTCUSDT",
-    timeframe: "5m",
-    candles: candles.length,
-    data_range: { from_open_time_ms: firstMs, to_open_time_ms: lastMs },
-    variants: [variant],
-    variants_count: 1,
-  };
-}
-
-function makeVariant(overrides: Partial<RunVariant> = {}): RunVariant {
-  return {
-    variant: "exp_a",
-    config_id: "cfg_a",
-    symbol: "BTCUSDT",
-    timeframe: "5m",
+    contract_version: "1.0.0",
+    manifest: {
+      contract_version: "1.0.0",
+      run_id: runId,
+      instance_id: "exp_a",
+      created_at_utc: "2026-01-01T00:00:00Z",
+      market_data_hash: null,
+    },
+    result: {
+      contract_version: "1.0.0",
+      run_id: runId,
+      instance_id: "exp_a",
+      strategy_evaluation: {
+        contract_version: "1.0.0",
+        strategy_id: "ema_pullback",
+        strategy_version: "1",
+        instance_id: "exp_a",
+        market: { ticker: "BTCUSDT", timeframe: "5m", from_ms: firstMs, to_ms: lastMs },
+        bar_count: candles.length,
+        market_data_hash: "hash",
+      },
+    },
     strategy_spec: {
       anchor_stack: {
         fast: { period: 200 },
@@ -138,16 +125,11 @@ function makeVariant(overrides: Partial<RunVariant> = {}): RunVariant {
         },
       },
     },
-    metrics: EMPTY_METRICS,
-    component_counters: [],
-    trade_records: [],
-    ...overrides,
   };
 }
 
 function seedMarketBundle(
-  report: RunReport,
-  variant: RunVariant,
+  report: RunDetail,
   candles: ChartBar[],
 ): {
   view: ReturnType<typeof resolveRunMarketView>;
@@ -158,8 +140,7 @@ function seedMarketBundle(
   bundle: { candles: ChartBar[]; ema_overlays: [] };
 } {
   const viewResult = resolveRunMarketView({
-    report,
-    variant,
+    runDetail: report,
     chartTimeframe: "5m",
     reloadToken: 0,
   });
@@ -287,13 +268,11 @@ describe("chart-events paths in isolated harness", () => {
     fetchSignalTrace.mockResolvedValue(DENSE_BUNDLE);
 
     const report = makeReport();
-    const variant = makeVariant();
     const candles = makeCandles(200, 1_000);
-    const seeded = seedMarketBundle(report, variant, candles);
+    const seeded = seedMarketBundle(report, candles);
 
     const harness = createTraceEventsOverlaysHarness({
-      report,
-      variant,
+      runDetail: report,
       bundle: seeded.bundle,
       foundationKey: seeded.foundationKey,
       view: seeded.view,
@@ -339,13 +318,11 @@ describe("chart-events paths in isolated harness", () => {
     fetchSignalTrace.mockResolvedValue(DENSE_BUNDLE);
 
     const report = makeReport();
-    const variant = makeVariant();
     const candles = makeCandles(200, 1_000);
-    const seeded = seedMarketBundle(report, variant, candles);
+    const seeded = seedMarketBundle(report, candles);
 
     const harness = createTraceEventsOverlaysHarness({
-      report,
-      variant,
+      runDetail: report,
       bundle: seeded.bundle,
       foundationKey: seeded.foundationKey,
       view: seeded.view,
@@ -389,13 +366,11 @@ describe("chart-events paths in isolated harness", () => {
     fetchSignalTrace.mockResolvedValue(DENSE_BUNDLE);
 
     const report = makeReport();
-    const variant = makeVariant();
     const candles = makeCandles(200, 1_000);
-    const seeded = seedMarketBundle(report, variant, candles);
+    const seeded = seedMarketBundle(report, candles);
 
     const harness = createTraceEventsOverlaysHarness({
-      report,
-      variant,
+      runDetail: report,
       bundle: seeded.bundle,
       foundationKey: seeded.foundationKey,
       view: seeded.view,
@@ -427,13 +402,11 @@ describe("chart model parity vs trace display apply", () => {
     fetchSignalTrace.mockResolvedValue(DENSE_BUNDLE);
 
     const report = makeReport();
-    const variant = makeVariant();
     const candles = makeCandles(200, 1_000);
-    const seeded = seedMarketBundle(report, variant, candles);
+    const seeded = seedMarketBundle(report, candles);
 
     const harness = createTraceEventsOverlaysHarness({
-      report,
-      variant,
+      runDetail: report,
       bundle: seeded.bundle,
       foundationKey: seeded.foundationKey,
       view: seeded.view,
@@ -470,17 +443,16 @@ describe("production-mounted shadow output", () => {
 
   it("produces complete candidate output without production owner flags", () => {
     const report = makeReport();
-    const variant = makeVariant();
     const candles = makeCandles(200, 1_000);
-    seedMarketBundle(report, variant, candles);
+    seedMarketBundle(report, candles);
 
     const input = createChartRuntimeInput({
       reportLoadStatus: "ready",
-      report,
-      selectedRunId: report.run_id,
+      runDetail: report,
+      runTrades: [],
+      managedPolicyEvents: [],
+      selectedRunId: report.manifest.run_id,
       reloadToken: 0,
-      selectedVariantKey: variant.variant,
-      selectedVariant: variant,
       selectedTradeId: null,
       selectedTradeEntryTimeMs: null,
       chartTradeFocusWarning: null,

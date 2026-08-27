@@ -4,7 +4,7 @@ import { RUNTIME_EXIT_ROLE } from "@/features/composer/composerRuntimeExitAuthor
 
 /** Minimal catalog stub for runtime_exits picker / validation tests. */
 export const RUNTIME_EXIT_CATALOG_STUB: ComponentCatalog = {
-  family: "ema_pullback",
+  strategy_id: "ema_pullback",
   schema_version: 1,
   sections: [],
   components: [

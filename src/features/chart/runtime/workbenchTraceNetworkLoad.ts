@@ -271,7 +271,7 @@ export async function loadDisplayTraceChunk(
   try {
     const chartBundle = await fetchChartEvents({
       runId,
-      variant,
+      instanceId: variant,
       fromMs,
       toOpenTimeMs,
       contextOverlayRef,
@@ -412,7 +412,7 @@ export async function loadDenseLanesTrace(ctx: WorkbenchTraceNetworkLoadContext)
   try {
     const bundle = await fetchSignalTrace({
       runId,
-      variant,
+      instanceId: variant,
       fromMs,
       toOpenTimeMs,
       contextOverlayRef,

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ChartBar, ChartMarketBundle, RunReport } from "@/api/types";
+import type { ChartBar, ChartMarketBundle, RunDetail } from "@/api/types";
 import type { ExecuteMarketWindowLoadResult } from "@/features/chart/workbenchMarketLoad";
 import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartViewWindow";
 import {
@@ -26,7 +26,7 @@ import {
   resolvePhase63FMarketBundleSnapshot,
   resolvePhase63FMarketTargetWindows,
 } from "@/features/workbenchChartRuntime/phase63FMarketLoadBridge";
-import { makePhase6Variant } from "@/features/workbenchChartRuntime/phase6ContractFixtures";
+import { makePhase6RunDetail } from "@/features/workbenchChartRuntime/phase6ContractFixtures";
 import { isTradeEntryInChartView } from "@/features/workbenchChartRuntime/phase63TradeFocusBridge";
 import {
   beginMarketLoadCycle,
@@ -50,18 +50,22 @@ function makeCandles(count: number, startTimeSec: number): ChartBar[] {
   }));
 }
 
-function makeLargeReport(): RunReport {
+function makeLargeReport(): RunDetail {
+  const report = makePhase6RunDetail({ manifest: { ...makePhase6RunDetail().manifest, run_id: "run-outside-window" } });
   return {
-    run_id: "run-outside-window",
-    created_at: "2026-01-01T00:00:00Z",
-    report_schema_version: 1,
-    family: "ema_pullback",
-    symbol: "BTCUSDT",
-    timeframe: "5m",
-    candles: REPORT_BAR_COUNT,
-    data_range: { from_open_time_ms: REPORT_FROM_MS, to_open_time_ms: REPORT_TO_MS },
-    variants_count: 1,
-    variants: [makePhase6Variant()],
+    ...report,
+    result: {
+      ...report.result,
+      run_id: "run-outside-window",
+      strategy_evaluation: {
+        ...report.result.strategy_evaluation,
+        market: {
+          ...report.result.strategy_evaluation.market,
+          from_ms: REPORT_FROM_MS,
+          to_ms: REPORT_TO_MS,
+        },
+      },
+    },
   };
 }
 
@@ -99,7 +103,7 @@ function runRenderViewportTick(input: {
   marketFocusWindow: { fromMs: number; toMs: number } | null;
   selectedTradeEntryTimeMs: number | null;
   candlesKey: string;
-  variantKey: string;
+  instanceId: string;
 }) {
   if (input.renderWindowFoundationKey === null) {
     if (input.marketLoadStatus === "loading") {
@@ -111,7 +115,7 @@ function runRenderViewportTick(input: {
         marketLoadStatus: input.marketLoadStatus,
         bundleCandles: input.cachedBundleCandlesRef.current,
         selectedTradeEntryTimeMs: null,
-        variantKey: input.variantKey,
+        instanceId: input.instanceId,
       });
     }
     return;
@@ -122,7 +126,7 @@ function runRenderViewportTick(input: {
       marketLoadStatus: input.marketLoadStatus,
       bundleCandles: input.cachedBundleCandlesRef.current,
       selectedTradeEntryTimeMs: null,
-      variantKey: input.variantKey,
+      instanceId: input.instanceId,
     });
     return;
   }
@@ -143,7 +147,7 @@ function runRenderViewportTick(input: {
     marketLoadStatus: input.marketLoadStatus,
     bundleCandles,
     selectedTradeEntryTimeMs: input.selectedTradeEntryTimeMs,
-    variantKey: input.variantKey,
+    instanceId: input.instanceId,
   });
   if (input.selectedTradeEntryTimeMs !== null) {
     runPhase63BApplyTrade(input.phase63BOwner, {
@@ -183,9 +187,8 @@ describe("outside-window trade transition (A inside chartView → B outside char
   it("updates market focus/coverage keys and starts Phase63F when B is outside A window", async () => {
     const report = makeLargeReport();
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
     const viewIdentity = buildRunMarketViewIdentity(view);
@@ -242,7 +245,7 @@ describe("outside-window trade transition (A inside chartView → B outside char
       coverageWindow: windowsA.coverageWindow,
       focusKey: buildMarketTargetWindowKey(viewIdentity, windowsA.focusWindow),
       coverageKey: buildMarketTargetWindowKey(viewIdentity, windowsA.coverageWindow),
-      symbol: report.symbol,
+      symbol: report.result.strategy_evaluation.market.ticker,
       timeframe: "5m",
       signal: new AbortController().signal,
       loadGeneration: beginMarketLoadCycle(owner.controller, viewIdentity),
@@ -260,7 +263,7 @@ describe("outside-window trade transition (A inside chartView → B outside char
       coverageWindow: windowsB.coverageWindow,
       focusKey: buildMarketTargetWindowKey(viewIdentity, windowsB.focusWindow),
       coverageKey: buildMarketTargetWindowKey(viewIdentity, windowsB.coverageWindow),
-      symbol: report.symbol,
+      symbol: report.result.strategy_evaluation.market.ticker,
       timeframe: "5m",
       signal: new AbortController().signal,
       loadGeneration,
@@ -275,9 +278,8 @@ describe("outside-window trade transition (A inside chartView → B outside char
   it("marks loading when focus moves outside cached window while prior target was ready", async () => {
     const report = makeLargeReport();
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
     const viewIdentity = buildRunMarketViewIdentity(view);
@@ -300,7 +302,7 @@ describe("outside-window trade transition (A inside chartView → B outside char
       coverageWindow: focusA,
       focusKey: buildMarketTargetWindowKey(viewIdentity, focusA),
       coverageKey: buildMarketTargetWindowKey(viewIdentity, focusA),
-      symbol: report.symbol,
+      symbol: report.result.strategy_evaluation.market.ticker,
       timeframe: "5m",
       signal: new AbortController().signal,
       loadGeneration: beginMarketLoadCycle(controller, viewIdentity),
@@ -316,7 +318,7 @@ describe("outside-window trade transition (A inside chartView → B outside char
       coverageWindow: focusB,
       focusKey: buildMarketTargetWindowKey(viewIdentity, focusB),
       coverageKey: buildMarketTargetWindowKey(viewIdentity, focusB),
-      symbol: report.symbol,
+      symbol: report.result.strategy_evaluation.market.ticker,
       timeframe: "5m",
       signal: new AbortController().signal,
       loadGeneration: beginMarketLoadCycle(controller, viewIdentity),
@@ -333,9 +335,8 @@ describe("outside-window trade transition (A inside chartView → B outside char
   it("Phase63B keeps A slice during loading gap (no stale bundle fallback)", () => {
     const report = makeLargeReport();
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
     const viewIdentity = buildRunMarketViewIdentity(view);
@@ -377,7 +378,7 @@ describe("outside-window trade transition (A inside chartView → B outside char
       marketFocusWindow: windowsA.focusWindow,
       selectedTradeEntryTimeMs: entryA,
       candlesKey: view.candlesKey,
-      variantKey: "exp_a",
+      instanceId: "exp_a",
     });
 
     const chartA = resolveChartView({
@@ -416,7 +417,7 @@ describe("outside-window trade transition (A inside chartView → B outside char
       marketFocusWindow: windowsB.focusWindow,
       selectedTradeEntryTimeMs: entryB,
       candlesKey: view.candlesKey,
-      variantKey: "exp_a",
+      instanceId: "exp_a",
     });
 
     const chartGap = resolveChartView({
@@ -432,9 +433,8 @@ describe("outside-window trade transition (A inside chartView → B outside char
   it("after B load completes, Phase63B recenters chartView around B", () => {
     const report = makeLargeReport();
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
     const viewIdentity = buildRunMarketViewIdentity(view);
@@ -474,7 +474,7 @@ describe("outside-window trade transition (A inside chartView → B outside char
       marketFocusWindow: windowsB.focusWindow,
       selectedTradeEntryTimeMs: entryB,
       candlesKey: view.candlesKey,
-      variantKey: "exp_a",
+      instanceId: "exp_a",
     });
 
     const chartB = resolveChartView({
@@ -490,9 +490,8 @@ describe("outside-window trade transition (A inside chartView → B outside char
   it("aborted outside-window load leaves stale readyTargetKey and null foundation", async () => {
     const report = makeLargeReport();
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
     const viewIdentity = buildRunMarketViewIdentity(view);
@@ -515,7 +514,7 @@ describe("outside-window trade transition (A inside chartView → B outside char
       coverageWindow: focusA,
       focusKey: buildMarketTargetWindowKey(viewIdentity, focusA),
       coverageKey: buildMarketTargetWindowKey(viewIdentity, focusA),
-      symbol: report.symbol,
+      symbol: report.result.strategy_evaluation.market.ticker,
       timeframe: "5m",
       signal: new AbortController().signal,
       loadGeneration: beginMarketLoadCycle(owner.controller, viewIdentity),
@@ -530,7 +529,7 @@ describe("outside-window trade transition (A inside chartView → B outside char
       coverageWindow: focusB,
       focusKey: buildMarketTargetWindowKey(viewIdentity, focusB),
       coverageKey: buildMarketTargetWindowKey(viewIdentity, focusB),
-      symbol: report.symbol,
+      symbol: report.result.strategy_evaluation.market.ticker,
       timeframe: "5m",
       signal: abort.signal,
       loadGeneration: beginMarketLoadCycle(owner.controller, viewIdentity),

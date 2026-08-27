@@ -1,37 +1,29 @@
 import { describe, expect, it } from "vitest";
 
-import type { RunReport, TradeRecord } from "@/api/types";
+import type { TradeRecord } from "@/api/types";
 import {
   defaultClosedTradeSelection,
-  deriveSelectedVariant,
   findLastClosedTradeId,
   findTradeById,
   formatTradeDisplayNumber,
   getAdjacentTradeId,
+  isKnownTrade,
   parseManualTradeIdInput,
   resolveTradeIdByDisplayNumber,
   tradeDisplayNumber,
-  isTradeInVariant,
   resolveSelectedTradeEntryTimeMs,
   resolveTradeEntryTimeMs,
-  resolveVariantKeyForReport,
   tradeIdsEqual,
 } from "@/features/chart/tradeLookup";
+import { makeTradeRecord } from "@/features/chart/testFixtures/tradeRecordFixtures";
 
 function makeTrade(tradeId: number | string, entryTimeMs: number): TradeRecord {
-  return {
-    trade_id: tradeId,
-    direction: "long",
-    status: "closed",
+  return makeTradeRecord({
+    trade_id: String(tradeId),
     entry_time_ms: entryTimeMs,
     exit_time_ms: entryTimeMs + 60_000,
-    entry_price: 100,
-    exit_price: 101,
     exit_reason: "signal:exit",
-    size: 1,
-    pnl: 1,
-    return_pct: 0.01,
-  };
+  });
 }
 
 describe("tradeIdsEqual", () => {
@@ -42,15 +34,15 @@ describe("tradeIdsEqual", () => {
   });
 });
 
-describe("isTradeInVariant", () => {
+describe("isKnownTrade", () => {
   const trades = [makeTrade(1, 1_000), makeTrade(2, 2_000)];
 
   it("returns true when trade exists", () => {
-    expect(isTradeInVariant(trades, 2)).toBe(true);
+    expect(isKnownTrade(trades, 2)).toBe(true);
   });
 
   it("returns false when trade is missing", () => {
-    expect(isTradeInVariant(trades, 99)).toBe(false);
+    expect(isKnownTrade(trades, 99)).toBe(false);
   });
 });
 
@@ -86,71 +78,25 @@ describe("resolveSelectedTradeEntryTimeMs", () => {
 
   it("resolves entry for string selected id", () => {
     const { trade, entryTimeMs } = resolveSelectedTradeEntryTimeMs(trades, "10");
-    expect(trade?.trade_id).toBe(10);
+    expect(trade?.trade_id).toBe("10");
     expect(entryTimeMs).toBe(5_000_000);
-  });
-});
-
-describe("deriveSelectedVariant", () => {
-  const loaded = {
-    variants: [
-      { variant: "exp_a", trade_records: [] },
-      { variant: "exp_b", trade_records: [] },
-    ],
-  } as unknown as RunReport;
-
-  it("returns null when report is null", () => {
-    expect(deriveSelectedVariant(null, "exp_a")).toBeNull();
-  });
-
-  it("returns matching variant by key", () => {
-    expect(deriveSelectedVariant(loaded, "exp_b")?.variant).toBe("exp_b");
-  });
-
-  it("falls back to first variant when key is missing", () => {
-    expect(deriveSelectedVariant(loaded, "missing")?.variant).toBe("exp_a");
-  });
-});
-
-describe("resolveVariantKeyForReport", () => {
-  const loaded = {
-    variants: [{ variant: "exp_a" }, { variant: "exp_b" }],
-  } as unknown as RunReport;
-
-  it("keeps previous key when present in report", () => {
-    expect(resolveVariantKeyForReport(loaded, "exp_b")).toBe("exp_b");
-  });
-
-  it("falls back to first variant when previous key is missing", () => {
-    expect(resolveVariantKeyForReport(loaded, "missing")).toBe("exp_a");
-    expect(resolveVariantKeyForReport(loaded, "")).toBe("exp_a");
   });
 });
 
 describe("findLastClosedTradeId", () => {
   it("returns last closed trade in report order", () => {
-    const trades = [
-      makeTrade(1, 1_000),
-      { ...makeTrade(2, 2_000), status: "open" as const },
-      makeTrade(3, 3_000),
-    ];
-    expect(findLastClosedTradeId(trades)).toBe(3);
+    const trades = [makeTrade(1, 1_000), makeTrade(2, 2_000), makeTrade(3, 3_000)];
+    expect(findLastClosedTradeId(trades)).toBe("3");
   });
 
-  it("skips trailing open trades", () => {
-    const trades = [makeTrade(1, 1_000), { ...makeTrade(2, 2_000), status: "open" as const }];
-    expect(findLastClosedTradeId(trades)).toBe(1);
-  });
-
-  it("returns null when no closed trades", () => {
-    const trades = [{ ...makeTrade(1, 1_000), status: "open" as const }];
-    expect(findLastClosedTradeId(trades)).toBeNull();
+  it("returns null for an empty trade list", () => {
+    expect(findLastClosedTradeId([])).toBeNull();
   });
 
   it("returns last closed string trade id without numeric normalization", () => {
     const trades = [
       makeTrade("long:100", 1_000_000),
-      { ...makeTrade("short:200", 2_000_000), status: "open" as const },
+      makeTrade("short:200", 2_000_000),
       makeTrade("short:979", 3_000_000),
     ];
     expect(findLastClosedTradeId(trades)).toBe("short:979");
@@ -161,7 +107,7 @@ describe("defaultClosedTradeSelection", () => {
   it("includes entry bar time for last closed trade", () => {
     const trades = [makeTrade(5, 5_000_000)];
     expect(defaultClosedTradeSelection(trades)).toEqual({
-      tradeId: 5,
+      tradeId: "5",
       barTimeSec: 5_000,
     });
   });
@@ -195,13 +141,13 @@ describe("getAdjacentTradeId", () => {
   });
 
   it("returns next and previous ids in report order", () => {
-    expect(getAdjacentTradeId(trades, 1, 1)).toBe(2);
-    expect(getAdjacentTradeId(trades, 2, -1)).toBe(1);
+    expect(getAdjacentTradeId(trades, 1, 1)).toBe("2");
+    expect(getAdjacentTradeId(trades, 2, -1)).toBe("1");
     expect(getAdjacentTradeId(trades, 2, 1)).toBe("3");
   });
 
   it("matches string selected id to numeric record id", () => {
-    expect(getAdjacentTradeId(trades, "2", -1)).toBe(1);
+    expect(getAdjacentTradeId(trades, "2", -1)).toBe("1");
     expect(getAdjacentTradeId(trades, "2", 1)).toBe("3");
   });
 
@@ -220,11 +166,6 @@ describe("tradeDisplayNumber", () => {
   it("maps internal id to 1-based report index", () => {
     expect(tradeDisplayNumber(trades, "long:10")).toBe(1);
     expect(tradeDisplayNumber(trades, "short:979")).toBe(2);
-  });
-
-  it("keeps numeric ids for legacy reports", () => {
-    const legacy = [makeTrade(1, 1_000), makeTrade(2, 2_000)];
-    expect(tradeDisplayNumber(legacy, 2)).toBe(2);
   });
 });
 

@@ -90,7 +90,7 @@ function buildTraceHarnessSessionKey(input: {
   reloadToken: number;
   effectiveContextOverlayRef: string | null;
   selectedRunId: string;
-  selectedVariantKey: string;
+  instanceId: string;
 }): string {
   return [
     input.foundationKey,
@@ -98,7 +98,7 @@ function buildTraceHarnessSessionKey(input: {
     input.reloadToken,
     input.effectiveContextOverlayRef ?? "",
     input.selectedRunId,
-    input.selectedVariantKey,
+    input.instanceId,
   ].join("|");
 }
 
@@ -113,7 +113,7 @@ function buildChartRuntimeOutputCacheKey(input: {
   const snapshot = input.snapshot;
   return [
     input.runtimeInput.selectedRunId,
-    input.runtimeInput.selectedVariantKey,
+    input.runtimeInput.runDetail?.manifest.instance_id ?? null,
     input.runtimeInput.reloadToken,
     input.runtimeInput.selectedTradeEntryTimeMs,
     input.runtimeInput.effectiveContextOverlayRef,
@@ -146,8 +146,7 @@ function syncTraceHarness(
     !input.marketBundle.implemented ||
     input.marketBundle.bundle === null ||
     input.marketBundle.foundationKey === null ||
-    input.runtimeInput.report === null ||
-    input.runtimeInput.selectedVariant === null
+    input.runtimeInput.runDetail === null
   ) {
     controller.traceHarness = null;
     controller.traceHarnessSessionKey = null;
@@ -168,8 +167,8 @@ function syncTraceHarness(
     marketIdentity: input.marketIdentity,
     reloadToken: input.runtimeInput.reloadToken,
     effectiveContextOverlayRef: input.runtimeInput.effectiveContextOverlayRef,
-    selectedRunId: input.runtimeInput.selectedRunId ?? input.runtimeInput.report.run_id,
-    selectedVariantKey: input.runtimeInput.selectedVariantKey,
+    selectedRunId: input.runtimeInput.selectedRunId ?? input.runtimeInput.runDetail.manifest.run_id,
+    instanceId: input.runtimeInput.runDetail.manifest.instance_id,
   });
 
   const foundationChanged = controller.lastFoundationKey !== input.marketBundle.foundationKey;
@@ -178,8 +177,7 @@ function syncTraceHarness(
 
   if (controller.traceHarness === null || controller.traceHarnessSessionKey !== sessionKey) {
     controller.traceHarness = createTraceEventsOverlaysHarness({
-      report: input.runtimeInput.report,
-      variant: input.runtimeInput.selectedVariant,
+      runDetail: input.runtimeInput.runDetail,
       bundle: input.marketBundle.bundle,
       foundationKey: input.marketBundle.foundationKey,
       view,
@@ -279,7 +277,7 @@ function buildIdleChartRuntimeOutput(
     debug: {
       ...createEmptyRuntimeDebugSnapshot({
         runId: input.selectedRunId,
-        variantKey: input.selectedVariantKey,
+        instanceId: input.runDetail?.manifest.instance_id ?? null,
         selectedTradeId: input.selectedTradeId,
         selectedTradeEntryTimeMs: input.selectedTradeEntryTimeMs,
         chartHeavyIoEnabled: input.chartHeavyIoEnabled,
@@ -377,7 +375,7 @@ function buildReadyChartRuntimeOutput(input: {
     debug: {
       ...createEmptyRuntimeDebugSnapshot({
         runId: runtimeInput.selectedRunId,
-        variantKey: runtimeInput.selectedVariantKey,
+        instanceId: runtimeInput.runDetail?.manifest.instance_id ?? null,
         selectedTradeId: runtimeInput.selectedTradeId,
         selectedTradeEntryTimeMs: runtimeInput.selectedTradeEntryTimeMs,
         chartHeavyIoEnabled: runtimeInput.chartHeavyIoEnabled,

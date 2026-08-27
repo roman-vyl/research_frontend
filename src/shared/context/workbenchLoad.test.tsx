@@ -7,14 +7,14 @@ import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
-  RunReport,
+  RunDetail,
   RunSummary,
-  SideMetrics,
   SignalTraceBundle,
-  VariantMetrics,
+  TradeRecord,
   WorkbenchTab,
 } from "@/api/types";
 import { clearMarketResourceCache } from "@/features/chart/marketResourceCache";
+import { makeTradeRecord } from "@/features/chart/testFixtures/tradeRecordFixtures";
 import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartViewWindow";
 import { resolveRunMarketView } from "@/features/chart/runMarketView";
 import {
@@ -29,7 +29,10 @@ import {
 } from "@/shared/context/WorkbenchContext";
 import { useWorkbenchRenderViewport } from "@/shared/context/WorkbenchRenderViewportContext";
 
-const fetchRunReport = vi.fn<typeof import("@/api/client").fetchRunReport>();
+const fetchRunDetail = vi.fn<typeof import("@/api/client").fetchRunDetail>();
+const fetchRunTrades = vi.fn<typeof import("@/api/client").fetchRunTrades>();
+const fetchRunMetrics = vi.fn<typeof import("@/api/client").fetchRunMetrics>();
+const fetchManagedPolicyEvents = vi.fn<typeof import("@/api/client").fetchManagedPolicyEvents>();
 const fetchRunSummaries = vi.fn<typeof import("@/api/client").fetchRunSummaries>();
 const fetchConfigState = vi.fn<typeof import("@/api/client").fetchConfigState>();
 const fetchCandlesWindow = vi.fn<typeof import("@/api/client").fetchCandlesWindow>();
@@ -48,7 +51,11 @@ vi.mock("@/api/client", () => ({
       this.detail = detail;
     }
   },
-  fetchRunReport: (...args: Parameters<typeof fetchRunReport>) => fetchRunReport(...args),
+  fetchRunDetail: (...args: Parameters<typeof fetchRunDetail>) => fetchRunDetail(...args),
+  fetchRunTrades: (...args: Parameters<typeof fetchRunTrades>) => fetchRunTrades(...args),
+  fetchRunMetrics: (...args: Parameters<typeof fetchRunMetrics>) => fetchRunMetrics(...args),
+  fetchManagedPolicyEvents: (...args: Parameters<typeof fetchManagedPolicyEvents>) =>
+    fetchManagedPolicyEvents(...args),
   fetchRunSummaries: (...args: Parameters<typeof fetchRunSummaries>) =>
     fetchRunSummaries(...args),
   fetchConfigState: (...args: Parameters<typeof fetchConfigState>) =>
@@ -65,25 +72,10 @@ vi.mock("@/api/client", () => ({
   selectSavedConfig: vi.fn(),
 }));
 
-const EMPTY_SIDE: SideMetrics = {
-  trades: 0,
-  pnl: 0,
-  return_pct: 0,
-  profit_factor: null,
-  win_rate: null,
-};
-
-const EMPTY_METRICS: VariantMetrics = {
-  long: EMPTY_SIDE,
-  short: EMPTY_SIDE,
-  total: { ...EMPTY_SIDE, sharpe: 0, max_drawdown: 0 },
-  open_trades: { long: 0, short: 0, total: 0 },
-};
-
 const EMPTY_SIGNAL_TRACE: SignalTraceBundle = {
   times: [],
   meta: {
-    variant: "exp_a",
+    instance_id: "exp_a",
     component_ids: {
       direction: "d",
       setups: [{ instance_id: "setup", component_id: "s" }],
@@ -164,145 +156,127 @@ const ONE_POINT_HTF_SIGNAL_TRACE: SignalTraceBundle = {
 
 const DEFAULT_CHART_CANDLES = [{ time: 1000, open: 1, high: 2, low: 0.5, close: 1.5 }];
 
-const RUNS: RunSummary[] = [
-  {
-    run_id: "run-a",
-    created_at: "2026-01-01T00:00:00Z",
-    family: "ema_pullback",
-    symbol: "BTCUSDT",
-    timeframe: "5m",
-  },
-  {
-    run_id: "run-b",
-    created_at: "2026-01-02T00:00:00Z",
-    family: "ema_pullback",
-    symbol: "BTCUSDT",
-    timeframe: "5m",
-  },
-];
-
-function makeReport(runId: string): RunReport {
+function makeRunSummary(run_id: string, created_at_utc: string): RunSummary {
   return {
-    run_id: runId,
-    created_at: "2026-01-01T00:00:00Z",
-    report_schema_version: 1,
-    family: "ema_pullback",
-    symbol: "BTCUSDT",
+    contract_version: "research_run_summary.v1",
+    run_id,
+    created_at_utc,
+    instance_id: "instance_1",
+    strategy_id: "ema_pullback",
+    strategy_version: "1",
+    ticker: "BTCUSDT.P",
     timeframe: "5m",
-    candles: 100,
-    data_range: { from_open_time_ms: 1_000_000, to_open_time_ms: 2_000_000 },
-    variants_count: 2,
-    variants: [
-      {
-        variant: "exp_a",
-        config_id: "cfg_a",
-        symbol: "BTCUSDT",
-        timeframe: "5m",
-        strategy_spec: {
-          anchor_stack: {
-            fast: { period: 200 },
-            anchor: { period: 500 },
-            slow: { period: 1000 },
-          },
-        },
-        metrics: EMPTY_METRICS,
-        component_counters: [],
-        trade_records: [
-          {
-            trade_id: 1,
-            direction: "long",
-            status: "closed",
-            entry_time_ms: 1_100_000,
-            exit_time_ms: 1_200_000,
-            entry_price: 100,
-            exit_price: 101,
-            exit_reason: "signal:exit",
-            size: 1,
-            pnl: 1,
-            return_pct: 0.01,
-          },
-          {
-            trade_id: 2,
-            direction: "long",
-            status: "closed",
-            entry_time_ms: 1_300_000,
-            exit_time_ms: 1_400_000,
-            entry_price: 102,
-            exit_price: 103,
-            exit_reason: "signal:exit",
-            size: 1,
-            pnl: 1,
-            return_pct: 0.01,
-          },
-        ],
-      },
-      {
-        variant: "exp_b",
-        config_id: "cfg_b",
-        symbol: "BTCUSDT",
-        timeframe: "5m",
-        strategy_spec: {
-          anchor_stack: {
-            fast: { period: 200 },
-            anchor: { period: 500 },
-            slow: { period: 1000 },
-          },
-        },
-        metrics: EMPTY_METRICS,
-        component_counters: [],
-        trade_records: [
-          {
-            trade_id: 10,
-            direction: "long",
-            status: "closed",
-            entry_time_ms: 1_500_000,
-            exit_time_ms: 1_600_000,
-            entry_price: 100,
-            exit_price: 101,
-            exit_reason: "signal:exit",
-            size: 1,
-            pnl: 1,
-            return_pct: 0.01,
-          },
-        ],
-      },
-    ],
+    from_ms: 1_000_000,
+    to_ms: 2_000_000,
+    realised_trade_count: 0,
+    open_position_count: 0,
+    final_equity: "10000",
+    net_pnl: "0",
+    market_data_hash: null,
   };
 }
 
-function makeHtfReport(runId: string): RunReport {
+const RUNS: RunSummary[] = [
+  makeRunSummary("run-a", "2026-01-01T00:00:00Z"),
+  makeRunSummary("run-b", "2026-01-02T00:00:00Z"),
+];
+
+function makeReport(runId: string): RunDetail {
+  return {
+    contract_version: "1.0.0",
+    manifest: {
+      contract_version: "1.0.0",
+      run_id: runId,
+      instance_id: "instance_1",
+      created_at_utc: "2026-01-01T00:00:00Z",
+      market_data_hash: null,
+    },
+    result: {
+      contract_version: "1.0.0",
+      run_id: runId,
+      instance_id: "instance_1",
+      strategy_evaluation: {
+        contract_version: "1.0.0",
+        strategy_id: "ema_pullback",
+        strategy_version: "1",
+        instance_id: "instance_1",
+        market: {
+          ticker: "BTCUSDT",
+          timeframe: "5m",
+          from_ms: 1_000_000,
+          to_ms: 2_000_000,
+        },
+        bar_count: 100,
+        market_data_hash: "hash",
+      },
+    },
+    strategy_spec: {
+      anchor_stack: {
+        fast: { period: 200 },
+        anchor: { period: 500 },
+        slow: { period: 1000 },
+      },
+    },
+  };
+}
+
+function makeTrades(_runId: string): TradeRecord[] {
+  return [
+    makeTradeRecord({
+      trade_id: "1",
+      position_id: "position-1",
+      instance_id: "instance_1",
+      side: "long",
+      entry_time_ms: 1_100_000,
+      exit_time_ms: 1_200_000,
+      entry_price: "100",
+      exit_price: "101",
+      exit_reason: "signal:exit",
+      net_pnl: "1",
+      net_return_pct: "0.01",
+    }),
+    makeTradeRecord({
+      trade_id: "2",
+      position_id: "position-2",
+      instance_id: "instance_1",
+      side: "long",
+      entry_time_ms: 1_300_000,
+      exit_time_ms: 1_400_000,
+      entry_price: "102",
+      exit_price: "103",
+      exit_reason: "signal:exit",
+      net_pnl: "1",
+      net_return_pct: "0.01",
+    }),
+  ];
+}
+
+function makeHtfReport(runId: string): RunDetail {
   const report = makeReport(runId);
   return {
     ...report,
-    variants: report.variants.map((variant) =>
-      variant.variant === "exp_a"
-        ? {
-            ...variant,
-            strategy_spec: {
-              ...variant.strategy_spec,
-              contexts: {
-                htf_1: {
-                  component_id: "htf_context",
-                  timeframe: "4h",
-                  fast_period: 21,
-                  anchor_period: 55,
-                  slow_period: 144,
-                },
-              },
-              trade_management: {
-                exit_policy: {
-                  context_consumption: {
-                    context_ref: "htf_1",
-                  },
-                  always_on: {
-                    exits: [],
-                  },
-                },
-              },
-            },
-          }
-        : variant,
-    ),
+    strategy_spec: {
+      ...report.strategy_spec,
+      contexts: {
+        htf_1: {
+          component_id: "htf_context",
+          timeframe: "4h",
+          fast_period: 21,
+          anchor_period: 55,
+          slow_period: 144,
+        },
+      },
+      trade_management: {
+        exit_policy: {
+          context_consumption: {
+            context_ref: "htf_1",
+          },
+          always_on: {
+            exits: [],
+          },
+        },
+      },
+    },
   };
 }
 
@@ -315,7 +289,7 @@ function WorkbenchCapture() {
   return (
     <div
       data-report-status={workbenchRef.reportLoadStatus}
-      data-variant-key={workbenchRef.selectedVariantKey}
+      data-instance-id={workbenchRef.instanceId}
       data-active-tab={workbenchRef.activeTab}
     />
   );
@@ -353,19 +327,40 @@ describe("Workbench report-load invariant", () => {
     clearMarketResourceCache();
     fetchRunSummaries.mockResolvedValue(RUNS);
     fetchConfigState.mockResolvedValue({
-      family: "ema_pullback",
+      strategy_id: "ema_pullback",
       selected_experiment_id: null,
       configs: [],
       selected_path: null,
       draft: null,
     });
-    fetchRunReport.mockImplementation(async (runId: string) => makeReport(runId));
+    fetchRunDetail.mockImplementation(async (runId: string) => makeReport(runId));
+    fetchRunTrades.mockImplementation(async (runId: string) => ({
+      contract_version: "1.0.0",
+      run_id: runId,
+      trades: makeTrades(runId),
+    }));
+    fetchRunMetrics.mockResolvedValue({
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      initial_equity: "1000",
+      final_equity: "1000",
+      realised_trade_count: 0,
+      open_position_count: 0,
+      gross_pnl: "0",
+      fees_paid: "0",
+      net_pnl: "0",
+    });
+    fetchManagedPolicyEvents.mockResolvedValue({
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      events: [],
+    });
     installDefaultMarketMocks();
     fetchSignalTrace.mockResolvedValue(EMPTY_SIGNAL_TRACE);
     fetchChartOverlayEma.mockResolvedValue([]);
   });
 
-  it("calls fetchRunReport exactly once on mount", async () => {
+  it("calls fetchRunDetail exactly once on mount", async () => {
     render(
       <Host>
         <WorkbenchCapture />
@@ -373,31 +368,46 @@ describe("Workbench report-load invariant", () => {
     );
 
     await waitFor(() => {
-      expect(fetchRunReport).toHaveBeenCalledTimes(1);
+      expect(fetchRunDetail).toHaveBeenCalledTimes(1);
     });
-    expect(fetchRunReport).toHaveBeenCalledWith("run-a");
+    expect(fetchRunDetail).toHaveBeenCalledWith("run-a");
   });
 
-  it("does not refetch report when variant changes", async () => {
+  it("run still becomes ready when managed-policy-events fetch fails (optional projection, not core run load)", async () => {
+    const { ApiError } = await import("@/api/client");
+    fetchManagedPolicyEvents.mockRejectedValue(new ApiError(404, "managed-policy trace unavailable"));
+
     render(
       <Host>
         <WorkbenchCapture />
+        <ChartSliceCapture />
       </Host>,
     );
 
     await waitFor(() => {
       expect(workbenchRef?.reportLoadStatus).toBe("ready");
     });
-    const callsAfterReady = fetchRunReport.mock.calls.length;
+    expect(workbenchRef?.runDetail).not.toBeNull();
+    expect(chartSliceRef?.managedPolicyEventsLoadStatus).toBe("unavailable");
+    expect(chartSliceRef?.managedPolicyEvents).toEqual([]);
+  });
 
-    act(() => {
-      workbenchRef!.setSelectedVariantKey("exp_b");
-    });
+  it("selects the first entry from GET /runs as the default run (backend contract: newest created_at_utc first)", async () => {
+    fetchRunSummaries.mockResolvedValue([
+      makeRunSummary("run-newest", "2026-01-03T00:00:00Z"),
+      makeRunSummary("run-oldest", "2026-01-01T00:00:00Z"),
+    ]);
+
+    render(
+      <Host>
+        <WorkbenchCapture />
+      </Host>,
+    );
 
     await waitFor(() => {
-      expect(workbenchRef?.selectedVariantKey).toBe("exp_b");
+      expect(fetchRunDetail).toHaveBeenCalledTimes(1);
     });
-    expect(fetchRunReport.mock.calls.length).toBe(callsAfterReady);
+    expect(fetchRunDetail).toHaveBeenCalledWith("run-newest");
   });
 
   it("does not refetch report when trade is selected", async () => {
@@ -411,9 +421,9 @@ describe("Workbench report-load invariant", () => {
       expect(workbenchRef?.reportLoadStatus).toBe("ready");
     });
     await waitFor(() => {
-      expect(workbenchRef?.selectedTradeId).toBe(2);
+      expect(workbenchRef?.selectedTradeId).toBe("2");
     });
-    const callsAfterReady = fetchRunReport.mock.calls.length;
+    const callsAfterReady = fetchRunDetail.mock.calls.length;
 
     act(() => {
       workbenchRef!.selectTrade(1);
@@ -422,7 +432,7 @@ describe("Workbench report-load invariant", () => {
     await waitFor(() => {
       expect(workbenchRef?.selectedTradeId).toBe(1);
     });
-    expect(fetchRunReport.mock.calls.length).toBe(callsAfterReady);
+    expect(fetchRunDetail.mock.calls.length).toBe(callsAfterReady);
   });
 
   it("fetches report again when run changes", async () => {
@@ -435,20 +445,41 @@ describe("Workbench report-load invariant", () => {
     await waitFor(() => {
       expect(workbenchRef?.reportLoadStatus).toBe("ready");
     });
-    expect(fetchRunReport).toHaveBeenCalledTimes(1);
+    expect(fetchRunDetail).toHaveBeenCalledTimes(1);
 
     act(() => {
       workbenchRef!.setSelectedRunId("run-b");
     });
 
     await waitFor(() => {
-      expect(fetchRunReport).toHaveBeenCalledTimes(2);
+      expect(fetchRunDetail).toHaveBeenCalledTimes(2);
     });
-    expect(fetchRunReport).toHaveBeenLastCalledWith("run-b");
+    expect(fetchRunDetail).toHaveBeenLastCalledWith("run-b");
   });
 
   it("keeps HTF context EMA overlays sourced from signal trace after context split", async () => {
-    fetchRunReport.mockImplementation(async (runId: string) => makeHtfReport(runId));
+    fetchRunDetail.mockImplementation(async (runId: string) => makeHtfReport(runId));
+    fetchRunTrades.mockImplementation(async (runId: string) => ({
+      contract_version: "1.0.0",
+      run_id: runId,
+      trades: makeTrades(runId),
+    }));
+    fetchRunMetrics.mockResolvedValue({
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      initial_equity: "1000",
+      final_equity: "1000",
+      realised_trade_count: 0,
+      open_position_count: 0,
+      gross_pnl: "0",
+      fees_paid: "0",
+      net_pnl: "0",
+    });
+    fetchManagedPolicyEvents.mockResolvedValue({
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      events: [],
+    });
     installDefaultMarketMocks([]);
     fetchSignalTrace.mockResolvedValue(ONE_POINT_HTF_SIGNAL_TRACE);
 
@@ -489,13 +520,34 @@ describe("Workbench missing-range trace scheduling", () => {
     clearMarketResourceCache();
     fetchRunSummaries.mockResolvedValue(RUNS);
     fetchConfigState.mockResolvedValue({
-      family: "ema_pullback",
+      strategy_id: "ema_pullback",
       selected_experiment_id: null,
       configs: [],
       selected_path: null,
       draft: null,
     });
-    fetchRunReport.mockImplementation(async (runId: string) => makeReport(runId));
+    fetchRunDetail.mockImplementation(async (runId: string) => makeReport(runId));
+    fetchRunTrades.mockImplementation(async (runId: string) => ({
+      contract_version: "1.0.0",
+      run_id: runId,
+      trades: makeTrades(runId),
+    }));
+    fetchRunMetrics.mockResolvedValue({
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      initial_equity: "1000",
+      final_equity: "1000",
+      realised_trade_count: 0,
+      open_position_count: 0,
+      gross_pnl: "0",
+      fees_paid: "0",
+      net_pnl: "0",
+    });
+    fetchManagedPolicyEvents.mockResolvedValue({
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      events: [],
+    });
     fetchChartOverlayEma.mockResolvedValue([]);
   });
 
@@ -571,19 +623,29 @@ function installDefaultMarketMocks(
 const WIDE_REPORT_TO_MS = 20_000_000_000_000;
 const TAIL_TIMEFRAME_MS = 300_000;
 
-function makeWideTailPanReport(runId: string): RunReport {
+function makeWideTailPanReport(runId: string): RunDetail {
+  const report = makeReport(runId);
   return {
-    ...makeReport(runId),
-    data_range: { from_open_time_ms: 0, to_open_time_ms: WIDE_REPORT_TO_MS },
+    ...report,
+    result: {
+      ...report.result,
+      strategy_evaluation: {
+        ...report.result.strategy_evaluation,
+        market: {
+          ...report.result.strategy_evaluation.market,
+          from_ms: 0,
+          to_ms: WIDE_REPORT_TO_MS,
+        },
+      },
+    },
   };
 }
 
 function resolveTailFocusLeftEdgeSec(): number {
   const report = makeWideTailPanReport("run-a");
   const view = resolveRunMarketView({
-    report,
+    runDetail: report,
     chartTimeframe: "5m",
-    variant: report.variants[0]!,
     reloadToken: 0,
   });
   const focusWindow = resolveMarketTargetWindow(view, null);
@@ -627,42 +689,36 @@ describe("Workbench split market resource cache", () => {
     vi.stubEnv("VITE_EMA_PIPELINE_DEBUG", "true");
     fetchRunSummaries.mockResolvedValue(RUNS);
     fetchConfigState.mockResolvedValue({
-      family: "ema_pullback",
+      strategy_id: "ema_pullback",
       selected_experiment_id: null,
       configs: [],
       selected_path: null,
       draft: null,
     });
-    fetchRunReport.mockImplementation(async (runId: string) => makeReport(runId));
+    fetchRunDetail.mockImplementation(async (runId: string) => makeReport(runId));
+    fetchRunTrades.mockImplementation(async (runId: string) => ({
+      contract_version: "1.0.0",
+      run_id: runId,
+      trades: makeTrades(runId),
+    }));
+    fetchRunMetrics.mockResolvedValue({
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      initial_equity: "1000",
+      final_equity: "1000",
+      realised_trade_count: 0,
+      open_position_count: 0,
+      gross_pnl: "0",
+      fees_paid: "0",
+      net_pnl: "0",
+    });
+    fetchManagedPolicyEvents.mockResolvedValue({
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      events: [],
+    });
     fetchChartOverlayEma.mockResolvedValue([]);
     fetchSignalTrace.mockResolvedValue(EMPTY_SIGNAL_TRACE);
-  });
-
-  it("reuses cached candles and overlays when switching variants with identical anchor-stack periods", async () => {
-    installDefaultMarketMocks(ANCHOR_EMA_OVERLAYS);
-
-    render(
-      <Host>
-        <WorkbenchCapture />
-      </Host>,
-    );
-
-    await waitFor(() => {
-      expect(workbenchRef?.marketLoadStatus).toBe("ready");
-    });
-    expect(fetchChartMarketBundle).not.toHaveBeenCalled();
-    expect(fetchCandlesWindow).toHaveBeenCalledTimes(1);
-
-    await act(async () => {
-      workbenchRef!.setSelectedVariantKey("exp_b");
-    });
-
-    await waitFor(() => {
-      expect(workbenchRef?.selectedVariantKey).toBe("exp_b");
-      expect(workbenchRef?.marketLoadStatus).toBe("ready");
-    });
-    expect(fetchCandlesWindow).toHaveBeenCalledTimes(1);
-    expect(workbenchRef?.marketCandlesCount).toBe(1);
   });
 
   it("cold open becomes candle-ready before deferred EMA overlays arrive", async () => {
@@ -755,13 +811,34 @@ describe("Workbench abort + in-flight dedupe", () => {
     clearMarketResourceCache();
     fetchRunSummaries.mockResolvedValue(RUNS);
     fetchConfigState.mockResolvedValue({
-      family: "ema_pullback",
+      strategy_id: "ema_pullback",
       selected_experiment_id: null,
       configs: [],
       selected_path: null,
       draft: null,
     });
-    fetchRunReport.mockImplementation(async (runId: string) => makeReport(runId));
+    fetchRunDetail.mockImplementation(async (runId: string) => makeReport(runId));
+    fetchRunTrades.mockImplementation(async (runId: string) => ({
+      contract_version: "1.0.0",
+      run_id: runId,
+      trades: makeTrades(runId),
+    }));
+    fetchRunMetrics.mockResolvedValue({
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      initial_equity: "1000",
+      final_equity: "1000",
+      realised_trade_count: 0,
+      open_position_count: 0,
+      gross_pnl: "0",
+      fees_paid: "0",
+      net_pnl: "0",
+    });
+    fetchManagedPolicyEvents.mockResolvedValue({
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      events: [],
+    });
     fetchChartOverlayEma.mockResolvedValue([]);
     fetchSignalTrace.mockResolvedValue(EMPTY_SIGNAL_TRACE);
   });
@@ -812,13 +889,34 @@ describe("Workbench market pan prefetch", () => {
     vi.stubEnv("VITE_EMA_PIPELINE_DEBUG", "true");
     fetchRunSummaries.mockResolvedValue(RUNS);
     fetchConfigState.mockResolvedValue({
-      family: "ema_pullback",
+      strategy_id: "ema_pullback",
       selected_experiment_id: null,
       configs: [],
       selected_path: null,
       draft: null,
     });
-    fetchRunReport.mockImplementation(async (runId: string) => makeReport(runId));
+    fetchRunDetail.mockImplementation(async (runId: string) => makeReport(runId));
+    fetchRunTrades.mockImplementation(async (runId: string) => ({
+      contract_version: "1.0.0",
+      run_id: runId,
+      trades: makeTrades(runId),
+    }));
+    fetchRunMetrics.mockResolvedValue({
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      initial_equity: "1000",
+      final_equity: "1000",
+      realised_trade_count: 0,
+      open_position_count: 0,
+      gross_pnl: "0",
+      fees_paid: "0",
+      net_pnl: "0",
+    });
+    fetchManagedPolicyEvents.mockResolvedValue({
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      events: [],
+    });
     installDefaultMarketMocks(ANCHOR_EMA_OVERLAYS);
     fetchSignalTrace.mockResolvedValue(EMPTY_SIGNAL_TRACE);
     fetchChartOverlayEma.mockResolvedValue([]);
@@ -887,7 +985,28 @@ describe("Workbench market pan prefetch", () => {
   });
 
   it("applies pan-left prefetch coverage and fetches the expanded range", async () => {
-    fetchRunReport.mockImplementation(async (runId: string) => makeWideTailPanReport(runId));
+    fetchRunDetail.mockImplementation(async (runId: string) => makeWideTailPanReport(runId));
+    fetchRunTrades.mockImplementation(async (runId: string) => ({
+      contract_version: "1.0.0",
+      run_id: runId,
+      trades: makeTrades(runId),
+    }));
+    fetchRunMetrics.mockResolvedValue({
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      initial_equity: "1000",
+      final_equity: "1000",
+      realised_trade_count: 0,
+      open_position_count: 0,
+      gross_pnl: "0",
+      fees_paid: "0",
+      net_pnl: "0",
+    });
+    fetchManagedPolicyEvents.mockResolvedValue({
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      events: [],
+    });
     const leftEdgeSec = installTailLeftEdgeMarketMocks();
 
     render(
@@ -961,7 +1080,28 @@ describe("Workbench market pan prefetch", () => {
   });
 
   it("resets expanded coverage back to focus after trade selection changes", async () => {
-    fetchRunReport.mockImplementation(async (runId: string) => makeWideTailPanReport(runId));
+    fetchRunDetail.mockImplementation(async (runId: string) => makeWideTailPanReport(runId));
+    fetchRunTrades.mockImplementation(async (runId: string) => ({
+      contract_version: "1.0.0",
+      run_id: runId,
+      trades: makeTrades(runId),
+    }));
+    fetchRunMetrics.mockResolvedValue({
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      initial_equity: "1000",
+      final_equity: "1000",
+      realised_trade_count: 0,
+      open_position_count: 0,
+      gross_pnl: "0",
+      fees_paid: "0",
+      net_pnl: "0",
+    });
+    fetchManagedPolicyEvents.mockResolvedValue({
+      contract_version: "1.0.0",
+      run_id: "run-a",
+      events: [],
+    });
     const leftEdgeSec = installTailLeftEdgeMarketMocks();
 
     render(
@@ -1014,9 +1154,8 @@ describe("Workbench market pan prefetch", () => {
 
     const report = makeWideTailPanReport("run-a");
     const view = resolveRunMarketView({
-      report,
+      runDetail: report,
       chartTimeframe: "5m",
-      variant: report.variants[0]!,
       reloadToken: 0,
     });
     const tradeFocusFromMs = resolveMarketTargetWindow(view, 1_100_000).fromMs;

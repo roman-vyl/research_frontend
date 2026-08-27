@@ -2,62 +2,66 @@ import { useMemo, useState } from "react";
 
 import type { TradeRecord } from "@/api/types";
 import { ExitReasonBreakdownTable } from "@/features/reports/ExitReasonBreakdownTable";
-import { FeeDiagnosticsSummary } from "@/features/reports/FeeDiagnosticsSummary";
 import {
   EXIT_REASON_FILTER_OPTIONS,
   type ExitReasonFilterId,
 } from "@/features/reports/exitReasonFilters";
+import { FeeDiagnosticsSummary } from "@/features/reports/FeeDiagnosticsSummary";
 import { EM_DASH } from "@/features/reports/formatDiagnostics";
+import { TradeManagementBreakdownPanel } from "@/features/reports/TradeManagementBreakdownPanel";
 import { TradeStatusChip } from "@/features/reports/TradeStatusChip";
 import {
-  buildTradeDiagnosticFields,
-  buildTradeManagementDiagnosticFields,
-  formatMs,
-  formatNum,
-} from "@/features/reports/tradeDiagnosticsFields";
-import { ProfileBreakdownTable } from "@/features/reports/ProfileBreakdownTable";
-import { hasVariantDiagnostics, isDiagnosticsV4 } from "@/features/reports/reportSchema";
-import { TradeManagementDiagnosticsPanel } from "@/features/reports/TradeManagementDiagnosticsPanel";
-import { hasTradeManagementSummary } from "@/features/reports/tradeManagementSummary";
+  buildExitLayerBreakdown,
+  buildExitReasonBreakdown,
+  buildFeeDiagnostics,
+  buildPhaseReachedBreakdown,
+} from "@/features/reports/tradeAggregates";
+import { buildTradeDiagnosticFields, formatMs, formatNum } from "@/features/reports/tradeDiagnosticsFields";
 import {
   DEFAULT_TRADE_DIAGNOSTICS_FILTERS,
   distinctExitKinds,
   DIRECTION_FILTER_OPTIONS,
-  ENTRY_CONTEXT_FILTER_OPTIONS,
-  ENTRY_PROFILE_FILTER_OPTIONS,
-  EXIT_GROUP_FILTER_OPTIONS,
   filterTrades,
   OUTCOME_FILTER_OPTIONS,
-  QUALITY_FLAG_FILTER_OPTIONS,
   type TradeDiagnosticsFilterState,
 } from "@/features/reports/tradeDiagnosticsFilters";
 import { DIAGNOSTICS_COLUMNS } from "@/features/reports/tradeTableColumns";
 import { findTradeById, tradeDisplayNumber, tradeIdsEqual } from "@/features/chart/tradeLookup";
-import { useWorkbenchReport } from "@/shared/context/WorkbenchContext";
+import { useWorkbenchChart, useWorkbenchReport } from "@/shared/context/WorkbenchContext";
 
+/**
+ * Canonical RunTrades/RunMetrics view. Exit-reason breakdown, fee
+ * diagnostics, exit-layer breakdown, and phase-reached breakdown are
+ * recomputed client-side from RunTrades/managed-policy-events (see
+ * tradeAggregates.ts) — all of that data is present on canonical fields.
+ * Two things are NOT reconstructed anywhere here: entry-profile-scoped
+ * breakdown (canonical TradeRecord has no entry_profile field) and
+ * baseline-vs-managed comparison (needs an unmanaged-replay baseline the
+ * backend does not produce). Both are genuine backend gaps, not omissions.
+ */
 export function ReportsPanel() {
-  const { report, selectedVariant, selectedTradeId, selectTrade } = useWorkbenchReport();
+  const { runDetail, selectedTradeId, selectTrade } = useWorkbenchReport();
+  const { runTrades, runMetrics, managedPolicyEvents } = useWorkbenchChart();
   const [filters, setFilters] = useState<TradeDiagnosticsFilterState>(
     DEFAULT_TRADE_DIAGNOSTICS_FILTERS,
   );
   const [showDiagnosticsColumns, setShowDiagnosticsColumns] = useState(false);
 
-  const exitKindOptions = useMemo(() => {
-    if (!selectedVariant) return [];
-    return distinctExitKinds(selectedVariant.trade_records);
-  }, [selectedVariant]);
+  const exitKindOptions = useMemo(() => distinctExitKinds(runTrades), [runTrades]);
 
-  const trades = useMemo(() => {
-    if (!selectedVariant) return [];
-    return filterTrades(selectedVariant.trade_records, filters);
-  }, [selectedVariant, filters]);
+  const trades = useMemo(() => filterTrades(runTrades, filters), [runTrades, filters]);
 
-  if (!report || !selectedVariant) {
+  const exitReasonBreakdown = useMemo(() => buildExitReasonBreakdown(runTrades), [runTrades]);
+  const feeDiagnostics = useMemo(() => buildFeeDiagnostics(runTrades), [runTrades]);
+  const exitLayerBreakdown = useMemo(() => buildExitLayerBreakdown(runTrades), [runTrades]);
+  const phaseReachedBreakdown = useMemo(
+    () => buildPhaseReachedBreakdown(managedPolicyEvents),
+    [managedPolicyEvents],
+  );
+
+  if (!runDetail) {
     return null;
   }
-
-  const metrics = selectedVariant.metrics;
-  const diagnosticsV4 = isDiagnosticsV4(report.report_schema_version);
 
   const setExitReason = (exitReason: ExitReasonFilterId) => {
     setFilters((prev) => ({ ...prev, exitReason }));
@@ -68,76 +72,43 @@ export function ReportsPanel() {
       <div className="panel__header">
         <h2>Reports</h2>
         <p className="panel__hint">
-          Run {report.run_id} · schema v{report.report_schema_version} · click a row to focus Chart
+          Run {runDetail.manifest.run_id} · instance {runDetail.manifest.instance_id} · click a row
+          to focus Chart
         </p>
       </div>
 
       <div className="reports-summary">
         <div className="metric-card">
-          <span>Total PnL</span>
-          <strong>{formatNum(metrics.total.pnl)}</strong>
+          <span>Net PnL</span>
+          <strong>{runMetrics ? formatNum(Number(runMetrics.net_pnl)) : EM_DASH}</strong>
         </div>
         <div className="metric-card">
           <span>Trades</span>
-          <strong>{metrics.total.trades}</strong>
+          <strong>{runMetrics ? runMetrics.realised_trade_count : EM_DASH}</strong>
         </div>
         <div className="metric-card">
-          <span>Win rate</span>
-          <strong>
-            {metrics.total.win_rate === null
-              ? EM_DASH
-              : `${(metrics.total.win_rate * 100).toFixed(0)}%`}
-          </strong>
+          <span>Gross PnL</span>
+          <strong>{runMetrics ? formatNum(Number(runMetrics.gross_pnl)) : EM_DASH}</strong>
         </div>
         <div className="metric-card">
           <span>Open</span>
-          <strong>{metrics.open_trades.total}</strong>
+          <strong>{runMetrics ? runMetrics.open_position_count : EM_DASH}</strong>
         </div>
       </div>
 
-      <section className="diagnostics-section" aria-label="Variant diagnostics">
-        <h3 className="diagnostics-section__title">Diagnostics</h3>
-        {!diagnosticsV4 && (
-          <p className="empty-hint">Diagnostics available for schema v4/v5 reports.</p>
-        )}
-        {diagnosticsV4 && (
-          <>
-            <p className="panel__hint diagnostics-section__hint">
-              Breakdown tables reflect all closed trades in this variant (not affected by trade
-              filters below).
-            </p>
-            {metrics.fee_diagnostics && (
-              <>
-                <h4 className="diagnostics-block__title">Fee diagnostics</h4>
-                <FeeDiagnosticsSummary feeDiagnostics={metrics.fee_diagnostics} />
-              </>
-            )}
-            {metrics.profile_breakdown && (
-              <>
-                <h4 className="diagnostics-block__title">Profile breakdown</h4>
-                <ProfileBreakdownTable profileBreakdown={metrics.profile_breakdown} />
-              </>
-            )}
-            {metrics.exit_reason_breakdown && (
-              <>
-                <h4 className="diagnostics-block__title">Exit reason breakdown</h4>
-                <ExitReasonBreakdownTable
-                  exitReasonBreakdown={metrics.exit_reason_breakdown}
-                />
-              </>
-            )}
-            {diagnosticsV4 && !hasVariantDiagnostics(metrics) && (
-              <p className="empty-hint">No diagnostic metrics in this variant.</p>
-            )}
-          </>
-        )}
-      </section>
+      {runTrades.length > 0 && (
+        <>
+          <h3 className="trade-detail__subtitle">Fee diagnostics</h3>
+          <FeeDiagnosticsSummary feeDiagnostics={feeDiagnostics} />
 
-      {hasTradeManagementSummary(metrics) && (
-        <TradeManagementDiagnosticsPanel
-          summary={metrics.trade_management_summary}
-          baselineVsManagedSummary={metrics.baseline_vs_managed_summary}
-        />
+          <h3 className="trade-detail__subtitle">Exit reason breakdown</h3>
+          <ExitReasonBreakdownTable exitReasonBreakdown={exitReasonBreakdown} />
+
+          <TradeManagementBreakdownPanel
+            exitLayerBreakdown={exitLayerBreakdown}
+            phaseReachedBreakdown={phaseReachedBreakdown}
+          />
+        </>
       )}
 
       <div className="filter-row" data-testid="filter-direction">
@@ -154,74 +125,26 @@ export function ReportsPanel() {
         ))}
       </div>
 
-      {diagnosticsV4 && (
-        <>
-          <div className="filter-row">
-            <span>entry_profile</span>
-            {ENTRY_PROFILE_FILTER_OPTIONS.map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                className={filters.entryProfile === opt.id ? "chip chip--active" : "chip"}
-                onClick={() => setFilters((prev) => ({ ...prev, entryProfile: opt.id }))}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="filter-row">
-            <span>entry_context</span>
-            {ENTRY_CONTEXT_FILTER_OPTIONS.map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                className={
-                  filters.entryContextState === opt.id ? "chip chip--active" : "chip"
-                }
-                onClick={() => setFilters((prev) => ({ ...prev, entryContextState: opt.id }))}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="filter-row" data-testid="filter-exit-kind">
-            <span>exit_kind</span>
-            <button
-              type="button"
-              className={filters.exitKind === "all" ? "chip chip--active" : "chip"}
-              onClick={() => setFilters((prev) => ({ ...prev, exitKind: "all" }))}
-            >
-              All
-            </button>
-            {exitKindOptions.map((kind) => (
-              <button
-                key={kind}
-                type="button"
-                className={filters.exitKind === kind ? "chip chip--active" : "chip"}
-                onClick={() => setFilters((prev) => ({ ...prev, exitKind: kind }))}
-              >
-                {kind}
-              </button>
-            ))}
-          </div>
-
-          <div className="filter-row">
-            <span>exit_group</span>
-            {EXIT_GROUP_FILTER_OPTIONS.map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                className={filters.exitGroup === opt.id ? "chip chip--active" : "chip"}
-                onClick={() => setFilters((prev) => ({ ...prev, exitGroup: opt.id }))}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+      <div className="filter-row" data-testid="filter-exit-kind">
+        <span>exit_kind</span>
+        <button
+          type="button"
+          className={filters.exitKind === "all" ? "chip chip--active" : "chip"}
+          onClick={() => setFilters((prev) => ({ ...prev, exitKind: "all" }))}
+        >
+          All
+        </button>
+        {exitKindOptions.map((kind) => (
+          <button
+            key={kind}
+            type="button"
+            className={filters.exitKind === kind ? "chip chip--active" : "chip"}
+            onClick={() => setFilters((prev) => ({ ...prev, exitKind: kind }))}
+          >
+            {kind}
+          </button>
+        ))}
+      </div>
 
       <div className="filter-row">
         <span>exit_reason</span>
@@ -237,48 +160,30 @@ export function ReportsPanel() {
         ))}
       </div>
 
-      {diagnosticsV4 && (
-        <>
-          <div className="filter-row" data-testid="filter-outcome">
-            <span>outcome</span>
-            {OUTCOME_FILTER_OPTIONS.map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                className={filters.outcome === opt.id ? "chip chip--active" : "chip"}
-                onClick={() => setFilters((prev) => ({ ...prev, outcome: opt.id }))}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+      <div className="filter-row" data-testid="filter-outcome">
+        <span>outcome</span>
+        {OUTCOME_FILTER_OPTIONS.map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            className={filters.outcome === opt.id ? "chip chip--active" : "chip"}
+            onClick={() => setFilters((prev) => ({ ...prev, outcome: opt.id }))}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
 
-          <div className="filter-row" data-testid="filter-quality-flag">
-            <span>quality</span>
-            {QUALITY_FLAG_FILTER_OPTIONS.map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                className={filters.qualityFlag === opt.id ? "chip chip--active" : "chip"}
-                onClick={() => setFilters((prev) => ({ ...prev, qualityFlag: opt.id }))}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="filter-row trade-table-toolbar">
-            <label className="diagnostics-columns-toggle">
-              <input
-                type="checkbox"
-                checked={showDiagnosticsColumns}
-                onChange={(e) => setShowDiagnosticsColumns(e.target.checked)}
-              />
-              Show diagnostics columns
-            </label>
-          </div>
-        </>
-      )}
+      <div className="filter-row trade-table-toolbar">
+        <label className="diagnostics-columns-toggle">
+          <input
+            type="checkbox"
+            checked={showDiagnosticsColumns}
+            onChange={(e) => setShowDiagnosticsColumns(e.target.checked)}
+          />
+          Show diagnostics columns
+        </label>
+      </div>
 
       <div className="table-wrap table-wrap--fill">
         <table className="trade-table">
@@ -317,10 +222,8 @@ export function ReportsPanel() {
 
       {selectedTradeId !== null && (
         <TradeDetail
-          trade={findTradeById(selectedVariant.trade_records, selectedTradeId)}
-          displayNumber={
-            tradeDisplayNumber(selectedVariant.trade_records, selectedTradeId) ?? undefined
-          }
+          trade={findTradeById(runTrades, selectedTradeId)}
+          displayNumber={tradeDisplayNumber(runTrades, selectedTradeId) ?? undefined}
         />
       )}
     </section>
@@ -340,16 +243,15 @@ function TradeRow({
   showDiagnosticsColumns: boolean;
   onSelect: () => void;
 }) {
+  const netPnl = Number(trade.net_pnl);
   return (
     <tr className={selected ? "trade-row trade-row--selected" : "trade-row"} onClick={onSelect}>
       <td>{displayNumber}</td>
-      <td>{trade.direction}</td>
+      <td>{trade.side}</td>
       <td>{trade.status}</td>
       <td>{formatMs(trade.entry_time_ms)}</td>
       <td>{formatMs(trade.exit_time_ms)}</td>
-      <td className={trade.pnl !== null && trade.pnl < 0 ? "pnl-negative" : "pnl-positive"}>
-        {formatNum(trade.pnl)}
-      </td>
+      <td className={netPnl < 0 ? "pnl-negative" : "pnl-positive"}>{formatNum(netPnl)}</td>
       {showDiagnosticsColumns &&
         DIAGNOSTICS_COLUMNS.map((col) => <td key={col.id}>{col.cell(trade)}</td>)}
       <td>
@@ -387,7 +289,7 @@ function TradeDetail({
       </dl>
       {diagnostics.length > 0 && (
         <>
-          <h4 className="trade-detail__subtitle">Diagnostics</h4>
+          <h4 className="trade-detail__subtitle">Path diagnostics</h4>
           <dl>
             {diagnostics.map((f) => (
               <div key={f.key}>
@@ -401,19 +303,6 @@ function TradeDetail({
                     f.label
                   )}
                 </dt>
-                <dd>{f.value}</dd>
-              </div>
-            ))}
-          </dl>
-        </>
-      )}
-      {buildTradeManagementDiagnosticFields(trade).length > 0 && (
-        <>
-          <h4 className="trade-detail__subtitle">Selected Trade Management</h4>
-          <dl>
-            {buildTradeManagementDiagnosticFields(trade).map((f) => (
-              <div key={f.key}>
-                <dt>{f.label}</dt>
                 <dd>{f.value}</dd>
               </div>
             ))}

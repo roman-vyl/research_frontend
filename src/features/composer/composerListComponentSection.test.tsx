@@ -11,7 +11,7 @@ import { ListComponentSection } from "@/features/composer/ComposerPanel";
 afterEach(() => cleanup());
 
 const catalog: ComponentCatalog = {
-  family: "ema_pullback",
+  strategy_id: "ema_pullback",
   schema_version: 1,
   sections: [],
   components: [

@@ -62,8 +62,8 @@ import {
   hasHtfAlignedComponentEvents,
 } from "@/features/chart/chartComponentEvents";
 import {
-  buildTradeManagementEventsForView,
-  hasTradeManagementEvents,
+  buildManagedPolicyEventsForView,
+  hasManagedPolicyEvents,
 } from "@/features/chart/tradeManagementChartEvents";
 
 import { readChartViewportDebug, shouldSuppressPanShiftRequest } from "@/features/chart/chartViewport";
@@ -177,7 +177,11 @@ export function ChartPanel() {
 
     chartTimeframe,
 
-    selectedVariant,
+    runDetail,
+
+    runTrades,
+
+    managedPolicyEvents,
 
     selectedTradeId,
 
@@ -231,7 +235,7 @@ export function ChartPanel() {
         ),
     }),
   );
-  const trades = selectedVariant?.trade_records ?? [];
+  const trades = runTrades;
 
   const selectedTrade = findTradeById(trades, selectedTradeId);
 
@@ -255,11 +259,11 @@ export function ChartPanel() {
 
     }
 
-    if (selectedVariant) {
+    if (runDetail) {
 
       try {
 
-        const p = anchorStackPeriodsFromStrategySpec(selectedVariant.strategy_spec);
+        const p = anchorStackPeriodsFromStrategySpec(runDetail.strategy_spec);
 
         return `${p.fast}/${p.anchor}/${p.slow}`;
 
@@ -273,7 +277,7 @@ export function ChartPanel() {
 
     return null;
 
-  }, [chartEmaOverlays, selectedVariant]);
+  }, [chartEmaOverlays, runDetail]);
 
 
 
@@ -592,7 +596,7 @@ export function ChartPanel() {
   useLayoutEffect(() => {
     const chart = chartRef.current;
     const series = seriesRef.current;
-    if (!chart || !series || !selectedVariant || chartSeriesDataKey === "") {
+    if (!chart || !series || !runDetail || chartSeriesDataKey === "") {
       return;
     }
 
@@ -603,12 +607,12 @@ export function ChartPanel() {
       },
       () => ({ barCount: chartCandles.length }),
     );
-  }, [chartCandles, chartSeriesDataKey, selectedVariant]);
+  }, [chartCandles, chartSeriesDataKey, runDetail]);
 
   useLayoutEffect(() => {
     const chart = chartRef.current;
     const emaByRole = emaSeriesByRoleRef.current;
-    if (!chart || !selectedVariant || chartSeriesDataKey === "") {
+    if (!chart || !runDetail || chartSeriesDataKey === "") {
       return;
     }
 
@@ -680,7 +684,7 @@ export function ChartPanel() {
     chartEmaOverlays,
     chartDisplayAuxEmaOverlays,
     chartSeriesDataKey,
-    selectedVariant,
+    runDetail,
   ]);
 
   useEffect(() => {
@@ -773,7 +777,7 @@ export function ChartPanel() {
 
     const markersPlugin = markersRef.current;
 
-    if (!markersPlugin || !selectedVariant || chartCandles.length === 0) return;
+    if (!markersPlugin || !runDetail || chartCandles.length === 0) return;
 
 
 
@@ -783,27 +787,20 @@ export function ChartPanel() {
     dbgTimedSync(
       DBG.chart.markersRebuild,
       () => {
-        const tradeMarkers = buildTradeMarkersForView(
-          selectedVariant.trade_records,
-          selectedTradeId,
-          chartCandles,
-        );
+        const tradeMarkers = buildTradeMarkersForView(runTrades, selectedTradeId, chartCandles);
         const componentMarkers = buildComponentEventsForView(chartDisplayComponentEvents, {
           showEntryBlock: chartShowEntryBlockMarkers,
           showExitSignal: chartShowExitSignalMarkers,
           showSetup: chartShowSetupMarkers,
           viewCandles: chartCandles,
         });
-        const tradeManagementMarkers = buildTradeManagementEventsForView(
-          selectedVariant.trade_management_events,
-          {
-            showPhases: chartShowTradeManagementPhaseMarkers,
-            showExits: chartShowTradeManagementExitMarkers,
-            selectedTradeId,
-            viewCandles: chartCandles,
-            trades: selectedVariant.trade_records,
-          },
-        );
+        const tradeManagementMarkers = buildManagedPolicyEventsForView(managedPolicyEvents, {
+          showPhases: chartShowTradeManagementPhaseMarkers,
+          showExits: chartShowTradeManagementExitMarkers,
+          selectedPositionId: selectedTrade?.position_id ?? null,
+          viewCandles: chartCandles,
+          trades: runTrades,
+        });
         tradeMarkerCount = tradeMarkers.length;
         componentMarkerCount = componentMarkers.length;
         tradeManagementMarkerCount = tradeManagementMarkers.length;
@@ -818,7 +815,10 @@ export function ChartPanel() {
 
   }, [
     chartCandles,
-    selectedVariant,
+    runDetail,
+    runTrades,
+    managedPolicyEvents,
+    selectedTrade,
     selectedTradeId,
     chartDisplayComponentEvents,
     windowShiftSeq,
@@ -856,7 +856,7 @@ export function ChartPanel() {
 
     const specs = buildTradePriceLineSpecs(
       selectedTrade,
-      tradeDisplayNumber(selectedVariant?.trade_records ?? [], selectedTrade.trade_id) ?? undefined,
+      tradeDisplayNumber(runTrades, selectedTrade.trade_id) ?? undefined,
     );
 
     tradePriceLinesRef.current = specs.map((spec) => series.createPriceLine(spec.options));
@@ -865,7 +865,7 @@ export function ChartPanel() {
 
 
 
-  if (!selectedVariant) {
+  if (!runDetail) {
 
     return null;
 
@@ -945,7 +945,7 @@ export function ChartPanel() {
         showSetupMarkers={chartShowSetupMarkers}
         onShowSetupMarkersChange={setChartShowSetupMarkers}
         hasComponentEvents={chartDisplayComponentEvents.length > 0}
-        hasTradeManagementEvents={hasTradeManagementEvents(selectedVariant?.trade_management_events)}
+        hasTradeManagementEvents={hasManagedPolicyEvents(managedPolicyEvents)}
         showTradeManagementPhaseMarkers={chartShowTradeManagementPhaseMarkers}
         onShowTradeManagementPhaseMarkersChange={setChartShowTradeManagementPhaseMarkers}
         showTradeManagementExitMarkers={chartShowTradeManagementExitMarkers}
@@ -1030,7 +1030,7 @@ export function ChartPanel() {
                   trade={selectedTrade}
                   selectedTradeId={selectedTradeId}
                   tradeDisplayNumber={tradeDisplayNumber(trades, selectedTradeId) ?? undefined}
-                  strategySpec={selectedVariant.strategy_spec}
+                  strategySpec={runDetail.strategy_spec}
                   chartEmaOverlays={chartEmaOverlays}
                   chartAuxEmaOverlays={chartDisplayAuxEmaOverlays}
                   focusWarning={chartTradeFocusWarning}

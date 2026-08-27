@@ -66,7 +66,7 @@ export type WorkbenchRenderViewportInputs = {
   marketFocusWindow: MarketDisplayWindowMs | null;
   marketCoverageWindow: MarketDisplayWindowMs | null;
   selectedRunId: string | null;
-  selectedVariantKey: string;
+  instanceId: string | null;
   selectedTradeEntryTimeMs: number | null;
   selectedTradeId: string | number | null;
   chartHeavyIoEnabled: boolean;
@@ -176,7 +176,7 @@ export function WorkbenchRenderViewportProvider({
     renderWindowFoundationKey,
     intendedRunMarketView,
     marketFocusWindow,
-    selectedVariantKey,
+    instanceId,
     selectedTradeEntryTimeMs,
     selectedTradeId,
     auxEmaOverlays,
@@ -263,7 +263,7 @@ export function WorkbenchRenderViewportProvider({
         marketLoadStatus,
         bundleCandles: cachedBundleCandlesRef.current,
         selectedTradeEntryTimeMs: null,
-        variantKey: selectedVariantKey,
+        instanceId: instanceId ?? "",
       });
       return;
     }
@@ -275,7 +275,7 @@ export function WorkbenchRenderViewportProvider({
         marketLoadStatus,
         bundleCandles: cachedBundleCandlesRef.current,
         selectedTradeEntryTimeMs: null,
-        variantKey: selectedVariantKey,
+        instanceId: instanceId ?? "",
       });
       return;
     }
@@ -296,7 +296,7 @@ export function WorkbenchRenderViewportProvider({
       marketLoadStatus,
       bundleCandles,
       selectedTradeEntryTimeMs,
-      variantKey: selectedVariantKey,
+      instanceId: instanceId ?? "",
     });
     if (initialized) {
       bumpRenderWindowSnapshot();
@@ -306,7 +306,7 @@ export function WorkbenchRenderViewportProvider({
     renderWindowFoundationKey,
     marketLoadStatus,
     inputs.selectedRunId,
-    selectedVariantKey,
+    instanceId,
     runMarketViewIdentity,
     bumpRenderWindowSnapshot,
     intendedRunMarketView,

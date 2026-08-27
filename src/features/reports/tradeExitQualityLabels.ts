@@ -1,11 +1,3 @@
-export type TradeExitQualityFlagId =
-  | "high_mfe_high_capture"
-  | "high_mfe_low_capture"
-  | "signal_exit_winner"
-  | "signal_exit_giveback_failure"
-  | "stop_loss_after_low_mfe"
-  | "stop_loss_after_bad_context";
-
 export type TradeExitQualityMetricKey =
   | "mfe_pct"
   | "mae_pct"
@@ -13,17 +5,7 @@ export type TradeExitQualityMetricKey =
   | "capture_ratio"
   | "giveback_pct"
   | "bars_to_mfe"
-  | "bars_from_mfe_to_exit"
-  | "quality_flags";
-
-const QUALITY_FLAG_LABELS: Record<TradeExitQualityFlagId, string> = {
-  high_mfe_high_capture: "сильный ход + хороший выход",
-  high_mfe_low_capture: "сильный ход, но плохо забрали",
-  signal_exit_winner: "сигнал выхода сработал хорошо",
-  signal_exit_giveback_failure: "сигнал выхода отдал импульс",
-  stop_loss_after_low_mfe: "стоп без нормального движения",
-  stop_loss_after_bad_context: "стоп в плохом контексте",
-};
+  | "bars_from_mfe_to_exit";
 
 const CHART_METRIC_LABELS: Record<
   TradeExitQualityMetricKey,
@@ -39,7 +21,6 @@ const CHART_METRIC_LABELS: Record<
     label: "Bars from MFE to exit",
     hint: "свечей после пика",
   },
-  quality_flags: { label: "Quality flags", hint: "ярлыки качества" },
 };
 
 const TABLE_COLUMN_LABELS: Record<
@@ -56,7 +37,6 @@ const TABLE_COLUMN_LABELS: Record<
     header: "Bars from MFE to exit",
     hint: "свечей после пика",
   },
-  quality_flags: { header: "Quality flags", hint: "ярлыки" },
 };
 
 export function isTradeExitQualityMetricKey(key: string): key is TradeExitQualityMetricKey {
@@ -78,19 +58,3 @@ export function tableColumnHeader(key: TradeExitQualityMetricKey): string {
 export function tableColumnHint(key: TradeExitQualityMetricKey): string {
   return TABLE_COLUMN_LABELS[key].hint;
 }
-
-export function qualityFlagLabel(flagId: string): string {
-  return QUALITY_FLAG_LABELS[flagId as TradeExitQualityFlagId] ?? flagId;
-}
-
-export function formatQualityFlags(flags: readonly string[] | null | undefined): string {
-  if (!flags || flags.length === 0) return "";
-  return flags.map((flag) => qualityFlagLabel(flag)).join(", ");
-}
-
-export const QUALITY_FLAG_FILTER_OPTIONS = [
-  { id: "all" as const, label: "Все" },
-  ...(Object.entries(QUALITY_FLAG_LABELS) as [TradeExitQualityFlagId, string][]).map(
-    ([id, label]) => ({ id, label }),
-  ),
-];
