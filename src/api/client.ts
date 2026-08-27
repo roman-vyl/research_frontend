@@ -114,10 +114,9 @@ export async function fetchManagedPolicyEvents(params: {
 /**
  * Per-bar entry pipeline trace for Chart Bar Inspector.
  *
- * The `variant` wire query param is Research Service's diagnostics identity —
- * it currently validates equality against the run's `instance_id` (see
- * signal_trace projection). Frontend sends the selected run's `instanceId`;
- * the wire param name is a backend contract detail, not renamed here.
+ * The `instance_id` wire query param is Research Service's diagnostics
+ * identity — it validates equality against the run's own `instance_id`
+ * (see signal_trace projection).
  */
 export async function fetchSignalTrace(params: {
   runId: string;
@@ -128,7 +127,7 @@ export async function fetchSignalTrace(params: {
   signal?: AbortSignal;
 }): Promise<SignalTraceBundle> {
   const qs = new URLSearchParams({
-    variant: params.instanceId,
+    instance_id: params.instanceId,
     from: String(params.fromMs),
     to_open_time_ms: String(params.toOpenTimeMs),
   });
@@ -143,7 +142,7 @@ export async function fetchSignalTrace(params: {
   );
 }
 
-/** Sparse chart display bundle (markers + HTF overlays). See `fetchSignalTrace` re: `variant` param. */
+/** Sparse chart display bundle (markers + HTF overlays). See `fetchSignalTrace` re: `instance_id` param. */
 export async function fetchChartEvents(params: {
   runId: string;
   instanceId: string;
@@ -153,7 +152,7 @@ export async function fetchChartEvents(params: {
   signal?: AbortSignal;
 }): Promise<ChartEventsBundle> {
   const qs = new URLSearchParams({
-    variant: params.instanceId,
+    instance_id: params.instanceId,
     from: String(params.fromMs),
     to_open_time_ms: String(params.toOpenTimeMs),
   });

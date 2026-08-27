@@ -235,7 +235,7 @@ describe("chart-events distant trade display apply", () => {
     fetchSignalTrace.mockResolvedValue({
       times: [1100, 1200, 1300],
       meta: {
-        variant: "exp_a",
+        instance_id: "exp_a",
         component_ids: { direction: "d", setups: [], trigger: "t", risk: "r" },
         setup_params: [],
         blocker_instances: [],
@@ -299,7 +299,7 @@ describe("chart-events distant trade display apply", () => {
         component_events: [],
         htf_context: { fast: [1], anchor: [1], slow: [1], meta: {} },
         meta: {
-          variant: "exp_a",
+          instance_id: "exp_a",
           component_ids: { direction: "d", setups: [], trigger: "t", risk: "r" },
           setup_params: [],
           blocker_instances: [],

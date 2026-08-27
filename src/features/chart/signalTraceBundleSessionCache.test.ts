@@ -13,7 +13,7 @@ function makeMinimalBundle(times: number[]): SignalTraceBundle {
   return {
     times,
     meta: {
-      variant: "v1",
+      instance_id: "v1",
       component_ids: {
         direction: "dir",
         setups: [],

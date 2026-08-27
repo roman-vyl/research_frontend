@@ -62,7 +62,7 @@ vi.mock("@/api/client", () => ({
 }));
 
 const TRACE_META: SignalTraceBundle["meta"] = {
-  variant: "exp_a",
+  instance_id: "exp_a",
   component_ids: {
     direction: "d",
     setups: [{ instance_id: "setup", component_id: "s" }],

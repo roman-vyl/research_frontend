@@ -22,7 +22,7 @@ describe("fetchSignalTrace query params", () => {
         ok: true,
         json: async () => ({
           times: [],
-          meta: { variant: "v1", component_ids: {}, setup_params: [], blocker_instances: [] },
+          meta: { instance_id: "v1", component_ids: {}, setup_params: [], blocker_instances: [] },
           long: {
             direction_ok: [],
             blockers_ok: [],
@@ -64,13 +64,67 @@ describe("fetchSignalTrace query params", () => {
     expect(url).toContain("context_overlay_ref=ctx_a");
   });
 
+  it("sends instance_id on the wire, not the retired variant param", async () => {
+    const fetchMock = vi.fn(async (_url: string) => ({
+      ok: true,
+      json: async () => ({
+        times: [],
+        meta: { instance_id: "v1", component_ids: {}, setup_params: [], blocker_instances: [] },
+        long: {
+          direction_ok: [],
+          blockers_ok: [],
+          setup_ok: [],
+          trigger_ok: [],
+          risk_ok: [],
+          signal_entry: [],
+          stop_ready: [],
+          portfolio_entry: [],
+          internals: {},
+        },
+        short: {
+          direction_ok: [],
+          blockers_ok: [],
+          setup_ok: [],
+          trigger_ok: [],
+          risk_ok: [],
+          signal_entry: [],
+          stop_ready: [],
+          portfolio_entry: [],
+          internals: {},
+        },
+        component_events: [],
+      }),
+    } as Response));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchSignalTrace({
+      runId: "run-1",
+      instanceId: "ema_pullback:abc123",
+      fromMs: 0,
+      toOpenTimeMs: 1,
+    });
+    const signalTraceUrl = String(fetchMock.mock.calls[0]![0]);
+    expect(signalTraceUrl).toContain("instance_id=ema_pullback%3Aabc123");
+    expect(signalTraceUrl).not.toMatch(/[?&]variant=/);
+
+    await fetchChartEvents({
+      runId: "run-1",
+      instanceId: "ema_pullback:abc123",
+      fromMs: 0,
+      toOpenTimeMs: 1,
+    });
+    const chartEventsUrl = String(fetchMock.mock.calls[1]![0]);
+    expect(chartEventsUrl).toContain("instance_id=ema_pullback%3Aabc123");
+    expect(chartEventsUrl).not.toMatch(/[?&]variant=/);
+  });
+
   it("passes AbortSignal to fetchSignalTrace", async () => {
     const controller = new AbortController();
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
       ok: true,
       json: async () => ({
         times: [],
-        meta: { variant: "v1", component_ids: {}, setup_params: [], blocker_instances: [] },
+        meta: { instance_id: "v1", component_ids: {}, setup_params: [], blocker_instances: [] },
         long: {
           direction_ok: [],
           blockers_ok: [],
@@ -166,7 +220,7 @@ describe("fetchChartEvents query params", () => {
           times: [],
           component_events: [],
           htf_context: { fast: [], anchor: [], slow: [], meta: {} },
-          meta: { variant: "v1", component_ids: {}, setup_params: [], blocker_instances: [] },
+          meta: { instance_id: "v1", component_ids: {}, setup_params: [], blocker_instances: [] },
           coverage: {
             schema_version: 1,
             from_sec: 0,
@@ -203,7 +257,7 @@ describe("fetchChartEvents query params", () => {
         times: [],
         component_events: [],
         htf_context: { fast: [], anchor: [], slow: [], meta: {} },
-        meta: { variant: "v1", component_ids: {}, setup_params: [], blocker_instances: [] },
+        meta: { instance_id: "v1", component_ids: {}, setup_params: [], blocker_instances: [] },
         coverage: {
           schema_version: 1,
           from_sec: 0,

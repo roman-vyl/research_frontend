@@ -452,7 +452,7 @@ export type SetupParamsEntry = SetupComponentRef &
   Record<string, number | string | boolean>;
 
 export type SignalTraceMeta = {
-  variant: string;
+  instance_id: string;
   component_ids: {
     direction: string;
     setups: SetupComponentRef[];
