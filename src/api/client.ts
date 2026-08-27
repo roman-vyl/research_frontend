@@ -15,6 +15,7 @@ import {
   type ChartEventsBundle,
   type BacktestResult,
   type ConfigStateResponse,
+  type RunBacktestRequest,
   type SaveConfigResult,
   type SerializeResult,
   type StrategyConfigDraft,
@@ -332,8 +333,6 @@ export async function selectSavedConfig(
   });
 }
 
-export async function runBacktest(
-  body: { draft: StrategyConfigDraft } | { config_path: string },
-): Promise<BacktestResult> {
+export async function runBacktest(body: RunBacktestRequest): Promise<BacktestResult> {
   return dbgTimed("api.runBacktest", () => postJson<BacktestResult>("/api/research/backtests", body));
 }

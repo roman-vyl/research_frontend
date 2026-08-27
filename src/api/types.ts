@@ -382,16 +382,57 @@ export type ConfigStateResponse = {
   configs: ConfigListEntry[];
 };
 
-/** Exactly one field — mutual exclusion enforced by BFF (422 if both or neither). */
-export type RunBacktestRequest =
-  | { draft: StrategyConfigDraft; config_path?: never }
-  | { config_path: string; draft?: never };
+/** Canonical Research Service `ExplicitRange` — required only when
+ * range_policy is "explicit_range". */
+export type ExplicitRange = {
+  from_ms: number;
+  to_ms: number;
+};
 
+/** Canonical Research Service `ExecutionPolicy`. `entry_price_source`/
+ * `protection_anchor` have exactly one valid value each and are not
+ * user-facing controls -- Composer never sends them, Research defaults
+ * apply. */
+export type ExecutionPolicy = {
+  quantity?: string;
+  entry_slippage_rate?: string;
+};
+
+/** Canonical Research Service `AccountingPolicy`. */
+export type AccountingPolicy = {
+  initial_equity?: string;
+  entry_fee_rate?: string;
+  exit_fee_rate?: string;
+};
+
+/** `POST /api/research/backtests` request (research-backtest-api-v1):
+ * one canonical deployable strategy instance (including `enabled`) plus
+ * Research-owned evaluation concerns. Research projects `strategy` to its
+ * identity subset internally -- `enabled` never reaches Engine or affects
+ * `instance_id`. */
+export type RunBacktestRequest = {
+  strategy: DeployableStrategyInstance;
+  range_policy: "explicit_range" | "full_available";
+  range?: ExplicitRange;
+  execution?: ExecutionPolicy;
+  accounting?: AccountingPolicy;
+  managed_policy_enabled?: boolean;
+};
+
+/** `BacktestRunResponse` (research_backtest_api.v1). HTTP 2xx is success;
+ * errors arrive as thrown `ApiError`, not an `ok` flag. */
 export type BacktestResult = {
-  ok: boolean;
-  run_id: string | null;
-  config_path: string | null;
-  errors: ValidationErrorItem[];
+  contract_version: string;
+  run_id: string;
+  status: "completed";
+  instance_id: string;
+  realised_trade_count: number;
+  open_position_count: number;
+  final_equity: string;
+  net_pnl: string;
+  artifact_path: string;
+  manifest_contract_version: string;
+  market_data_hash: string | null;
 };
 
 export type SignalTraceGate =

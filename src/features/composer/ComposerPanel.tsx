@@ -608,29 +608,42 @@ export function ComposerPanel() {
       setBusy(null);
       return;
     }
+    const strategy = apiDraft.instances[selectedIndex];
+    if (!strategy) {
+      setActionError("Select an instance to backtest.");
+      setBusy(null);
+      return;
+    }
+    const execDraft = configDraft.execution;
     try {
-      const result = await runBacktest({ draft: apiDraft });
-      if (!result.ok) {
-        setValidation({ ok: false, errors: result.errors });
-        return;
-      }
-      if (!result.run_id) {
-        setActionError("Backtest finished without a run id.");
-        return;
-      }
+      const result = await runBacktest({
+        strategy,
+        range_policy: "full_available",
+        execution:
+          execDraft.slippage === undefined
+            ? undefined
+            : { entry_slippage_rate: String(execDraft.slippage) },
+        accounting:
+          execDraft.init_cash === undefined && execDraft.fees === undefined
+            ? undefined
+            : {
+                ...(execDraft.init_cash === undefined
+                  ? {}
+                  : { initial_equity: String(execDraft.init_cash) }),
+                ...(execDraft.fees === undefined
+                  ? {}
+                  : { entry_fee_rate: String(execDraft.fees), exit_fee_rate: String(execDraft.fees) }),
+              },
+      });
       await refreshRunsAndSelectRun(result.run_id);
-      setBacktestMessage(
-        result.config_path
-          ? `Backtest complete — run ${result.run_id} (config: ${result.config_path})`
-          : `Backtest complete — run ${result.run_id}`,
-      );
+      setBacktestMessage(`Backtest complete — run ${result.run_id}`);
       setActiveTab("reports");
     } catch (err) {
       setActionError(err instanceof ApiError ? err.detail : "Backtest failed.");
     } finally {
       setBusy(null);
     }
-  }, [apiDraft, catalog, configDraft, refreshRunsAndSelectRun, setActiveTab]);
+  }, [apiDraft, catalog, configDraft, refreshRunsAndSelectRun, selectedIndex, setActiveTab]);
 
   const addInstance = () => {
     if (!configDraft) return;
