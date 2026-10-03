@@ -220,6 +220,7 @@ type WorkbenchShellState = Pick<
   | "reportLoadStatus"
   | "reportError"
   | "reloadReport"
+  | "selectedRunId"
 >;
 
 type WorkbenchReportState = Pick<
@@ -303,17 +304,6 @@ const EMPTY_TRACE_DISPLAY_STATE: TraceDisplayState = {
   coveredRanges: [],
   missingRange: null,
 };
-
-const EMPTY_RUNS_HINT =
-  "No research runs found. Run a backtest from Strategy Composer or locally, e.g. " +
-  "python -m research.strategies.ema_pullback.run --config <path>, " +
-  "then refresh.";
-
-/** Backend returns runs newest-first by created_at_utc; the first entry is the default run. */
-function pickDefaultRunId(runs: RunSummary[]): string | null {
-  if (runs.length === 0) return null;
-  return runs[0].run_id;
-}
 
 export function WorkbenchProvider({
   children,
@@ -576,52 +566,8 @@ function WorkbenchProviderInner({
     }
   }, [chartHeavyIoEnabled]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function bootstrapRuns() {
-      try {
-        const listed = await fetchRunSummaries();
-        if (cancelled) return;
-
-        setRuns(listed);
-        const defaultRunId = pickDefaultRunId(listed);
-        if (defaultRunId === null) {
-          setRunDetail(null);
-          setRunTrades([]);
-          setRunMetrics(null);
-          setManagedPolicyEvents([]);
-          setManagedPolicyEventsLoadStatus("idle");
-          setSelectedRunIdState(null);
-          setReportError(EMPTY_RUNS_HINT);
-          setReportLoadStatus("error");
-          return;
-        }
-
-        setSelectedRunIdState((prev) => {
-          if (prev !== null && listed.some((r) => r.run_id === prev)) {
-            return prev;
-          }
-          return defaultRunId;
-        });
-      } catch (err) {
-        if (cancelled) return;
-        const message =
-          err instanceof ApiError
-            ? err.detail
-            : err instanceof Error
-              ? err.message
-              : "Failed to reach Research API.";
-        setReportError(message);
-        setReportLoadStatus("error");
-      }
-    }
-
-    void bootstrapRuns();
-    return () => {
-      cancelled = true;
-    };
-  }, [reloadToken]);
+  // No startup run bootstrap: the workbench starts with no selected run (`selectedRunId === null`);
+  // a run is selected explicitly (Surface "Open run", Composer after a backtest, legacy dropdown).
 
   const instanceId = runDetail?.manifest.instance_id ?? null;
 
@@ -1780,8 +1726,9 @@ function WorkbenchProviderContexts({
       reportLoadStatus,
       reportError,
       reloadReport,
+      selectedRunId,
     }),
-    [activeTab, reportLoadStatus, reportError, reloadReport],
+    [activeTab, reportLoadStatus, reportError, reloadReport, selectedRunId],
   );
 
   const reportValue = useMemo<WorkbenchReportState>(

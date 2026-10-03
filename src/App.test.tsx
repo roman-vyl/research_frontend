@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "@/App";
 import { ApiError } from "@/api/client";
 import { WorkbenchProvider } from "@/shared/context/WorkbenchContext";
+import { SelectRunOnMount } from "@/test/selectRun";
 
 const fetchRunDetail = vi.fn<typeof import("@/api/client").fetchRunDetail>();
 const fetchRunSummaries = vi.fn<typeof import("@/api/client").fetchRunSummaries>();
@@ -143,6 +144,7 @@ describe("App report vs composer isolation", () => {
   it("renders Composer when report load fails with prototype trade_records.context_ref", async () => {
     render(
       <WorkbenchProvider>
+        <SelectRunOnMount runId="run-prototype" />
         <App />
       </WorkbenchProvider>,
     );
