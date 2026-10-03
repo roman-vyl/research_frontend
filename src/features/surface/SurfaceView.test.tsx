@@ -72,6 +72,16 @@ describe("SurfaceView", () => {
     expect(setSelectedRunId).not.toHaveBeenCalled();
   });
 
+  it("marks points that have an Engine run with a dot class", async () => {
+    render(<SurfaceView />);
+    await openExperiment(/fixed SL/);
+    await screen.findAllByRole("cell");
+    const marked = document.querySelectorAll(".sx-cell.sx-run").length;
+    const all = document.querySelectorAll(".sx-cell:not(.sx-empty)").length;
+    expect(marked).toBeGreaterThan(0);
+    expect(marked).toBeLessThan(all);
+  });
+
   it("Open run calls the existing run selection once and opens Chart", async () => {
     render(<SurfaceView />);
     await openExperiment(/fixed SL/);

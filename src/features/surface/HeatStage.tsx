@@ -153,7 +153,7 @@ export function HeatStage({ schema, view, rows, state, tokens, selected, filmstr
                 return (
                   <td key={x}>
                     <div
-                      className={`sx-cell${off ? " sx-off" : ""}${r === selected ? " sx-sel" : ""}`}
+                      className={`sx-cell${off ? " sx-off" : ""}${r === selected ? " sx-sel" : ""}${typeof r.run_id === "string" && r.run_id !== "" ? " sx-run" : ""}`}
                       style={off ? undefined : { background: bg, color: textOn(bg, tokens) }}
                       onMouseMove={(e) => show(e, r)}
                       onMouseLeave={() => setTip(null)}
