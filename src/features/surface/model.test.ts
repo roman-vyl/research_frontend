@@ -16,7 +16,10 @@ import {
   defaultState,
   displayValue,
   formatMetric,
+  addNetPnl,
   gridsOf,
+  initialEquity,
+  withNetPnl,
   metricById,
   passes,
   reconcileControls,
@@ -89,6 +92,18 @@ describe("surface model", () => {
     expect(f(pf)).toBe(4);
     expect(f(pf, dnet)).toBe(3); // deltas are 1070, 1470, 1860, 2260; three reach 1100
     expect(f({ ...pf, value: 5 })).toBe(0);
+  });
+
+  it("adds Net PnL (return x initial equity) only when the table has no dollar metric", () => {
+    const eq = initialEquity(RATIO_MANIFEST);
+    expect(eq).toBe(10000);
+    const rs = withNetPnl(R, eq);
+    expect(rs.metrics[0]).toMatchObject({ column: "net_pnl", unit: "USDT" });
+    expect(rs.view[0].default_metric).toBe("net_pnl");
+    const row = addNetPnl(ratioRows, eq)[0];
+    expect(row.net_pnl).toBeCloseTo((ratioRows[0].return_pct as number) * 10000);
+    expect(withNetPnl(T, 10000)).toBe(T); // trailing already has net_pnl
+    expect(withNetPnl(R, null)).toBe(R);
   });
 
   it("starts the comparison on the baseline arm and indexes any comparison arm", () => {

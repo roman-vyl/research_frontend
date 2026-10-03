@@ -5,6 +5,7 @@
  */
 import {
   metricId,
+  type ExperimentManifest,
   type ExperimentDimension,
   type ExperimentMetric,
   type ExperimentResultSchema,
@@ -431,4 +432,29 @@ export function formatCell(metric: ExperimentMetric, value: number | null, delta
   if (metric.unit === "R") return `${sign(value)}${value.toFixed(0)}`;
   if (metric.unit) return `${sign(value)}${Math.round(value).toLocaleString("en-US")}`;
   return delta ? `${sign(value)}${value.toFixed(2)}` : value.toFixed(2);
+}
+
+/** Starting equity the manifest declares for its runs (`fixed_params.initial_equity`), if any. */
+export function initialEquity(manifest: ExperimentManifest | null): number | null {
+  const fixed = manifest?.fixed_params;
+  const v = fixed && typeof fixed === "object" ? (fixed as Record<string, unknown>).initial_equity : undefined;
+  return typeof v === "number" && v > 0 ? v : null;
+}
+
+/**
+ * Tables that store only `return_pct` get a "Net PnL" metric: `return_pct × initial_equity`, the same
+ * equity the manifest declares for every run. Tables that already carry `net_pnl` are left alone.
+ */
+export function withNetPnl(schema: ExperimentResultSchema, equity: number | null): ExperimentResultSchema {
+  if (equity === null || metricById(schema, "net_pnl") || !metricById(schema, "return_pct")) return schema;
+  return {
+    ...schema,
+    metrics: [{ column: "net_pnl", label: "Net PnL", format: "number", unit: "USDT" }, ...schema.metrics],
+    view: schema.view.map((v) => (v.default_metric === "return_pct" ? { ...v, default_metric: "net_pnl" } : v)),
+  };
+}
+
+export function addNetPnl(rows: Row[], equity: number | null): Row[] {
+  if (equity === null) return rows;
+  return rows.map((r) => (typeof r.return_pct === "number" && r.net_pnl === undefined ? { ...r, net_pnl: r.return_pct * equity } : r));
 }

@@ -11,15 +11,18 @@ import { SurfaceHeader } from "@/features/surface/SurfaceHeader";
 import {
   GRID_ID,
   activeConditions,
+  addNetPnl,
   armLabel,
   controlOptions,
   convertGrid,
   defaultState,
+  initialEquity,
   makeIndexer,
   passes,
   reconcileControls,
   sliceRows,
   treatmentArms,
+  withNetPnl,
   type Condition,
   type Row,
   type ViewMode,
@@ -75,7 +78,8 @@ export function SurfaceView() {
   const [outerValue, setOuterValue] = useState<number | null>(null);
   const data = useExperimentData(experimentId, outerValue);
   const { manifest, slice, outer } = data;
-  const schema = manifest?.result_schema ?? null;
+  const equity = useMemo(() => initialEquity(manifest), [manifest]);
+  const schema = useMemo(() => (manifest ? withNetPnl(manifest.result_schema, equity) : null), [manifest, equity]);
   const [state, setState] = useState<ViewState | null>(null);
   const [selected, setSelected] = useState<Row | null>(null);
 
@@ -96,14 +100,14 @@ export function SurfaceView() {
   useEffect(() => {
     if (!schema || !view || !slice || data.outerId === null || outerValue === null || experimentId === null) return;
     setState((prev) => {
-      const base = prev ?? { ...defaultState(schema, view.id, slice.rows), filters: loadFilters(experimentId) };
-      const controls = reconcileControls(schema, view, slice.rows, { ...base.controls, [data.outerId as string]: outerValue });
+      const base = prev ?? { ...defaultState(schema, view.id, addNetPnl(slice.rows, equity)), filters: loadFilters(experimentId) };
+      const controls = reconcileControls(schema, view, addNetPnl(slice.rows, equity), { ...base.controls, [data.outerId as string]: outerValue });
       return { ...base, controls: { ...controls, [data.outerId as string]: outerValue } };
     });
     setSelected(null);
-  }, [schema, view, slice, outerValue, data.outerId, experimentId]);
+  }, [schema, view, slice, outerValue, data.outerId, experimentId, equity]);
 
-  const rows = slice?.rows ?? [];
+  const rows = useMemo(() => addNetPnl(slice?.rows ?? [], equity), [slice, equity]);
   const options = useMemo(
     () => (schema && view && state ? controlOptions(schema, view, rows, state.controls) : {}),
     [schema, view, rows, state],

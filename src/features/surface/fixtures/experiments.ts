@@ -27,6 +27,7 @@ export const REGISTRY: ExperimentRegistry = {
 
 export const RATIO_MANIFEST: ExperimentManifest = {
   experiment_id: "btcusdt_p.ema500.ratio_4d",
+  fixed_params: { initial_equity: 10000 },
   result_schema: {
     contract_version: "research_experiment_result_schema.v1",
     table: "runs.csv",
