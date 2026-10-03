@@ -15,7 +15,7 @@ Facts about the existing frontend this design relies on (checked on `main`):
   ("selects the first entry from GET /runs as the default run"), `App.test.tsx`,
   `chartEventsDisplayLoad.test.tsx`, `chartEventsDistantTradeDisplay.test.tsx`,
   `ComposerPanel.runBacktest.test.tsx`, and the Playwright suites (`trade-focus*`,
-  `diagnostics-acceptance`).
+  `diagnostics-acceptance`), which are outside the scope of this change.
 - On a run change the existing path already drops the previous run's market owner,
   trace generation, run-keyed trace cache, overlay default and re-seeds trade/bar
   focus to the new run's last closed trade.
@@ -83,11 +83,16 @@ App
 - **Legacy dropdown.** The run `<select>` moves behind a flag (off), marked
   legacy and a candidate for removal; the context bar shows the selected run id
   as text.
-- **Startup.** `selectedRunId = null` with an explicit idle report status; Chart
-  and Reports show an idle message. `/api/research/runs` is not called at startup
-  (client function unchanged). No URL contract for the selected run. Existing
-  Composer behaviour must remain functional; its selection flow changes only if
-  that compatibility requires it.
+- **Startup.** `selectedRunId = null`. `WorkbenchGate` shows the idle state
+  ("Open a run from the Surface tab") whenever no run is selected;
+  `reportLoadStatus` keeps its values (`loading` / `ready` / `error`) and applies
+  only once a run is selected, so the chart runtime types are untouched. Chart and
+  Reports are both behind the gate and therefore show the idle message.
+  `/api/research/runs` is not called at startup (client function and Composer's
+  `refreshRunsAndSelectRun` unchanged; only the startup bootstrap role of the run
+  list disappears). No URL contract for the selected run. Existing Composer
+  behaviour must remain functional; its selection flow changes only if that
+  compatibility requires it.
 - **Existing behaviour relied on, no new code.** The existing run-change path
   resets the previous run's inspection state; the Surface tab neither adds nor
   writes any of it.

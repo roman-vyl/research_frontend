@@ -140,13 +140,14 @@ selected run id as read-only text. Historical runs SHALL NOT be added to
 
 The workbench SHALL start with `selectedRunId` equal to null and SHALL NOT call
 `/api/research/runs` at startup. Chart and Reports SHALL show an explicit idle
-state ("Open a run from the Surface tab") instead of the loading view while no
-run is selected. Existing Composer behaviour SHALL remain functional after the
+state ("Open a run from the Surface tab"), shown by the run-loading gate, instead
+of the loading view while no run is selected; the report load status SHALL apply
+only once a run is selected. Existing Composer behaviour SHALL remain functional after the
 removal of startup `/api/research/runs` loading.
 
 #### Scenario: Fresh start
 
-- **WHEN** the workbench loads without a `run` parameter
+- **WHEN** the workbench loads
 - **THEN** no run is selected, no run list is requested, and Chart and Reports
   show the idle state.
 

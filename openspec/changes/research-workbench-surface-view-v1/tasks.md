@@ -12,14 +12,14 @@
 ## 3. Workbench Integration
 
 - [ ] 3.1 Context bar: run `<select>` behind a legacy flag (off) with a deprecation comment; selected run id as read-only text.
-- [ ] 3.2 Startup: initial `selectedRunId` null, idle report status and idle Chart/Reports messages, no `/api/research/runs` call at startup; keep Composer working (change its selection flow only if needed for that).
+- [ ] 3.2 Startup: initial `selectedRunId` null; `WorkbenchGate` shows the idle state when no run is selected (no new `ReportLoadStatus` value); no `/api/research/runs` call at startup (Composer's `refreshRunsAndSelectRun` stays); keep Composer working (change its selection flow only if needed for that).
 
 ## 4. Tests
 
-- [ ] 4.1 Update the tests that pin the old startup behaviour (`workbenchLoad`, `App`, `chartEventsDisplayLoad`, `chartEventsDistantTradeDisplay`, `ComposerPanel.runBacktest`) and the Playwright suites so that they set a run through the existing fixture/helper mechanism instead of relying on the automatic newest-run selection; no new URL contract.
+- [ ] 4.1 Update the unit tests that pin the old startup behaviour (`workbenchLoad`, `App`, `chartEventsDisplayLoad`, `chartEventsDistantTradeDisplay`, `ComposerPanel.runBacktest`). Playwright suites and infrastructure are out of scope: not adapted, not extended, not removed, and not a completion condition.
 - [ ] 4.2 New tests: static guard that `src/features/surface/**` imports nothing from `features/chart/**` or `features/workbenchChartRuntime/**`; no `/api/research/runs` call at startup; a point without `run_id` never calls `setSelectedRunId`; "Open run" calls it once with the `run_id`; Retry keeps the selected run; Surface state survives Chart ↔ Surface ↔ Reports; existing `workbenchChartRuntime` unit tests pass unchanged.
 
 ## 5. Verification
 
-- [ ] 5.1 Against a Research Service with the Experiment API and prepared data: open a sample of points with and without `run_id` (point → Open run → Chart → Reports).
+- [ ] 5.1 Manual verification by the owner after the historical data is prepared: Experiment → Surface → point → CellDetails → Open run → Chart → Reports.
 - [ ] 5.2 Confirm `/api/research/runs*` client behaviour is unchanged.
