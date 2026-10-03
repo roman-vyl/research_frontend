@@ -1,24 +1,67 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
+import "@/features/surface/surface.css";
 import { useWorkbenchReport, useWorkbenchShell } from "@/shared/context/WorkbenchContext";
 import { CellDetails } from "@/features/surface/CellDetails";
 import { FiltersPanel } from "@/features/surface/FiltersPanel";
-import { Filmstrip, SurfacePlot } from "@/features/surface/SurfacePlot";
-import { SurfaceControls } from "@/features/surface/SurfaceControls";
+import { GeometryMap } from "@/features/surface/GeometryMap";
+import { HeatStage } from "@/features/surface/HeatStage";
+import { LIGHT_TOKENS, readTokens, type Tokens } from "@/features/surface/color";
+import { SurfaceControls, SurfaceSliders } from "@/features/surface/SurfaceControls";
+import { SurfaceHeader } from "@/features/surface/SurfaceHeader";
 import {
-  baselineIndex,
+  GRID_ID,
+  activeConditions,
+  armLabel,
   controlOptions,
+  convertGrid,
   defaultState,
-  dimById,
+  makeIndexer,
   passes,
   reconcileControls,
   sliceRows,
   treatmentArms,
+  type Condition,
   type Row,
   type ViewMode,
   type ViewState,
 } from "@/features/surface/model";
 import { useExperimentData } from "@/features/surface/useExperimentData";
+
+const filtersKey = (experimentId: string): string => `surface.filters.${experimentId}`;
+
+function loadFilters(experimentId: string): Condition[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(filtersKey(experimentId)) ?? "[]") as unknown;
+    return Array.isArray(raw)
+      ? raw.filter((c): c is Condition => !!c && typeof c.id === "string" && typeof c.metric === "string" && (c.op === ">=" || c.op === "<="))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveFilters(experimentId: string, filters: Condition[]): void {
+  try {
+    localStorage.setItem(filtersKey(experimentId), JSON.stringify(filters));
+  } catch {
+    /* storage is a convenience only */
+  }
+}
+
+function useTokens(ref: React.RefObject<HTMLElement | null>): Tokens {
+  const [tokens, setTokens] = useState<Tokens>(LIGHT_TOKENS);
+  useLayoutEffect(() => {
+    const read = () => {
+      if (ref.current) setTokens(readTokens(ref.current));
+    };
+    read();
+    const mq = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+    mq?.addEventListener?.("change", read);
+    return () => mq?.removeEventListener?.("change", read);
+  }, [ref]);
+  return tokens;
+}
 
 /**
  * Viewer of an Experiment's ready-made results. All state is local to this component; its only
@@ -27,6 +70,8 @@ import { useExperimentData } from "@/features/surface/useExperimentData";
 export function SurfaceView() {
   const { setSelectedRunId } = useWorkbenchReport();
   const { setActiveTab } = useWorkbenchShell();
+  const rootRef = useRef<HTMLElement>(null);
+  const tokens = useTokens(rootRef);
   const [experimentId, setExperimentId] = useState<string | null>(null);
   const [outerValue, setOuterValue] = useState<number | null>(null);
   const data = useExperimentData(experimentId, outerValue);
@@ -45,34 +90,48 @@ export function SurfaceView() {
     if (outer && outerValue === null) setOuterValue(outer.options[0] ?? null);
   }, [outer, outerValue]);
 
+  // The cells view is the first one that is not an aggregate; the geometry map is the aggregate view over its controls.
+  const view = schema ? (schema.view.find((v) => !v.aggregate_over) ?? schema.view[0]) : null;
+  const geoView = useMemo(
+    () =>
+      schema && view
+        ? (schema.view.find((v) => v.aggregate_over && view.controls.includes(v.x) && view.controls.includes(v.y)) ?? null)
+        : null,
+    [schema, view],
+  );
+
   // (Re)initialise the view state when a slice arrives.
   useEffect(() => {
-    if (!schema || !slice || data.outerId === null || outerValue === null) return;
+    if (!schema || !view || !slice || data.outerId === null || outerValue === null || experimentId === null) return;
     setState((prev) => {
-      const base = prev ?? defaultState(schema, schema.view[0].id, slice.rows);
-      const view = schema.view.find((v) => v.id === base.viewId) ?? schema.view[0];
+      const base = prev ?? { ...defaultState(schema, view.id, slice.rows), filters: loadFilters(experimentId) };
       const controls = reconcileControls(schema, view, slice.rows, { ...base.controls, [data.outerId as string]: outerValue });
       return { ...base, controls: { ...controls, [data.outerId as string]: outerValue } };
     });
     setSelected(null);
-  }, [schema, slice, outerValue, data.outerId]);
+  }, [schema, view, slice, outerValue, data.outerId, experimentId]);
 
-  const view = schema && state ? (schema.view.find((v) => v.id === state.viewId) ?? schema.view[0]) : null;
   const rows = slice?.rows ?? [];
   const options = useMemo(
     () => (schema && view && state ? controlOptions(schema, view, rows, state.controls) : {}),
     [schema, view, rows, state],
   );
 
-  const counts = useMemo(() => {
-    if (!schema || !view || !state || state.filters.length === 0) return { passing: 0, total: 0 };
+  const summary = useMemo(() => {
+    if (!schema || !view || !state) return "";
+    const active = activeConditions(state.filters);
+    if (active.length === 0) return "no active conditions";
     const sliced = sliceRows(schema, view, rows, state.controls, treatmentArms(schema));
-    const cache = new Map<string, Map<string, number>>();
-    const idx = (m: string) => cache.get(m) ?? (cache.set(m, baselineIndex(schema, rows, m)), cache.get(m)!);
-    return { total: sliced.length, passing: sliced.filter((r) => passes(schema, r, state.filters, idx)).length };
+    const idx = makeIndexer(schema, rows, state.compare);
+    const pass = sliced.filter((r) => passes(schema, r, state.filters, idx)).length;
+    const cmp = schema.arms ? `, vs ${armLabel(state.compare ?? schema.arms.baseline)}` : "";
+    return `${pass} / ${sliced.length} cells pass (${active.length} condition${active.length > 1 ? "s" : ""}${cmp})`;
   }, [schema, view, state, rows]);
 
-  const update = (patch: Partial<ViewState>) => setState((s) => (s ? { ...s, ...patch } : s));
+  const update = (patch: Partial<ViewState>) => {
+    setState((s) => (s ? { ...s, ...patch } : s));
+    if (patch.filters && experimentId !== null) saveFilters(experimentId, patch.filters);
+  };
 
   const setControl = (id: string, value: string | number) => {
     if (!schema || !view || !state) return;
@@ -80,105 +139,84 @@ export function SurfaceView() {
       setOuterValue(value);
       return;
     }
-    update({ controls: reconcileControls(schema, view, rows, { ...state.controls, [id]: value }) });
-  };
-
-  const switchView = (id: string) => {
-    if (!schema || !state) return;
-    const next = schema.view.find((v) => v.id === id);
-    if (!next) return;
-    update({ viewId: id, controls: reconcileControls(schema, next, rows, state.controls) });
+    const next = id === GRID_ID && typeof value === "string" ? convertGrid(schema, state.controls, value) : { ...state.controls, [id]: value };
+    update({ controls: reconcileControls(schema, view, rows, next) });
   };
 
   const pickGeometry = (x: number, y: number) => {
-    if (!schema || !view || !state) return;
-    const target = schema.view.find((v) => !v.aggregate_over && v.controls.includes(view.x) && v.controls.includes(view.y));
-    if (!target) return;
-    update({
-      viewId: target.id,
-      controls: reconcileControls(schema, target, rows, { ...state.controls, [view.x]: x, [view.y]: y }),
-    });
+    if (!schema || !view || !state || !geoView) return;
+    update({ controls: reconcileControls(schema, view, rows, { ...state.controls, [geoView.x]: x, [geoView.y]: y }) });
   };
 
+  const entry = data.registry?.find((x) => x.experiment_id === experimentId) ?? null;
+  const ready = schema && view && state && slice;
+  const cellsFilmstrip = view?.filmstrip ? ((state && options[view.filmstrip]) ?? []) : [];
+  const geoX = geoView && state ? state.controls[geoView.x] : null;
+  const geoY = geoView && state ? state.controls[geoView.y] : null;
+
   return (
-    <section className="panel surface-view">
-      <div className="panel__header">
-        <h2>Surface</h2>
-        <p className="panel__hint">
-          Ready-made results of a research Experiment. Points with a run can be opened in Chart and Reports.
-        </p>
-      </div>
-      {experimentId === null ? (
-        <div className="surface-cards" role="group" aria-label="Experiments">
-          {(data.registry ?? []).map((x) => (
-            <button
-              type="button"
-              key={x.experiment_id}
-              className="surface-card"
-              onClick={() => setExperimentId(x.experiment_id)}
-            >
-              <span className="surface-card__meta">{x.ticker} · {x.anchor}</span>
-              <span className="surface-card__title">{x.title}</span>
-            </button>
-          ))}
-          {data.registry !== null && data.registry.length === 0 && (
-            <p className="panel__hint">No experiments are registered.</p>
-          )}
-        </div>
-      ) : (
-        <div className="surface-select">
-          <button type="button" className="chip" onClick={() => setExperimentId(null)}>
-            ← All experiments
-          </button>
-          <strong>
-            {data.registry?.find((x) => x.experiment_id === experimentId)?.title ?? experimentId}
-          </strong>
-        </div>
-      )}
-      {data.error && <p role="alert" className="surface-error">{data.error}</p>}
-      {data.loading && <p className="panel__hint">Loading…</p>}
-      {schema && view && state && slice && (
-        <>
-          <SurfaceControls
-            schema={schema}
-            view={view}
-            state={state}
-            options={options}
-            outer={outer}
-            onMetric={(metric) => update({ metric })}
-            onMode={(mode: ViewMode) => update({ mode })}
-            onControl={setControl}
-            onView={switchView}
-          />
-          <FiltersPanel
-            schema={schema}
-            filters={state.filters}
-            passing={counts.passing}
-            total={counts.total}
-            onChange={(filters) => update({ filters })}
-          />
-          <div className="surface-body">
-            <div className="surface-plot">
-              {view.filmstrip && dimById(schema, view.filmstrip) && (
-                <Filmstrip
-                  schema={schema}
-                  view={view}
-                  rows={rows}
-                  state={state}
-                  options={options[view.filmstrip] ?? []}
-                  onPick={(v) => setControl(view.filmstrip as string, v)}
-                />
-              )}
-              <SurfacePlot
-                schema={schema}
-                view={view}
-                rows={rows}
-                state={state}
-                selected={selected}
-                onSelectPoint={setSelected}
-                onSelectGeometry={pickGeometry}
-              />
+    <section className="sx" ref={rootRef} aria-label="Surface">
+      <div className="sx-wrap">
+        {experimentId === null ? (
+          <>
+            <header>
+              <div className="sx-eyebrow">Research · Experiments</div>
+              <h1>Surface</h1>
+              <p className="sx-sub">
+                Ready-made results of a research Experiment. Pick an Experiment; points with a run can be opened in Chart and Reports.
+              </p>
+            </header>
+            <div className="sx-cards" role="group" aria-label="Experiments">
+              {(data.registry ?? []).map((x) => (
+                <button type="button" key={x.experiment_id} className="sx-card sx-panel" onClick={() => setExperimentId(x.experiment_id)}>
+                  <span className="sx-eyebrow">{x.ticker} · {x.anchor}</span>
+                  <span className="sx-card-title">{x.title}</span>
+                </button>
+              ))}
+              {data.registry !== null && data.registry.length === 0 && <p className="sx-note">No experiments are registered.</p>}
             </div>
+          </>
+        ) : (
+          <>
+            <div className="sx-top">
+              <button type="button" className="sx-fbtn" onClick={() => setExperimentId(null)}>← All experiments</button>
+            </div>
+            <SurfaceHeader entry={entry} manifest={manifest} />
+          </>
+        )}
+        {data.error && <p role="alert" className="sx-error">{data.error}</p>}
+        {experimentId !== null && data.loading && !ready && <p className="sx-note">Loading…</p>}
+        {ready && (
+          <>
+            <SurfaceControls
+              schema={schema}
+              view={view}
+              state={state}
+              options={options}
+              onMetric={(metric) => update({ metric })}
+              onMode={(mode: ViewMode) => update({ mode })}
+              onCompare={(compare) => update({ compare })}
+              onControl={setControl}
+            />
+            <FiltersPanel
+              schema={schema}
+              filters={state.filters}
+              compare={state.compare}
+              summary={summary}
+              onChange={(filters) => update({ filters })}
+            />
+            <SurfaceSliders schema={schema} view={view} state={state} options={options} outer={outer} onControl={setControl} />
+            <HeatStage
+              schema={schema}
+              view={view}
+              rows={rows}
+              state={state}
+              tokens={tokens}
+              selected={selected}
+              filmstripOptions={cellsFilmstrip}
+              onSelect={setSelected}
+              onPickFrame={(v) => view.filmstrip && setControl(view.filmstrip, v)}
+            />
             {selected && (
               <CellDetails
                 schema={schema}
@@ -192,9 +230,27 @@ export function SurfaceView() {
                 }}
               />
             )}
-          </div>
-        </>
-      )}
+            {geoView && (
+              <GeometryMap
+                schema={schema}
+                view={geoView}
+                selectedX={typeof geoX === "number" ? geoX : null}
+                selectedY={typeof geoY === "number" ? geoY : null}
+                rows={rows}
+                state={state}
+                tokens={tokens}
+                onPick={pickGeometry}
+              />
+            )}
+            <footer>
+              <span>{entry ? `${entry.ticker} · ${entry.anchor} · ${entry.experiment_id}` : ""}</span>
+              <span className="sx-prov">
+                data = {schema.table} · provenance {schema.provenance.value ?? schema.provenance.column ?? "—"}
+              </span>
+            </footer>
+          </>
+        )}
+      </div>
     </section>
   );
 }

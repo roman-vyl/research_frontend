@@ -7,11 +7,13 @@ import {
   TRAILING_MANIFEST,
   TRAILING_RESULTS,
 } from "@/features/surface/fixtures/experiments";
+import { geoAggregates, geometryMap } from "@/features/surface/aggregates";
 import {
-  aggregateMap,
   baselineIndex,
   buildMatrix,
   controlOptions,
+  controlReadout,
+  convertGrid,
   defaultState,
   displayValue,
   formatMetric,
@@ -92,18 +94,33 @@ describe("surface model", () => {
     expect(f({ ...pf, value: 5 })).toBe(0);
   });
 
-  it("aggregates the geometry map as medians with passing counts", () => {
-    const st = { ...defaultState(T, "geometry", trailingRows) };
-    const cells = aggregateMap(T, geoView, trailingRows, st);
+  it("aggregates the geometry map as medians, per comparison arm", () => {
+    const st = defaultState(T, "cells", trailingRows);
+    const cells = geometryMap(T, geoView, trailingRows, st, "m:net_pnl");
     expect(cells).toHaveLength(4); // 2 triggers x 2 distances
     const c = cells.find((x) => x.x === 0.5 && x.y === 6)!;
     expect(c.count).toBe(4); // 2 widths x 2 lookbacks
-    expect(c.passing).toBe(4);
-    const diff = aggregateMap(T, geoView, trailingRows, { ...st, mode: "difference" });
+    const diff = geometryMap(T, geoView, trailingRows, st, "d:net_pnl");
     expect(diff.find((x) => x.x === 0.5 && x.y === 6)!.value).toBeCloseTo(
       median(trailingRows.filter((r) => r["trigger.R"] === 6 && r["distance.R"] === 0.5)
         .map((r) => (r.net_pnl as number) - (1000 + (r.width as number) * 10)))!,
     );
+    expect(geometryMap(T, geoView, trailingRows, st, "fpass").every((x) => x.value === 100)).toBe(true);
+    expect(geoAggregates(T, "net_pnl").map((a) => a.id)).toContain("mult");
+  });
+
+  it("starts the comparison on the baseline arm and indexes any comparison arm", () => {
+    expect(defaultState(T, "cells", trailingRows).compare).toBe("control_tp5r");
+    expect(baselineIndex(T, trailingRows, "net_pnl", "control_tp5r").size).toBeGreaterThan(0);
+  });
+
+  it("converts geometry between grids by the stop size and reads units off the slider", () => {
+    const next = convertGrid(T, { sl: 5, grid: "R", trigger: 7, distance: 1 }, "ATR");
+    expect(next).toEqual({ sl: 5, grid: "ATR", trigger: 35, distance: 5 });
+    expect(convertGrid(T, next, "R")).toEqual({ sl: 5, grid: "R", trigger: 7, distance: 1 });
+    expect(controlReadout(T, "trigger", 7, "R", 5)).toEqual({ main: "7R", alt: "= 35 ATR at SL 5" });
+    expect(controlReadout(T, "trigger", 35, "ATR", 5)).toEqual({ main: "35 ATR", alt: "= 7R at SL 5" });
+    expect(controlReadout(T, "sl", 5, null, 5)).toEqual({ main: "5 ATR", alt: "1R = 5 ATR" });
   });
 
   it("works for an experiment without arms or grids (ratio)", () => {

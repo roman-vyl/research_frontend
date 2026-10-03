@@ -54,7 +54,7 @@ describe("SurfaceView", () => {
   it("never requests the full table: probe by one column, then a slice filtered by SL", async () => {
     render(<SurfaceView />);
     await openExperiment(/trailing geometry/);
-    await screen.findByRole("table");
+    await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
     const calls = fetchExperimentResults.mock.calls.map((c) => c[0]);
     expect(calls[0]).toMatchObject({ filters: {}, columns: ["sl"] });
     expect(calls.some((c) => c.filters.sl === 5 && c.columns === undefined)).toBe(true);
@@ -65,8 +65,8 @@ describe("SurfaceView", () => {
     render(<SurfaceView />);
     await openExperiment(/fixed SL/);
     const cells = await screen.findAllByRole("cell");
-    const last = cells.filter((c) => c.className.includes("surface-grid__cell")).pop()!;
-    fireEvent.click(last);
+    const last = cells.filter((c) => c.querySelector(".sx-cell:not(.sx-empty)") !== null).pop()!;
+    fireEvent.click(last.querySelector(".sx-cell")!);
     expect(await screen.findByText(/Engine run not available/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Open run" })).toBeNull();
     expect(setSelectedRunId).not.toHaveBeenCalled();
@@ -76,8 +76,8 @@ describe("SurfaceView", () => {
     render(<SurfaceView />);
     await openExperiment(/fixed SL/);
     const cells = await screen.findAllByRole("cell");
-    const first = cells.filter((c) => c.className.includes("surface-grid__cell"))[0];
-    fireEvent.click(first);
+    const first = cells.filter((c) => c.querySelector(".sx-cell:not(.sx-empty)") !== null)[0];
+    fireEvent.click(first.querySelector(".sx-cell")!);
     expect(setSelectedRunId).not.toHaveBeenCalled(); // clicking a point only inspects it
     fireEvent.click(await screen.findByRole("button", { name: "Open run" }));
     expect(setSelectedRunId).toHaveBeenCalledTimes(1);
@@ -91,22 +91,38 @@ describe("SurfaceView", () => {
     await screen.findAllByRole("cell");
     fireEvent.click(screen.getByText("+ add condition"));
     fireEvent.change(screen.getByLabelText("threshold"), { target: { value: "1.3" } });
-    await waitFor(() => expect(screen.getByText(/points pass/)).toBeTruthy());
-    const off = document.querySelectorAll(".surface-grid__cell--off").length;
+    await waitFor(() => expect(screen.getByText(/cells pass \(/)).toBeTruthy());
+    const off = document.querySelectorAll(".sx-off").length;
     expect(off).toBeGreaterThan(0);
   });
 
   it("shows unit readouts for multi-grid dimensions and baseline modes only with arms", async () => {
     render(<SurfaceView />);
     await openExperiment(/trailing geometry/);
-    await screen.findByRole("table");
-    expect(screen.getByText(/6R = 30 ATR at SL 5/)).toBeTruthy();
-    expect(screen.getByText("Δ vs baseline")).toBeTruthy();
+    await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
+    expect(screen.getAllByText(/= 30 ATR at SL 5/).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Δ vs CONTROL · TP 5R" })).toBeTruthy();
     cleanup();
     render(<SurfaceView />);
     await openExperiment(/fixed SL/);
     await screen.findByRole("table");
-    expect(screen.queryByText("Δ vs baseline")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Δ vs/ })).toBeNull();
+  });
+
+  it("the geometry map sets the sliders, the comparison arm and metric are chosen with segmented buttons", async () => {
+    render(<SurfaceView />);
+    await openExperiment(/trailing geometry/);
+    await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
+    const map = screen.getByRole("table", { name: "Geometry map" });
+    fireEvent.click(map.querySelector('td[data-x="1"][data-y="7"]')!);
+    const trigger = screen.getByRole("slider", { name: "Trigger T" }) as HTMLInputElement;
+    const distance = screen.getByRole("slider", { name: "Trail D" }) as HTMLInputElement;
+    await waitFor(() => expect(trigger.nextElementSibling!.textContent).toContain("7R"));
+    expect(distance.nextElementSibling!.textContent).toContain("1R");
+    fireEvent.click(screen.getByRole("button", { name: "PF" }));
+    expect(screen.getByRole("button", { name: "PF" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Δ vs CONTROL · TP 5R" }));
+    expect(screen.getByRole("button", { name: "Δ vs CONTROL · TP 5R" }).getAttribute("aria-pressed")).toBe("true");
   });
 
   it("starts with experiment cards (ticker, anchor, title) and selects nothing automatically", async () => {
@@ -129,7 +145,7 @@ describe("SurfaceView", () => {
     expect(within(await screen.findByRole("group", { name: "Experiments" })).getAllByRole("button")).toHaveLength(REGISTRY.experiments.length);
     expect(screen.queryByRole("table")).toBeNull();
     await openExperiment(/trailing geometry/);
-    await screen.findByRole("table");
+    await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
     expect(fetchExperimentManifest).toHaveBeenLastCalledWith("btcusdt_p.ema500.trailing_geometry_4d");
   });
 

@@ -161,3 +161,24 @@ removal of startup `/api/research/runs` loading.
 
 - **WHEN** the selected run fails to load and the user presses Retry
 - **THEN** the same `run_id` is requested again and stays selected.
+
+### Requirement: Surface follows the research visualisation style
+
+The Surface view SHALL reproduce the look and the controls of the standalone research
+visualisations: segmented choices for grid, comparison arm, metric and arm view; sliders with
+unit readouts and a play button for the declared controls; a percentile-rank heatmap with
+legend, summary figures, hover details of both arms and a frame strip; a geometry map with a
+choice of aggregate whose cells set the sliders; AND-filters that grey out failing cells. The
+look SHALL follow the light or dark colour scheme of the system. Everything shown SHALL be driven
+by the manifest `result_schema` and the result rows.
+
+#### Scenario: Geometry map sets the sliders
+
+- **WHEN** the user clicks a cell of the geometry map
+- **THEN** the trigger and distance sliders move to that geometry.
+
+#### Scenario: Comparison arm choice
+
+- **WHEN** the manifest declares several comparison arms and the user picks one
+- **THEN** the comparison figures, differences and filters use that arm.
+

@@ -1,14 +1,14 @@
 import type { ExperimentResultSchema } from "@/api/experiments";
 import { metricId } from "@/api/experiments";
 import {
-  baselineIndex,
+  GRID_ID,
   baselineOf,
   formatMetric,
+  gridsOf,
+  makeIndexer,
+  unitText,
   type Row,
   type ViewState,
-  unitText,
-  GRID_ID,
-  gridsOf,
 } from "@/features/surface/model";
 
 type Props = {
@@ -25,8 +25,9 @@ export function CellDetails({ schema, row, allRows, state, provenance, onOpenRun
   const sl = typeof row.sl === "number" ? row.sl : null;
   const runId = typeof row.run_id === "string" && row.run_id !== "" ? row.run_id : null;
   const origin = typeof row.provenance === "string" ? row.provenance : provenance;
+  const idx = makeIndexer(schema, allRows, state.compare);
   return (
-    <aside className="surface-details" aria-label="Point details">
+    <aside className="sx-panel sx-details" aria-label="Point details">
       <h3>Point</h3>
       <dl>
         {schema.dimensions.map((d) => {
@@ -39,15 +40,13 @@ export function CellDetails({ schema, row, allRows, state, provenance, onOpenRun
         {schema.arms && <div><dt>Arm</dt><dd>{String(row.arm)}</dd></div>}
         {schema.metrics.map((m) => {
           const v = row[metricId(m)];
-          const base = schema.arms && row.arm !== schema.arms.baseline
-            ? baselineOf(schema, row, baselineIndex(schema, allRows, metricId(m)))
-            : null;
+          const base = schema.arms && row.arm !== state.compare ? baselineOf(schema, row, idx(metricId(m))) : null;
           return (
             <div key={metricId(m)}>
               <dt>{m.label}</dt>
               <dd>
                 {formatMetric(m, typeof v === "number" ? v : null)}
-                {base !== null && typeof v === "number" && <small> (baseline {formatMetric(m, base)}, Δ {formatMetric(m, v - base)})</small>}
+                {base !== null && typeof v === "number" && <small> (comparison {formatMetric(m, base)}, Δ {formatMetric(m, v - base)})</small>}
               </dd>
             </div>
           );
@@ -56,11 +55,10 @@ export function CellDetails({ schema, row, allRows, state, provenance, onOpenRun
         <div><dt>Run</dt><dd>{runId ?? "—"}</dd></div>
       </dl>
       {runId ? (
-        <button type="button" className="chip chip--active" onClick={() => onOpenRun(runId)}>Open run</button>
+        <button type="button" className="sx-fbtn sx-open" onClick={() => onOpenRun(runId)}>Open run</button>
       ) : (
-        <p className="panel__hint">Engine run not available for this point; its metrics are shown above.</p>
+        <p className="sx-note">Engine run not available for this point; its metrics are shown above.</p>
       )}
-      <p className="panel__hint">Metric shown: {state.metric}</p>
     </aside>
   );
 }

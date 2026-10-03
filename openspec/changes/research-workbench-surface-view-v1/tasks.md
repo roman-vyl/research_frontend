@@ -19,6 +19,10 @@
 - [x] 4.1 Update the unit tests that pin the old startup behaviour (`workbenchLoad`, `App`, `chartEventsDisplayLoad`, `chartEventsDistantTradeDisplay`, `ComposerPanel.runBacktest`). Playwright suites and infrastructure are out of scope: not adapted, not extended, not removed, and not a completion condition.
 - [x] 4.2 New tests: static guard that `src/features/surface/**` imports nothing from `features/chart/**` or `features/workbenchChartRuntime/**`; no `/api/research/runs` call at startup; a point without `run_id` never calls `setSelectedRunId`; "Open run" calls it once with the `run_id`; Retry keeps the selected run; Surface state survives Chart ↔ Surface ↔ Reports; existing `workbenchChartRuntime` unit tests pass unchanged.
 
+## 4b. Visual parity with the research HTML
+
+- [x] 4b.1 Restyle Surface after the research visualisations (segmented choices, sliders with play, percentile-rank heatmap, hover details, frame strip, geometry map, filters), comparison-arm choice, light/dark scheme.
+
 ## 5. Verification
 
 - [ ] 5.1 Manual verification by the owner after the historical data is prepared: Experiment → Surface → point → CellDetails → Open run → Chart → Reports.

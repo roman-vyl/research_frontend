@@ -1,61 +1,66 @@
 import type { ExperimentResultSchema } from "@/api/experiments";
 import { metricId } from "@/api/experiments";
-import type { Condition } from "@/features/surface/model";
+import { armLabel, type Condition } from "@/features/surface/model";
 
 type Props = {
   schema: ExperimentResultSchema;
   filters: Condition[];
-  passing: number;
-  total: number;
+  compare: string | null;
+  summary: string;
   onChange: (next: Condition[]) => void;
 };
 
 let counter = 0;
 
-export function FiltersPanel({ schema, filters, passing, total, onChange }: Props) {
+export function FiltersPanel({ schema, filters, compare, summary, onChange }: Props) {
   const metrics = schema.metrics;
+  const cmp = armLabel(compare ?? schema.arms?.baseline ?? "");
   const set = (id: string, patch: Partial<Condition>) =>
     onChange(filters.map((f) => (f.id === id ? { ...f, ...patch } : f)));
   return (
-    <div className="surface-filters" aria-label="Filters">
-      <div className="surface-filters__title">
-        Filters (all conditions must hold) · {filters.length > 0 ? `${passing} / ${total} points pass` : "none active"}
-      </div>
-      {filters.map((f) => (
-        <div className="surface-filters__row" key={f.id}>
-          <select aria-label="metric" value={f.metric} onChange={(e) => set(f.id, { metric: e.target.value })}>
-            {metrics.map((m) => <option key={metricId(m)} value={metricId(m)}>{m.label}</option>)}
-          </select>
-          {schema.arms && (
-            <select aria-label="kind" value={f.kind} onChange={(e) => set(f.id, { kind: e.target.value as Condition["kind"] })}>
-              <option value="value">value</option>
-              <option value="delta">Δ vs baseline</option>
+    <div className="sx-panel sx-controls sx-filters" aria-label="Filters">
+      <span className="sx-control-label">Filters · all conditions must hold (AND) · cells that fail turn grey</span>
+      <div className="sx-filters">
+        {filters.map((f) => (
+          <div className="sx-frow" key={f.id}>
+            <select aria-label="metric" value={f.metric} onChange={(e) => set(f.id, { metric: e.target.value })}>
+              {metrics.map((m) => <option key={metricId(m)} value={metricId(m)}>{m.label}</option>)}
             </select>
-          )}
-          <select aria-label="operator" value={f.op} onChange={(e) => set(f.id, { op: e.target.value as Condition["op"] })}>
-            <option value=">=">≥</option>
-            <option value="<=">≤</option>
-          </select>
-          <input
-            aria-label="threshold"
-            inputMode="decimal"
-            defaultValue={f.value}
-            onChange={(e) => {
-              const v = parseFloat(e.target.value.replace(",", "."));
-              if (Number.isFinite(v)) set(f.id, { value: v });
-            }}
-          />
-          <button type="button" aria-label="remove condition" onClick={() => onChange(filters.filter((x) => x.id !== f.id))}>×</button>
-        </div>
-      ))}
-      <div className="surface-filters__row">
+            {schema.arms && (
+              <select aria-label="kind" value={f.kind} onChange={(e) => set(f.id, { kind: e.target.value as Condition["kind"] })}>
+                <option value="value">value</option>
+                <option value="delta">Δ vs {cmp}</option>
+              </select>
+            )}
+            <select aria-label="operator" value={f.op} onChange={(e) => set(f.id, { op: e.target.value as Condition["op"] })}>
+              <option value=">=">≥</option>
+              <option value="<=">≤</option>
+            </select>
+            <input
+              aria-label="threshold"
+              type="text"
+              inputMode="decimal"
+              placeholder="value"
+              defaultValue={f.value ?? ""}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value.replace(",", "."));
+                set(f.id, { value: Number.isFinite(v) ? v : null });
+              }}
+            />
+            <button type="button" className="sx-fbtn" aria-label="remove condition" onClick={() => onChange(filters.filter((x) => x.id !== f.id))}>×</button>
+          </div>
+        ))}
+      </div>
+      <div className="sx-frow">
         <button
           type="button"
-          onClick={() => onChange([...filters, { id: `c${(counter += 1)}`, metric: metricId(metrics[0]), kind: "value", op: ">=", value: 0 }])}
+          className="sx-fbtn"
+          onClick={() => onChange([...filters, { id: `c${(counter += 1)}`, metric: metricId(metrics[0]), kind: "value", op: ">=", value: null }])}
         >
           + add condition
         </button>
-        {filters.length > 0 && <button type="button" onClick={() => onChange([])}>clear all</button>}
+        <button type="button" className="sx-fbtn" onClick={() => onChange([])}>clear all</button>
+        <span className="sx-fsum">{summary}</span>
       </div>
     </div>
   );

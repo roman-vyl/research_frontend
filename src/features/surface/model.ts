@@ -73,13 +73,18 @@ export type Condition = {
   metric: string;
   kind: "value" | "delta";
   op: ">=" | "<=";
-  value: number;
+  /** `null` until a threshold is typed: a condition without a value is inactive. */
+  value: number | null;
 };
+
+export const activeConditions = (filters: Condition[]): Condition[] => filters.filter((c) => c.value !== null);
 
 export type ViewState = {
   viewId: string;
   metric: string;
   mode: ViewMode;
+  /** The comparison arm shown / subtracted in `baseline` and `difference` modes. */
+  compare: string | null;
   controls: ControlState;
   filters: Condition[];
 };
@@ -95,7 +100,11 @@ function activeGrid(schema: ExperimentResultSchema, controls: ControlState): str
   return typeof g === "string" ? g : (gridsOf(schema)[0] ?? null);
 }
 
-/** Distinct sorted options of every control of a view, given the rows of the current SL slice. */
+/**
+ * Distinct sorted options of every control of a view, given the rows of the current SL slice.
+ * A control's options depend on the controls listed before it (for example, the trail distances
+ * that exist for the selected trigger).
+ */
 export function controlOptions(
   schema: ExperimentResultSchema,
   view: ExperimentView,
@@ -106,26 +115,41 @@ export function controlOptions(
   const grid = activeGrid(schema, controls);
   const treat = treatmentArms(schema);
   const base = treat ? rows.filter((r) => treat.includes(String(r.arm))) : rows;
+  const earlier: string[] = [];
   for (const id of view.controls) {
     if (id === GRID_ID) {
       const present = new Set(base.map((r) => r[GRID_ID]));
       out[id] = gridsOf(schema).filter((g) => present.has(g));
+      earlier.push(id);
       continue;
     }
     const dim = dimById(schema, id);
     if (!dim) continue;
-    const pool = dim.grids ? base.filter((r) => r[GRID_ID] === grid) : base;
+    let pool = dim.grids ? base.filter((r) => r[GRID_ID] === grid) : base;
+    for (const prev of earlier) {
+      const pd = prev === GRID_ID ? undefined : dimById(schema, prev);
+      const want = controls[prev];
+      if (!pd || typeof want !== "number") continue;
+      pool = pool.filter((r) => {
+        const v = r[dimColumn(pd, grid)];
+        return typeof v === "number" && close(v, want);
+      });
+    }
     const vals = new Set<number>();
     for (const r of pool) {
       const v = r[dimColumn(dim, grid)];
       if (typeof v === "number") vals.add(v);
     }
     out[id] = [...vals].sort((a, b) => a - b);
+    earlier.push(id);
   }
   return out;
 }
 
-/** Keep valid control values; fall back to the first option when a value disappeared. */
+const nearest = (opts: number[], v: number): number =>
+  opts.reduce((best, o) => (Math.abs(o - v) < Math.abs(best - v) ? o : best), opts[0]);
+
+/** Keep valid control values; a vanished numeric value moves to the nearest option, others to the first. */
 export function reconcileControls(
   schema: ExperimentResultSchema,
   view: ExperimentView,
@@ -140,7 +164,26 @@ export function reconcileControls(
     const cur = controls[id];
     const keep = opts.some((o) => (typeof o === "number" && typeof cur === "number" ? close(o, cur) : o === cur));
     if (keep && cur !== undefined) next[id] = cur;
-    else if (opts.length > 0) next[id] = opts[0];
+    else if (opts.length > 0) {
+      next[id] =
+        typeof cur === "number" && opts.every((o) => typeof o === "number") ? nearest(opts as number[], cur) : opts[0];
+    }
+  }
+  return next;
+}
+
+/** Switch the grid keeping each geometry's physical size (`ATR = R × SL`); reconcile picks the nearest point. */
+export function convertGrid(schema: ExperimentResultSchema, controls: ControlState, nextGrid: string): ControlState {
+  const from = activeGrid(schema, controls);
+  const sl = typeof controls.sl === "number" ? controls.sl : null;
+  const next: ControlState = { ...controls, [GRID_ID]: nextGrid };
+  for (const dim of schema.dimensions) {
+    const cur = controls[dim.id];
+    if (!dim.grids || typeof cur !== "number" || sl === null || from === null) continue;
+    const a = dim.grids[from]?.unit;
+    const b = dim.grids[nextGrid]?.unit;
+    if (a === "R" && b === "ATR") next[dim.id] = cur * sl;
+    else if (a === "ATR" && b === "R") next[dim.id] = cur / sl;
   }
   return next;
 }
@@ -155,6 +198,7 @@ export function defaultState(
     viewId: view.id,
     metric: view.default_metric,
     mode: "treatment",
+    compare: schema.arms?.baseline ?? null,
     controls: reconcileControls(schema, view, rows, {}),
     filters: [],
   };
@@ -189,13 +233,19 @@ export function sliceRows(
   });
 }
 
-/** Baseline arm lookup for a metric, keyed by the manifest's `match_on` dimensions. */
-export function baselineIndex(schema: ExperimentResultSchema, rows: Row[], metric: string): Map<string, number> {
+/** Comparison-arm lookup for a metric (default: the baseline arm), keyed by the manifest's `match_on` dimensions. */
+export function baselineIndex(
+  schema: ExperimentResultSchema,
+  rows: Row[],
+  metric: string,
+  arm?: string | null,
+): Map<string, number> {
   const out = new Map<string, number>();
   const arms = schema.arms;
   if (!arms) return out;
+  const want = arm ?? arms.baseline;
   for (const r of rows) {
-    if (r.arm !== arms.baseline) continue;
+    if (r.arm !== want) continue;
     const v = r[metric];
     if (typeof v === "number") out.set(matchKey(schema, r), v);
   }
@@ -233,7 +283,7 @@ export function passes(
   filters: Condition[],
   indexByMetric: (metric: string) => Map<string, number>,
 ): boolean {
-  for (const c of filters) {
+  for (const c of activeConditions(filters)) {
     const v = row[c.metric];
     if (typeof v !== "number") return false;
     let x = v;
@@ -242,7 +292,8 @@ export function passes(
       if (base === null) return false;
       x = v - base;
     }
-    if (c.op === ">=" ? !(x >= c.value) : !(x <= c.value)) return false;
+    const limit = c.value as number;
+    if (c.op === ">=" ? !(x >= limit) : !(x <= limit)) return false;
   }
   return true;
 }
@@ -276,43 +327,6 @@ export function buildMatrix(schema: ExperimentResultSchema, view: ExperimentView
   return { xs: xa, ys: ya, cells: ya.map((y) => xa.map((x) => keyed.get(`${x}|${y}`) ?? null)) };
 }
 
-export type AggregateCell = { x: number; y: number; value: number | null; count: number; passing: number };
-
-/** Median of the displayed value per (x, y) over `aggregate_over`, plus the share passing filters. */
-export function aggregateMap(
-  schema: ExperimentResultSchema,
-  view: ExperimentView,
-  allRows: Row[],
-  state: ViewState,
-): AggregateCell[] {
-  const grid = activeGrid(schema, state.controls);
-  const arms = treatmentArms(schema);
-  const rows = sliceRows(schema, view, allRows, state.controls, arms);
-  const xd = dimById(schema, view.x);
-  const yd = dimById(schema, view.y);
-  if (!xd || !yd) return [];
-  const cache = new Map<string, Map<string, number>>();
-  const idx = (m: string): Map<string, number> => {
-    let v = cache.get(m);
-    if (!v) cache.set(m, (v = baselineIndex(schema, allRows, m)));
-    return v;
-  };
-  const groups = new Map<string, { x: number; y: number; vals: number[]; count: number; passing: number }>();
-  for (const r of rows) {
-    const x = r[dimColumn(xd, grid)];
-    const y = r[dimColumn(yd, grid)];
-    if (typeof x !== "number" || typeof y !== "number") continue;
-    const key = `${x}|${y}`;
-    const g = groups.get(key) ?? { x, y, vals: [], count: 0, passing: 0 };
-    const v = displayValue(schema, r, state.metric, state.mode, idx(state.metric));
-    if (v !== null) g.vals.push(v);
-    g.count += 1;
-    if (passes(schema, r, state.filters, idx)) g.passing += 1;
-    groups.set(key, g);
-  }
-  return [...groups.values()].map((g) => ({ x: g.x, y: g.y, value: median(g.vals), count: g.count, passing: g.passing }));
-}
-
 export function formatMetric(metric: ExperimentMetric, value: number | null): string {
   if (value === null) return "—";
   if (metric.format === "fraction") return `${(value * 100).toFixed(1)}%`;
@@ -340,3 +354,81 @@ export function unitText(
 }
 
 const round = (v: number): number => Math.round(v * 1e6) / 1e6;
+const round2 = (v: number): number => Math.round(v * 100) / 100;
+
+export function comparisonArms(schema: ExperimentResultSchema): string[] {
+  const arms = schema.arms;
+  return arms ? Object.entries(arms.roles).filter(([, r]) => r === "comparison").map(([a]) => a) : [];
+}
+
+/** Readable arm name from the stored arm id (display only; ids are never parsed for meaning elsewhere). */
+export function armLabel(arm: string): string {
+  const control = /^control_tp(\d+(?:\.\d+)?)r$/.exec(arm);
+  if (control) return `CONTROL · TP ${control[1]}R`;
+  const fixed = /^fixed_tp_(\d+(?:\.\d+)?)r$/.exec(arm);
+  if (fixed) return `TP ${fixed[1]}R`;
+  const text = arm.replace(/_no_tp$/, "").replace(/_/g, " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** Comparison-arm lookups by metric for one set of rows (memoised per metric). */
+export function makeIndexer(
+  schema: ExperimentResultSchema,
+  rows: Row[],
+  arm: string | null,
+): (metric: string) => Map<string, number> {
+  const cache = new Map<string, Map<string, number>>();
+  return (m) => {
+    let v = cache.get(m);
+    if (!v) cache.set(m, (v = baselineIndex(schema, rows, m, arm)));
+    return v;
+  };
+}
+
+/** Slider readout of a control value: the value in its own unit and, when known, its conversion. */
+export function controlReadout(
+  schema: ExperimentResultSchema,
+  id: string,
+  value: number,
+  grid: string | null,
+  sl: number | null,
+): { main: string; alt: string | null } {
+  const dim = dimById(schema, id);
+  if (!dim) return { main: String(value), alt: null };
+  const unit = dim.grids ? (dim.grids[grid ?? Object.keys(dim.grids)[0]]?.unit ?? "") : (dim.unit ?? "");
+  const joined = unit === "R" ? `${value}R` : `${value}${unit ? ` ${unit}` : ""}`;
+  if (id === "sl" && unit === "ATR") return { main: joined, alt: `1R = ${value} ATR` };
+  if (sl === null || sl <= 0 || id === "sl") return { main: joined, alt: null };
+  if (unit === "R") return { main: joined, alt: `= ${round2(value * sl)} ATR at SL ${sl}` };
+  if (unit === "ATR" && dim.grids) return { main: joined, alt: `= ${round2(value / sl)}R at SL ${sl}` };
+  return { main: joined, alt: null };
+}
+
+export type MetricStyle = {
+  /** Value at which a diverging scale changes colour. */
+  center: number;
+  /** One-sided scale (more is simply more), as for trade counts. */
+  seq: boolean;
+  /** Higher is better but values are negative (drawdown). */
+  goodHigh: boolean;
+};
+
+/** Presentation hints by metric id; unknown metrics diverge at 0. */
+export function metricStyle(metric: string): MetricStyle {
+  if (metric === "profit_factor") return { center: 1, seq: false, goodHigh: false };
+  if (metric === "realised_trade_count") return { center: 0, seq: true, goodHigh: false };
+  if (metric === "max_drawdown_pct") return { center: 0, seq: false, goodHigh: true };
+  return { center: 0, seq: false, goodHigh: false };
+}
+
+const sign = (v: number): string => (v >= 0 ? "+" : "");
+
+/** Short text of a heatmap cell or aggregate: absolute value, or a signed difference. */
+export function formatCell(metric: ExperimentMetric, value: number | null, delta: boolean): string {
+  if (value === null) return "—";
+  if (metric.format === "fraction") return delta ? `${sign(value)}${(value * 100).toFixed(1)}` : `${(value * 100).toFixed(1)}%`;
+  if (metric.format === "integer") return delta ? `${sign(value)}${Math.round(value)}` : Math.round(value).toLocaleString("en-US");
+  if (metric.unit === "R") return `${sign(value)}${value.toFixed(0)}`;
+  if (metric.unit) return `${sign(value)}${Math.round(value).toLocaleString("en-US")}`;
+  return delta ? `${sign(value)}${value.toFixed(2)}` : value.toFixed(2);
+}
