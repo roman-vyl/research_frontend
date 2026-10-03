@@ -1,6 +1,6 @@
 ## 1. API Client
 
-- [ ] 1.1 Types and client for the Experiment list, manifest and results (filtered by semantic ids), matching the Research Service contract; no findings client.
+- [x] 1.1 Types and client for the Experiment list, manifest and results (filtered by semantic ids), matching the Research Service contract; no findings client.
 
 ## 2. Surface Tab
 

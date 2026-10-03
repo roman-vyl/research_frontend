@@ -21,6 +21,12 @@ import {
   type StrategyConfigDraft,
   type ValidationResult,
 } from "@/api/types";
+import type {
+  ExperimentFilters,
+  ExperimentManifest,
+  ExperimentRegistry,
+  ExperimentResults,
+} from "@/api/experiments";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
 
@@ -38,9 +44,15 @@ export class ApiError extends Error {
 
 async function readErrorDetail(res: Response): Promise<string> {
   try {
-    const body = (await res.json()) as { detail?: string | { msg?: string }[] };
+    const body = (await res.json()) as {
+      detail?: string | { msg?: string }[];
+      message?: string;
+    };
     if (typeof body.detail === "string") {
       return body.detail;
+    }
+    if (typeof body.message === "string") {
+      return body.message;
     }
     if (Array.isArray(body.detail)) {
       return body.detail.map((d) => d.msg ?? JSON.stringify(d)).join("; ");
@@ -334,4 +346,35 @@ export async function selectSavedConfig(
 
 export async function runBacktest(body: RunBacktestRequest): Promise<BacktestResult> {
   return dbgTimed("api.runBacktest", () => postJson<BacktestResult>("/api/research/backtests", body));
+}
+
+export async function fetchExperiments(): Promise<ExperimentRegistry> {
+  return requestJson<ExperimentRegistry>("/api/research/experiments");
+}
+
+export async function fetchExperimentManifest(experimentId: string): Promise<ExperimentManifest> {
+  return requestJson<ExperimentManifest>(
+    `/api/research/experiments/${encodeURIComponent(experimentId)}`,
+  );
+}
+
+/** Results are requested filtered (at least by one outer dimension): the full table is large. */
+export async function fetchExperimentResults(params: {
+  experimentId: string;
+  filters: ExperimentFilters;
+  columns?: string[];
+  signal?: AbortSignal;
+}): Promise<ExperimentResults> {
+  const qs = new URLSearchParams();
+  for (const [id, value] of Object.entries(params.filters)) {
+    qs.set(id, String(value));
+  }
+  if (params.columns && params.columns.length > 0) {
+    qs.set("columns", params.columns.join(","));
+  }
+  const query = qs.toString();
+  return requestJson<ExperimentResults>(
+    `/api/research/experiments/${encodeURIComponent(params.experimentId)}/results${query ? `?${query}` : ""}`,
+    { signal: params.signal },
+  );
 }
