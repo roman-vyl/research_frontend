@@ -143,7 +143,7 @@ describe("App report vs composer isolation", () => {
 
   it("renders Composer when report load fails with prototype trade_records.context_ref", async () => {
     render(
-      <WorkbenchProvider>
+      <WorkbenchProvider initialActiveTab="chart">
         <SelectRunOnMount runId="run-prototype" />
         <App />
       </WorkbenchProvider>,

@@ -304,7 +304,7 @@ function ChartSliceCapture() {
 
 function Host({
   children,
-  initialActiveTab,
+  initialActiveTab = "chart",
   selectRunId = RUNS[0].run_id,
 }: {
   children?: ReactNode;

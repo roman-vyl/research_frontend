@@ -307,7 +307,7 @@ const EMPTY_TRACE_DISPLAY_STATE: TraceDisplayState = {
 
 export function WorkbenchProvider({
   children,
-  initialActiveTab = "chart",
+  initialActiveTab = "surface",
 }: {
   children: ReactNode;
   initialActiveTab?: WorkbenchTab;
@@ -319,7 +319,7 @@ export function WorkbenchProvider({
 
 function WorkbenchProviderInner({
   children,
-  initialActiveTab = "chart",
+  initialActiveTab = "surface",
 }: {
   children: ReactNode;
   initialActiveTab?: WorkbenchTab;

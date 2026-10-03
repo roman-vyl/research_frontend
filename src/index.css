@@ -1816,3 +1816,8 @@ select {
 .surface-details dt { color: #94a3b8; }
 .surface-details dd { margin: 0; text-align: right; }
 .surface-error { color: #f87171; }
+.surface-cards { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+.surface-card { display: flex; flex-direction: column; gap: 0.3rem; min-width: 14rem; text-align: left; background: #151c26; border: 1px solid #2a3544; border-radius: 10px; padding: 0.8rem 1rem; color: #e2e8f0; cursor: pointer; }
+.surface-card:hover { border-color: #3b82f6; background: #1a2330; }
+.surface-card__meta { color: #93c5fd; font-size: 0.78rem; letter-spacing: 0.03em; }
+.surface-card__title { font-size: 1rem; font-weight: 600; }

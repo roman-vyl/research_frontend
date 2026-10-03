@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -41,10 +41,7 @@ function wireApi(): void {
 }
 
 async function openExperiment(name: RegExp): Promise<void> {
-  await screen.findByText(name);
-  fireEvent.change(screen.getByLabelText(/Experiment/), {
-    target: { value: REGISTRY.experiments.find((e) => name.test(e.title))!.experiment_id },
-  });
+  fireEvent.click(await screen.findByRole("button", { name }));
 }
 
 describe("SurfaceView", () => {
@@ -110,6 +107,30 @@ describe("SurfaceView", () => {
     await openExperiment(/fixed SL/);
     await screen.findByRole("table");
     expect(screen.queryByText("Δ vs baseline")).toBeNull();
+  });
+
+  it("starts with experiment cards (ticker, anchor, title) and selects nothing automatically", async () => {
+    render(<SurfaceView />);
+    const cards = within(await screen.findByRole("group", { name: "Experiments" })).getAllByRole("button");
+    expect(cards).toHaveLength(REGISTRY.experiments.length);
+    expect(cards[0].textContent).toContain("BTCUSDT.P");
+    expect(cards[0].textContent).toContain("EMA500");
+    expect(cards[0].textContent).toContain(REGISTRY.experiments[0].title);
+    expect(fetchExperimentManifest).not.toHaveBeenCalled();
+    expect(screen.queryByRole("table")).toBeNull();
+  });
+
+  it("a card loads the experiment and 'All experiments' returns to the cards", async () => {
+    render(<SurfaceView />);
+    await openExperiment(/fixed SL/);
+    await screen.findByRole("table");
+    expect(fetchExperimentManifest).toHaveBeenCalledWith("btcusdt_p.ema500.ratio_4d");
+    fireEvent.click(screen.getByRole("button", { name: /All experiments/ }));
+    expect(within(await screen.findByRole("group", { name: "Experiments" })).getAllByRole("button")).toHaveLength(REGISTRY.experiments.length);
+    expect(screen.queryByRole("table")).toBeNull();
+    await openExperiment(/trailing geometry/);
+    await screen.findByRole("table");
+    expect(fetchExperimentManifest).toHaveBeenLastCalledWith("btcusdt_p.ema500.trailing_geometry_4d");
   });
 
   it("an API error is shown, not thrown", async () => {

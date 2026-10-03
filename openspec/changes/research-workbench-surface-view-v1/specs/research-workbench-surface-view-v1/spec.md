@@ -16,10 +16,11 @@ ids of the manifest `result_schema`, never physical table column names.
 
 ### Requirement: Surface tab
 
-The Research Workbench SHALL provide a "Surface" tab in the order
+The Research Workbench SHALL open on the Surface tab by default and SHALL provide a "Surface" tab in the order
 `Chart | Surface | Reports | Strategy Composer`. The Surface tab is a
 visualisation of an Experiment's ready-made result table: it SHALL provide an
-Experiment selector built from the Experiment list, and for the selected
+Experiment selector shown as cards (ticker, anchor, title) built from the Experiment
+list, with no Experiment selected automatically and a way back to the cards, and for the selected
 Experiment the views declared by its manifest `view` descriptor (controls,
 heatmap, optional aggregated map), metric selection, filters, and, when the
 manifest declares `arms`, baseline/difference. It SHALL NOT recompute any trading
@@ -29,7 +30,7 @@ and SHALL be reachable while no run is selected.
 #### Scenario: Open the tab without a run
 
 - **WHEN** the user opens the Surface tab and no run is selected
-- **THEN** the Experiment selector and the declared view are shown.
+- **THEN** the Experiment cards and the declared view are shown.
 
 #### Scenario: Request only what is displayed
 

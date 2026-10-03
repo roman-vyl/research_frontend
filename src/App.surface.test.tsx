@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "@/App";
@@ -46,6 +46,12 @@ describe("Workbench with the Surface tab", () => {
     expect(tabs).toEqual(["Chart", "Surface", "Reports", "Strategy Composer"]);
   });
 
+  it("opens on the Surface tab, not Chart", async () => {
+    render(<WorkbenchProvider><App /></WorkbenchProvider>);
+    expect(within(await screen.findByRole("group", { name: "Experiments" })).getAllByRole("button")).toHaveLength(2);
+    expect(screen.getByRole("heading", { name: "Surface" })).toBeTruthy();
+  });
+
   it("starts with no run: no run list call, no run load, idle message in Chart and Reports", () => {
     render(<WorkbenchProvider><App /></WorkbenchProvider>);
     expect(fetchRunSummaries).not.toHaveBeenCalled();
@@ -58,20 +64,17 @@ describe("Workbench with the Surface tab", () => {
 
   it("Surface works while no run is selected", async () => {
     render(<WorkbenchProvider><App /></WorkbenchProvider>);
-    fireEvent.click(screen.getByRole("button", { name: "Surface" }));
     expect(await screen.findByText(/EMA500 · fixed SL × TP ratio/)).toBeTruthy();
   });
 
   it("keeps the Surface state when switching tabs", async () => {
     render(<WorkbenchProvider><App /></WorkbenchProvider>);
-    fireEvent.click(screen.getByRole("button", { name: "Surface" }));
-    await screen.findByText(/fixed SL/);
-    fireEvent.change(screen.getByLabelText(/Experiment/), { target: { value: "btcusdt_p.ema500.ratio_4d" } });
+    fireEvent.click(await screen.findByRole("button", { name: /fixed SL/ }));
     await screen.findByRole("table");
     fireEvent.click(screen.getByRole("button", { name: "Reports" }));
     fireEvent.click(screen.getByRole("button", { name: "Surface" }));
-    expect((screen.getByLabelText(/Experiment/) as HTMLSelectElement).value).toBe("btcusdt_p.ema500.ratio_4d");
     expect(screen.getByRole("table")).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Experiments" })).toBeNull();
   });
 
   it("Retry after a failed load requests the same run again and keeps it selected", async () => {

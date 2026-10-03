@@ -108,17 +108,33 @@ export function SurfaceView() {
           Ready-made results of a research Experiment. Points with a run can be opened in Chart and Reports.
         </p>
       </div>
-      <label className="surface-select">
-        Experiment{" "}
-        <select value={experimentId ?? ""} onChange={(e) => setExperimentId(e.target.value || null)}>
-          <option value="">Select an experiment…</option>
+      {experimentId === null ? (
+        <div className="surface-cards" role="group" aria-label="Experiments">
           {(data.registry ?? []).map((x) => (
-            <option key={x.experiment_id} value={x.experiment_id}>
-              {x.ticker} · {x.anchor} · {x.title}
-            </option>
+            <button
+              type="button"
+              key={x.experiment_id}
+              className="surface-card"
+              onClick={() => setExperimentId(x.experiment_id)}
+            >
+              <span className="surface-card__meta">{x.ticker} · {x.anchor}</span>
+              <span className="surface-card__title">{x.title}</span>
+            </button>
           ))}
-        </select>
-      </label>
+          {data.registry !== null && data.registry.length === 0 && (
+            <p className="panel__hint">No experiments are registered.</p>
+          )}
+        </div>
+      ) : (
+        <div className="surface-select">
+          <button type="button" className="chip" onClick={() => setExperimentId(null)}>
+            ← All experiments
+          </button>
+          <strong>
+            {data.registry?.find((x) => x.experiment_id === experimentId)?.title ?? experimentId}
+          </strong>
+        </div>
+      )}
       {data.error && <p role="alert" className="surface-error">{data.error}</p>}
       {data.loading && <p className="panel__hint">Loading…</p>}
       {schema && view && state && slice && (

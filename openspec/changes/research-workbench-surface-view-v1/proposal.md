@@ -12,7 +12,7 @@ whose only link to the existing workbench is `setSelectedRunId(run_id)`.
 ## What Changes
 
 - Add the **Surface tab** (`Chart | Surface | Reports | Strategy Composer`) that
-  consumes the Research Service Experiment API: Experiment selector, views
+  consumes the Research Service Experiment API: default Surface tab with Experiment cards, views
   declared by the manifest `view` descriptor (including the trailing trigger
   filmstrip), controls with explicit units, filters, and a per-point CellDetails
   panel. All Surface state is local to `SurfaceView`.
