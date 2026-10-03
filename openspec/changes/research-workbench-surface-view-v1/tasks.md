@@ -21,7 +21,7 @@
 
 ## 4b. Visual parity with the research HTML
 
-- [x] 4b.1 Restyle Surface after the research visualisations (segmented choices, sliders with play, percentile-rank heatmap, hover details, frame strip, geometry map, filters), comparison-arm choice, light/dark scheme.
+- [x] 4b.1 Restyle Surface after the research visualisations (segmented choices, sliders with play, percentile-rank heatmap, hover details, frame strip, filters), comparison-arm choice, light/dark scheme.
 
 ## 5. Verification
 

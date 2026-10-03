@@ -109,16 +109,11 @@ describe("SurfaceView", () => {
     expect(screen.queryByRole("button", { name: /^Δ vs/ })).toBeNull();
   });
 
-  it("the geometry map sets the sliders, the comparison arm and metric are chosen with segmented buttons", async () => {
+  it("comparison arm and metric are chosen with segmented buttons; there is no geometry map", async () => {
     render(<SurfaceView />);
     await openExperiment(/trailing geometry/);
     await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
-    const map = screen.getByRole("table", { name: "Geometry map" });
-    fireEvent.click(map.querySelector('td[data-x="1"][data-y="7"]')!);
-    const trigger = screen.getByRole("slider", { name: "Trigger T" }) as HTMLInputElement;
-    const distance = screen.getByRole("slider", { name: "Trail D" }) as HTMLInputElement;
-    await waitFor(() => expect(trigger.nextElementSibling!.textContent).toContain("7R"));
-    expect(distance.nextElementSibling!.textContent).toContain("1R");
+    expect(screen.queryByRole("table", { name: "Geometry map" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "PF" }));
     expect(screen.getByRole("button", { name: "PF" }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "Δ vs CONTROL · TP 5R" }));

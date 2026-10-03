@@ -7,7 +7,6 @@ import {
   TRAILING_MANIFEST,
   TRAILING_RESULTS,
 } from "@/features/surface/fixtures/experiments";
-import { geoAggregates, geometryMap } from "@/features/surface/aggregates";
 import {
   baselineIndex,
   buildMatrix,
@@ -18,7 +17,6 @@ import {
   displayValue,
   formatMetric,
   gridsOf,
-  median,
   metricById,
   passes,
   reconcileControls,
@@ -34,7 +32,6 @@ const R = RATIO_MANIFEST.result_schema;
 const trailingRows = toRows(TRAILING_RESULTS);
 const ratioRows = toRows(RATIO_RESULTS);
 const cellsView = T.view.find((v) => v.id === "cells")!;
-const geoView = T.view.find((v) => v.id === "geometry")!;
 
 describe("surface model", () => {
   it("turns columnar results into rows", () => {
@@ -92,21 +89,6 @@ describe("surface model", () => {
     expect(f(pf)).toBe(4);
     expect(f(pf, dnet)).toBe(3); // deltas are 1070, 1470, 1860, 2260; three reach 1100
     expect(f({ ...pf, value: 5 })).toBe(0);
-  });
-
-  it("aggregates the geometry map as medians, per comparison arm", () => {
-    const st = defaultState(T, "cells", trailingRows);
-    const cells = geometryMap(T, geoView, trailingRows, st, "m:net_pnl");
-    expect(cells).toHaveLength(4); // 2 triggers x 2 distances
-    const c = cells.find((x) => x.x === 0.5 && x.y === 6)!;
-    expect(c.count).toBe(4); // 2 widths x 2 lookbacks
-    const diff = geometryMap(T, geoView, trailingRows, st, "d:net_pnl");
-    expect(diff.find((x) => x.x === 0.5 && x.y === 6)!.value).toBeCloseTo(
-      median(trailingRows.filter((r) => r["trigger.R"] === 6 && r["distance.R"] === 0.5)
-        .map((r) => (r.net_pnl as number) - (1000 + (r.width as number) * 10)))!,
-    );
-    expect(geometryMap(T, geoView, trailingRows, st, "fpass").every((x) => x.value === 100)).toBe(true);
-    expect(geoAggregates(T, "net_pnl").map((a) => a.id)).toContain("mult");
   });
 
   it("starts the comparison on the baseline arm and indexes any comparison arm", () => {

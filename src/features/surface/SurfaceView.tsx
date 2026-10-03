@@ -4,7 +4,6 @@ import "@/features/surface/surface.css";
 import { useWorkbenchReport, useWorkbenchShell } from "@/shared/context/WorkbenchContext";
 import { CellDetails } from "@/features/surface/CellDetails";
 import { FiltersPanel } from "@/features/surface/FiltersPanel";
-import { GeometryMap } from "@/features/surface/GeometryMap";
 import { HeatStage } from "@/features/surface/HeatStage";
 import { LIGHT_TOKENS, readTokens, type Tokens } from "@/features/surface/color";
 import { SurfaceControls, SurfaceSliders } from "@/features/surface/SurfaceControls";
@@ -90,15 +89,8 @@ export function SurfaceView() {
     if (outer && outerValue === null) setOuterValue(outer.options[0] ?? null);
   }, [outer, outerValue]);
 
-  // The cells view is the first one that is not an aggregate; the geometry map is the aggregate view over its controls.
+  // The cells view is the first one that is not an aggregate.
   const view = schema ? (schema.view.find((v) => !v.aggregate_over) ?? schema.view[0]) : null;
-  const geoView = useMemo(
-    () =>
-      schema && view
-        ? (schema.view.find((v) => v.aggregate_over && view.controls.includes(v.x) && view.controls.includes(v.y)) ?? null)
-        : null,
-    [schema, view],
-  );
 
   // (Re)initialise the view state when a slice arrives.
   useEffect(() => {
@@ -143,16 +135,9 @@ export function SurfaceView() {
     update({ controls: reconcileControls(schema, view, rows, next) });
   };
 
-  const pickGeometry = (x: number, y: number) => {
-    if (!schema || !view || !state || !geoView) return;
-    update({ controls: reconcileControls(schema, view, rows, { ...state.controls, [geoView.x]: x, [geoView.y]: y }) });
-  };
-
   const entry = data.registry?.find((x) => x.experiment_id === experimentId) ?? null;
   const ready = schema && view && state && slice;
   const cellsFilmstrip = view?.filmstrip ? ((state && options[view.filmstrip]) ?? []) : [];
-  const geoX = geoView && state ? state.controls[geoView.x] : null;
-  const geoY = geoView && state ? state.controls[geoView.y] : null;
 
   return (
     <section className="sx" ref={rootRef} aria-label="Surface">
@@ -228,18 +213,6 @@ export function SurfaceView() {
                   setSelectedRunId(runId);
                   setActiveTab("chart");
                 }}
-              />
-            )}
-            {geoView && (
-              <GeometryMap
-                schema={schema}
-                view={geoView}
-                selectedX={typeof geoX === "number" ? geoX : null}
-                selectedY={typeof geoY === "number" ? geoY : null}
-                rows={rows}
-                state={state}
-                tokens={tokens}
-                onPick={pickGeometry}
               />
             )}
             <footer>
