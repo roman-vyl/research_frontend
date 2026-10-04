@@ -227,3 +227,16 @@ AND, and every frame (the heatmap and each frame of the strip) SHALL compute its
 - **WHEN** the user adds a condition Max DD, `top %`, 10
 - **THEN** the tenth of cells with the shallowest drawdown stays coloured.
 
+### Requirement: Every Experiment is its own surface
+
+Each registered Experiment SHALL be opened and shown on its own, from its own manifest and table; the
+view SHALL NOT merge or reuse the rows, controls or comparison arms of another Experiment. Discrete
+dimension values MAY carry readable names in the manifest (`labels`), which the view SHALL use for slider
+readouts and point details.
+
+#### Scenario: Third surface
+
+- **WHEN** a new Experiment (for example the ADX-triggered trailing) is added to the registry
+- **THEN** it appears as its own card with its own controls and comparison arms, and the other
+  Experiments are unchanged.
+

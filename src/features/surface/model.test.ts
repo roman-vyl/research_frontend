@@ -17,6 +17,7 @@ import {
   displayValue,
   formatMetric,
   addNetPnl,
+  armLabel,
   makeIndexer,
   gridsOf,
   makePasses,
@@ -145,6 +146,21 @@ describe("surface model", () => {
     const back = reconcileControls(T, cellsView, trailingRows, { ...st.controls, trigger: 6, distance: 0.5, be_trigger: 6 });
     expect(back.be_trigger).toBeUndefined();
     expect(controlOptions(T, cellsView, trailingRows, { ...st.controls, trigger: 6, distance: 0.5 }).be_trigger).toEqual([]);
+  });
+
+  it("names labelled values and the comparison arms of the ADX experiment", () => {
+    const schema = {
+      ...T,
+      dimensions: [
+        ...T.dimensions,
+        { id: "adx_tf", label: "ADX timeframe", column: "adx_tf_min", unit: "min", labels: { "60": "1h", "1440": "1d" } },
+      ],
+    };
+    expect(controlReadout(schema, "adx_tf", 60, null, null)).toEqual({ main: "1h", alt: null });
+    expect(unitText(schema, "adx_tf", 1440, null, null)).toBe("1d");
+    expect(controlReadout(schema, "adx_tf", 15, null, null).main).toBe("15 min"); // no label: value and unit
+    expect(armLabel("trail_T12_D5")).toBe("Trailing T12R / D5R");
+    expect(armLabel("stop_only")).toBe("Stop only");
   });
 
   it("starts the comparison on the baseline arm and indexes any comparison arm", () => {

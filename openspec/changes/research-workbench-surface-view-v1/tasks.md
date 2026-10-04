@@ -35,6 +35,10 @@
 
 - [x] 4e.1 `top %` / `bottom %` conditions per metric (and per difference to the comparison arm), cut-off per frame; filters are remembered through the session storage.
 
+## 4f. Further Experiments
+
+- [x] 4f.1 The ADX-triggered trailing experiment is registered as a separate Experiment (own folder, manifest, table, comparison arms); dimension `labels` in the manifest name discrete values (timeframes, trigger mode).
+
 ## 5. Verification
 
 - [ ] 5.1 Manual verification by the owner after the historical data is prepared: Experiment → Surface → point → CellDetails → Open run → Chart → Reports.

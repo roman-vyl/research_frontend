@@ -116,34 +116,32 @@ export function controlOptions(
   const out: Record<string, (string | number)[]> = {};
   const grid = activeGrid(schema, controls);
   const treat = treatmentArms(schema);
-  const base = treat ? rows.filter((r) => treat.includes(String(r.arm))) : rows;
-  const earlier: string[] = [];
+  // The pool narrows control by control, so later controls scan ever fewer rows.
+  let pool = treat ? rows.filter((r) => treat.includes(String(r.arm))) : rows;
   for (const id of view.controls) {
     if (id === GRID_ID) {
-      const present = new Set(base.map((r) => r[GRID_ID]));
+      const present = new Set(pool.map((r) => r[GRID_ID]));
       out[id] = gridsOf(schema).filter((g) => present.has(g));
-      earlier.push(id);
+      if (typeof controls[id] === "string") pool = pool.filter((r) => r[GRID_ID] === controls[id]);
       continue;
     }
     const dim = dimById(schema, id);
     if (!dim) continue;
-    let pool = dim.grids ? base.filter((r) => r[GRID_ID] === grid) : base;
-    for (const prev of earlier) {
-      const pd = prev === GRID_ID ? undefined : dimById(schema, prev);
-      const want = controls[prev];
-      if (!pd || typeof want !== "number") continue;
-      pool = pool.filter((r) => {
-        const v = r[dimColumn(pd, grid)];
-        return typeof v === "number" && close(v, want);
-      });
-    }
+    const col = dimColumn(dim, grid);
+    const sub = dim.grids ? pool.filter((r) => r[GRID_ID] === grid) : pool;
     const vals = new Set<number>();
-    for (const r of pool) {
-      const v = r[dimColumn(dim, grid)];
+    for (const r of sub) {
+      const v = r[col];
       if (typeof v === "number") vals.add(v);
     }
     out[id] = [...vals].sort((a, b) => a - b);
-    earlier.push(id);
+    const want = controls[id];
+    if (typeof want === "number") {
+      pool = sub.filter((r) => {
+        const v = r[col];
+        return typeof v === "number" && close(v, want);
+      });
+    }
   }
   return out;
 }
@@ -413,6 +411,8 @@ export function unitText(
 ): string {
   const dim = dimById(schema, dimId);
   if (!dim) return String(value);
+  const labelled = dim.labels?.[String(value)];
+  if (labelled !== undefined) return labelled;
   if (!dim.grids) return `${value}${dim.unit ? ` ${dim.unit}` : ""}`;
   const unit = dim.grids[grid ?? Object.keys(dim.grids)[0]]?.unit ?? "";
   const text = `${value}${unit}`;
@@ -436,6 +436,9 @@ export function armLabel(arm: string): string {
   if (control) return `CONTROL · TP ${control[1]}R`;
   const fixed = /^fixed_tp_(\d+(?:\.\d+)?)r$/.exec(arm);
   if (fixed) return `TP ${fixed[1]}R`;
+  const trail = /^trail_T(\d+(?:\.\d+)?)_D(\d+(?:\.\d+)?)$/.exec(arm);
+  if (trail) return `Trailing T${trail[1]}R / D${trail[2]}R`;
+  if (arm === "stop_only") return "Stop only";
   const text = arm.replace(/_no_tp$/, "").replace(/_/g, " ");
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
@@ -464,6 +467,8 @@ export function controlReadout(
 ): { main: string; alt: string | null } {
   const dim = dimById(schema, id);
   if (!dim) return { main: String(value), alt: null };
+  const labelled = dim.labels?.[String(value)];
+  if (labelled !== undefined) return { main: labelled, alt: null };
   const unit = dim.grids ? (dim.grids[grid ?? Object.keys(dim.grids)[0]]?.unit ?? "") : (dim.unit ?? "");
   const joined = unit === "R" ? `${value}R` : `${value}${unit ? ` ${unit}` : ""}`;
   if (id === "sl" && unit === "ATR") return { main: joined, alt: `1R = ${value} ATR` };
