@@ -17,7 +17,9 @@ import {
   displayValue,
   formatMetric,
   addNetPnl,
+  makeIndexer,
   gridsOf,
+  makePasses,
   initialEquity,
   withNetPnl,
   metricById,
@@ -104,6 +106,29 @@ describe("surface model", () => {
     expect(row.net_pnl).toBeCloseTo((ratioRows[0].return_pct as number) * 10000);
     expect(withNetPnl(T, 10000)).toBe(T); // trailing already has net_pnl
     expect(withNetPnl(R, null)).toBe(R);
+  });
+
+  it("top / bottom percent filters keep the best / worst share of the cells shown (ties included)", () => {
+    const rows = sliceRows(T, cellsView, trailingRows, defaultState(T, "cells", trailingRows).controls, treatmentArms(T));
+    const idx = makeIndexer(T, trailingRows, "control_tp5r");
+    const count = (c: Partial<Condition>): number => {
+      const f: Condition = { id: "t", metric: "net_pnl", kind: "value", op: "top", value: 50, ...c };
+      return rows.filter(makePasses(T, rows, [f], idx)).length;
+    };
+    expect(rows).toHaveLength(4);
+    expect(count({ op: "top", value: 50 })).toBe(2);
+    expect(count({ op: "top", value: 10 })).toBe(1); // at least one cell: the best
+    expect(count({ op: "bottom", value: 25 })).toBe(1);
+    expect(count({ op: "top", value: 100 })).toBe(4);
+    expect(count({ metric: "max_drawdown_pct", op: "top", value: 10 })).toBe(4); // all equal: ties stay
+    expect(count({ kind: "delta", op: "top", value: 25 })).toBe(1);
+    expect(count({ op: "top", value: null })).toBe(4); // no percent typed: inactive
+    // AND with a value condition
+    const both: Condition[] = [
+      { id: "a", metric: "net_pnl", kind: "value", op: "top", value: 50 },
+      { id: "b", metric: "net_pnl", kind: "value", op: "<=", value: 2300 },
+    ];
+    expect(rows.filter(makePasses(T, rows, both, idx)).length).toBeLessThan(2);
   });
 
   it("an optional dimension is off by default and then selects only the rows without a value", () => {

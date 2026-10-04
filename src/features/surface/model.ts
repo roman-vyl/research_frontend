@@ -73,7 +73,8 @@ export type Condition = {
   id: string;
   metric: string;
   kind: "value" | "delta";
-  op: ">=" | "<=";
+  /** `top` / `bottom`: the best / worst `value` percent of the cells of the frame (higher is better). */
+  op: ">=" | "<=" | "top" | "bottom";
   /** `null` until a threshold is typed: a condition without a value is inactive. */
   value: number | null;
 };
@@ -290,25 +291,80 @@ export function displayValue(
   return value !== null && base !== null ? value - base : null;
 }
 
+function conditionValue(
+  schema: ExperimentResultSchema,
+  row: Row,
+  c: Condition,
+  indexByMetric: (metric: string) => Map<string, number>,
+): number | null {
+  const v = row[c.metric];
+  if (typeof v !== "number") return null;
+  if (c.kind !== "delta") return v;
+  const base = baselineOf(schema, row, indexByMetric(c.metric));
+  return base === null ? null : v - base;
+}
+
+/**
+ * Cut-off values of the `top` / `bottom` conditions over the rows of one frame (the cells shown together):
+ * `top 10` keeps the best 10 percent (ties included), `bottom 10` the worst 10 percent. For metrics stored
+ * as negative numbers (drawdown) "best" is the value closest to zero, as everywhere else.
+ */
+export function percentileThresholds(
+  schema: ExperimentResultSchema,
+  rows: Row[],
+  filters: Condition[],
+  indexByMetric: (metric: string) => Map<string, number>,
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const c of activeConditions(filters)) {
+    if (c.op !== "top" && c.op !== "bottom") continue;
+    const vals: number[] = [];
+    for (const r of rows) {
+      const x = conditionValue(schema, r, c, indexByMetric);
+      if (x !== null) vals.push(x);
+    }
+    if (vals.length === 0) continue;
+    vals.sort((a, b) => (c.op === "top" ? b - a : a - b));
+    const percent = Math.min(100, Math.max(0, c.value as number));
+    const k = Math.min(vals.length, Math.max(1, Math.ceil((vals.length * percent) / 100)));
+    out.set(c.id, vals[k - 1]);
+  }
+  return out;
+}
+
 export function passes(
   schema: ExperimentResultSchema,
   row: Row,
   filters: Condition[],
   indexByMetric: (metric: string) => Map<string, number>,
+  /** From `percentileThresholds` of the frame; a `top` / `bottom` condition without one does not restrict. */
+  thresholds?: Map<string, number>,
 ): boolean {
   for (const c of activeConditions(filters)) {
-    const v = row[c.metric];
-    if (typeof v !== "number") return false;
-    let x = v;
-    if (c.kind === "delta") {
-      const base = baselineOf(schema, row, indexByMetric(c.metric));
-      if (base === null) return false;
-      x = v - base;
-    }
+    const x = conditionValue(schema, row, c, indexByMetric);
+    if (x === null) return false;
     const limit = c.value as number;
-    if (c.op === ">=" ? !(x >= limit) : !(x <= limit)) return false;
+    if (c.op === ">=") {
+      if (!(x >= limit)) return false;
+    } else if (c.op === "<=") {
+      if (!(x <= limit)) return false;
+    } else {
+      const t = thresholds?.get(c.id);
+      if (t !== undefined && (c.op === "top" ? !(x >= t) : !(x <= t))) return false;
+    }
   }
   return true;
+}
+
+/** `passes` bound to one frame: the percentile cut-offs are computed once over `rows`. */
+export function makePasses(
+  schema: ExperimentResultSchema,
+  rows: Row[],
+  filters: Condition[],
+  indexByMetric: (metric: string) => Map<string, number>,
+): (row: Row) => boolean {
+  const thresholds = percentileThresholds(schema, rows, filters, indexByMetric);
+  return (row) => passes(schema, row, filters, indexByMetric, thresholds);
 }
 
 export type Matrix = {

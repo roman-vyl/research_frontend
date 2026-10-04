@@ -25,7 +25,7 @@ import {
   dimValue,
   initialEquity,
   makeIndexer,
-  passes,
+  makePasses,
   reconcileControls,
   sliceRows,
   treatmentArms,
@@ -51,22 +51,20 @@ const SESSION_KEY = "surface";
 const filtersKey = (experimentId: string): string => `surface.filters.${experimentId}`;
 
 function loadFilters(experimentId: string): Condition[] {
-  try {
-    const raw = JSON.parse(localStorage.getItem(filtersKey(experimentId)) ?? "[]") as unknown;
-    return Array.isArray(raw)
-      ? raw.filter((c): c is Condition => !!c && typeof c.id === "string" && typeof c.metric === "string" && (c.op === ">=" || c.op === "<="))
-      : [];
-  } catch {
-    return [];
-  }
+  const raw = readSession<unknown>(filtersKey(experimentId));
+  return Array.isArray(raw)
+    ? raw.filter(
+        (c): c is Condition =>
+          !!c &&
+          typeof c.id === "string" &&
+          typeof c.metric === "string" &&
+          (c.op === ">=" || c.op === "<=" || c.op === "top" || c.op === "bottom"),
+      )
+    : [];
 }
 
 function saveFilters(experimentId: string, filters: Condition[]): void {
-  try {
-    localStorage.setItem(filtersKey(experimentId), JSON.stringify(filters));
-  } catch {
-    /* storage is a convenience only */
-  }
+  writeSession(filtersKey(experimentId), filters);
 }
 
 function useTokens(ref: React.RefObject<HTMLElement | null>): Tokens {
@@ -186,7 +184,7 @@ export function SurfaceView() {
     if (active.length === 0) return "no active conditions";
     const sliced = sliceRows(schema, view, rows, state.controls, treatmentArms(schema));
     const idx = makeIndexer(schema, rows, state.compare);
-    const pass = sliced.filter((r) => passes(schema, r, state.filters, idx)).length;
+    const pass = sliced.filter(makePasses(schema, sliced, state.filters, idx)).length;
     const cmp = schema.arms ? `, vs ${armLabel(state.compare ?? schema.arms.baseline)}` : "";
     return `${pass} / ${sliced.length} cells pass (${active.length} condition${active.length > 1 ? "s" : ""}${cmp})`;
   }, [schema, view, state, rows]);

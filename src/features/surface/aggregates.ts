@@ -7,9 +7,9 @@ import {
   baselineOf,
   formatCell,
   makeIndexer,
+  makePasses,
   median,
   metricById,
-  passes,
   type Row,
   type ViewState,
 } from "@/features/surface/model";
@@ -90,7 +90,7 @@ export function summaryCards(
   if (state.filters.length > 0) {
     cards.push({
       label: "cells passing filters",
-      value: `${sliced.filter((r) => passes(schema, r, state.filters, idx)).length} / ${sliced.length}`,
+      value: `${sliced.filter(makePasses(schema, sliced, state.filters, idx)).length} / ${sliced.length}`,
     });
   }
   return cards;

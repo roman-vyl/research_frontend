@@ -208,3 +208,22 @@ a switched-on dimension SHALL switch itself off when a geometry without values i
 - **WHEN** the selected geometry has no breakeven rows
 - **THEN** the checkbox is disabled with an explanatory note and the plain rows are shown.
 
+### Requirement: Percentile filters
+
+Besides `>=` and `<=` against a typed value, a filter condition SHALL offer `top %` and `bottom %`: the
+typed number is a percent, and the condition SHALL keep the best (top) or worst (bottom) share of the cells
+of the frame being shown, ties included and at least one cell. "Best" SHALL mean the highest value of the
+metric, or of its difference to the comparison arm for a difference condition; for metrics stored as
+negative numbers such as drawdown the best value is the one closest to zero. Conditions SHALL combine with
+AND, and every frame (the heatmap and each frame of the strip) SHALL compute its own cut-off.
+
+#### Scenario: Top ten percent by net PnL
+
+- **WHEN** the user adds a condition Net PnL, `top %`, 10
+- **THEN** only the best tenth of the cells shown stays coloured and the others turn grey.
+
+#### Scenario: Smallest drawdown
+
+- **WHEN** the user adds a condition Max DD, `top %`, 10
+- **THEN** the tenth of cells with the shallowest drawdown stays coloured.
+

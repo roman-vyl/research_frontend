@@ -19,7 +19,7 @@ export function FiltersPanel({ schema, filters, compare, summary, onChange }: Pr
     onChange(filters.map((f) => (f.id === id ? { ...f, ...patch } : f)));
   return (
     <div className="sx-panel sx-controls sx-filters" aria-label="Filters">
-      <span className="sx-control-label">Filters · all conditions must hold (AND) · cells that fail turn grey</span>
+      <span className="sx-control-label">Filters · all conditions must hold (AND) · cells that fail turn grey · top / bottom % = best / worst share of the cells shown</span>
       <div className="sx-filters">
         {filters.map((f) => (
           <div className="sx-frow" key={f.id}>
@@ -35,12 +35,14 @@ export function FiltersPanel({ schema, filters, compare, summary, onChange }: Pr
             <select aria-label="operator" value={f.op} onChange={(e) => set(f.id, { op: e.target.value as Condition["op"] })}>
               <option value=">=">≥</option>
               <option value="<=">≤</option>
+              <option value="top">top %</option>
+              <option value="bottom">bottom %</option>
             </select>
             <input
               aria-label="threshold"
               type="text"
               inputMode="decimal"
-              placeholder="value"
+              placeholder={f.op === "top" || f.op === "bottom" ? "percent, e.g. 10" : "value"}
               defaultValue={f.value ?? ""}
               onChange={(e) => {
                 const v = parseFloat(e.target.value.replace(",", "."));

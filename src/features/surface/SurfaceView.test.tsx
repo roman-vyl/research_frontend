@@ -107,6 +107,21 @@ describe("SurfaceView", () => {
     expect(off).toBeGreaterThan(0);
   });
 
+  it("a top-percent filter greys out all but the best share of the cells", async () => {
+    render(<SurfaceView />);
+    await openExperiment(/fixed SL/);
+    await screen.findAllByRole("cell");
+    const total = document.querySelectorAll(".sx-cell:not(.sx-empty)").length;
+    fireEvent.click(screen.getByText("+ add condition"));
+    fireEvent.change(screen.getByLabelText("operator"), { target: { value: "top" } });
+    fireEvent.change(screen.getByLabelText("threshold"), { target: { value: "50" } });
+    await waitFor(() => expect(screen.getByText(/cells pass \(/)).toBeTruthy());
+    const off = document.querySelectorAll(".sx-off").length;
+    expect(off).toBeGreaterThan(0);
+    expect(off).toBeLessThan(total);
+    expect(total - off).toBe(Math.ceil(total / 2));
+  });
+
   it("shows unit readouts for multi-grid dimensions and baseline modes only with arms", async () => {
     render(<SurfaceView />);
     await openExperiment(/trailing geometry/);

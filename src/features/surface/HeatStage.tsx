@@ -18,7 +18,7 @@ import {
   makeIndexer,
   metricById,
   metricStyle,
-  passes,
+  makePasses,
   sliceRows,
   treatmentArms,
   type ControlState,
@@ -51,6 +51,7 @@ export function HeatStage({ schema, view, rows, state, tokens, selected, filmstr
   );
   const matrix = useMemo(() => buildMatrix(schema, view, sliced, state.controls), [schema, view, sliced, state.controls]);
   const filtersOn = activeConditions(state.filters).length > 0;
+  const passFrame = useMemo(() => makePasses(schema, sliced, state.filters, idx), [schema, sliced, state.filters, idx]);
   const delta = state.mode === "difference";
 
   const frame = useMemo(() => {
@@ -71,6 +72,7 @@ export function HeatStage({ schema, view, rows, state, tokens, selected, filmstr
       const fs = sliceRows(schema, view, rows, controls, treatmentArms(schema));
       if (fs.length === 0) continue;
       const m = buildMatrix(schema, view, fs, controls);
+      const passFs = makePasses(schema, fs, state.filters, idx);
       const vals = fs
         .map((r) => displayValue(schema, r, state.metric, state.mode, idx(state.metric)))
         .filter((v): v is number => v !== null);
@@ -80,7 +82,7 @@ export function HeatStage({ schema, view, rows, state, tokens, selected, filmstr
         xs: m.xs.length || 1,
         cells: m.cells.flat().map((r) => {
           if (!r) return { bg: tokens.offBg };
-          if (filtersOn && !passes(schema, r, state.filters, idx)) return { bg: tokens.offBg };
+          if (filtersOn && !passFs(r)) return { bg: tokens.offBg };
           return { bg: colorOf(displayValue(schema, r, state.metric, state.mode, idx(state.metric)), dom, tokens) };
         }),
       });
@@ -148,7 +150,7 @@ export function HeatStage({ schema, view, rows, state, tokens, selected, filmstr
                 const r = matrix.cells[yi][xi];
                 if (!r) return <td key={x}><div className="sx-cell sx-empty" /></td>;
                 const v = displayValue(schema, r, state.metric, state.mode, idx(state.metric));
-                const off = filtersOn && !passes(schema, r, state.filters, idx);
+                const off = filtersOn && !passFrame(r);
                 const bg = colorOf(v, frame, tokens);
                 return (
                   <td key={x}>

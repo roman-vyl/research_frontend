@@ -31,6 +31,10 @@
 
 - [x] 4d.1 Optional manifest dimensions (checkbox → slider); the first one is Breakeven (`be_trigger`, Engine-run rows of trailing + initial_r_lock_stop). No Research Service change: the dimension, its column and the per-row `provenance` are read through the existing manifest and results routes.
 
+## 4e. Percentile filters
+
+- [x] 4e.1 `top %` / `bottom %` conditions per metric (and per difference to the comparison arm), cut-off per frame; filters are remembered through the session storage.
+
 ## 5. Verification
 
 - [ ] 5.1 Manual verification by the owner after the historical data is prepared: Experiment → Surface → point → CellDetails → Open run → Chart → Reports.
