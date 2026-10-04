@@ -189,3 +189,22 @@ unavailable SHALL NOT break the application.
 - **WHEN** the user has selected a trade and moved the Surface sliders, and then reloads the page
 - **THEN** the same tab, run, trade, Experiment and slider positions are shown again.
 
+### Requirement: Optional dimensions are switched on by a checkbox
+
+A manifest dimension marked `optional` (for example "Breakeven") SHALL be off by default and, while off,
+the view SHALL show only the rows that have no value for it. A checkbox SHALL switch it on; only then a
+slider over its values for the current geometry SHALL appear and the rows with that value SHALL be shown.
+The checkbox SHALL be unavailable while the current geometry has no row with a value for the dimension, and
+a switched-on dimension SHALL switch itself off when a geometry without values is selected.
+
+#### Scenario: Breakeven runs
+
+- **WHEN** the user selects a geometry that has breakeven rows and ticks the Breakeven checkbox
+- **THEN** a slider over the breakeven triggers appears and the heatmap shows the rows of the selected
+  trigger, each with its Engine run.
+
+#### Scenario: Geometry without breakeven rows
+
+- **WHEN** the selected geometry has no breakeven rows
+- **THEN** the checkbox is disabled with an explanatory note and the plain rows are shown.
+

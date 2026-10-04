@@ -106,6 +106,22 @@ describe("surface model", () => {
     expect(withNetPnl(R, null)).toBe(R);
   });
 
+  it("an optional dimension is off by default and then selects only the rows without a value", () => {
+    const st = defaultState(T, "cells", trailingRows);
+    expect(st.controls.be_trigger).toBeUndefined();
+    const off = sliceRows(T, cellsView, trailingRows, { ...st.controls, trigger: 7, distance: 1 }, treatmentArms(T));
+    expect(off.every((r) => r.be_trigger === null)).toBe(true);
+    const opts = controlOptions(T, cellsView, trailingRows, { ...st.controls, trigger: 7, distance: 1 });
+    expect(opts.be_trigger).toEqual([6, 7]);
+    const on = sliceRows(T, cellsView, trailingRows, { ...st.controls, trigger: 7, distance: 1, be_trigger: 6 }, treatmentArms(T));
+    expect(on).toHaveLength(1);
+    expect(on[0].be_trigger).toBe(6);
+    // switched on but the geometry has no such rows: the control drops out instead of selecting nothing
+    const back = reconcileControls(T, cellsView, trailingRows, { ...st.controls, trigger: 6, distance: 0.5, be_trigger: 6 });
+    expect(back.be_trigger).toBeUndefined();
+    expect(controlOptions(T, cellsView, trailingRows, { ...st.controls, trigger: 6, distance: 0.5 }).be_trigger).toEqual([]);
+  });
+
   it("starts the comparison on the baseline arm and indexes any comparison arm", () => {
     expect(defaultState(T, "cells", trailingRows).compare).toBe("control_tp5r");
     expect(baselineIndex(T, trailingRows, "net_pnl", "control_tp5r").size).toBeGreaterThan(0);

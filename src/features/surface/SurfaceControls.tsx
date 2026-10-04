@@ -79,12 +79,24 @@ export function SurfaceControls({ schema, view, state, options, onMetric, onMode
   );
 }
 
-export function SurfaceSliders({ schema, view, state, options, outer, onControl }: Pick<Props, "schema" | "view" | "state" | "options" | "outer" | "onControl">) {
+export function SurfaceSliders({
+  schema,
+  view,
+  state,
+  options,
+  outer,
+  onControl,
+  onToggle,
+}: Pick<Props, "schema" | "view" | "state" | "options" | "outer" | "onControl"> & {
+  /** Switch an optional control (for example Breakeven) on or off. */
+  onToggle: (id: string, on: boolean) => void;
+}) {
   const grid = typeof state.controls[GRID_ID] === "string" ? (state.controls[GRID_ID] as string) : null;
   const sl = typeof state.controls.sl === "number" ? state.controls.sl : null;
   const free = new Set([view.x, view.y, ...(view.aggregate_over ?? [])]);
   const sliders = view.controls.filter((id) => id !== GRID_ID && !free.has(id));
-  const playId = sliders[sliders.length - 1] ?? null;
+  // play steps the last always-on control (optional ones such as Breakeven are not animated)
+  const playId = [...sliders].reverse().find((id) => !dimById(schema, id)?.optional) ?? null;
   const [playing, setPlaying] = useState(false);
   const latest = useRef({ state, options, outer, onControl });
   latest.current = { state, options, outer, onControl };
@@ -109,6 +121,47 @@ export function SurfaceSliders({ schema, view, state, options, outer, onControl 
         const index = Math.max(0, opts.findIndex((o) => o === cur));
         const unit = dim?.grids ? (dim.grids[grid ?? Object.keys(dim.grids)[0]]?.unit ?? "") : (dim?.unit ?? "");
         const ro = typeof cur === "number" ? controlReadout(schema, id, cur, grid, sl) : null;
+        if (dim?.optional) {
+          const on = cur !== undefined;
+          const available = (options[id]?.length ?? 0) > 0;
+          return (
+            <div className="sx-control-group" key={id}>
+              <label className="sx-control-label sx-check">
+                <input
+                  type="checkbox"
+                  checked={on}
+                  disabled={!on && !available}
+                  onChange={(e) => onToggle(id, e.target.checked)}
+                />
+                {dim.label ?? id}
+                {unit && <span className="sx-unit-tag">{unit}</span>}
+              </label>
+              {on ? (
+                <div className="sx-sl-row">
+                  <input
+                    type="range"
+                    aria-label={dim.label ?? id}
+                    min={0}
+                    max={Math.max(0, opts.length - 1)}
+                    step={1}
+                    value={index}
+                    disabled={opts.length < 2}
+                    onChange={(e) => {
+                      const o = opts[Number(e.target.value)];
+                      if (o !== undefined) onControl(id, o);
+                    }}
+                  />
+                  <span className="sx-ro">
+                    {ro?.main}
+                    {ro?.alt && <small>{ro.alt}</small>}
+                  </span>
+                </div>
+              ) : (
+                <span className="sx-note">{available ? "off: plain trailing rows" : "no breakeven runs for this geometry"}</span>
+              )}
+            </div>
+          );
+        }
         return (
           <div className="sx-control-group" key={id}>
             <span className="sx-control-label">

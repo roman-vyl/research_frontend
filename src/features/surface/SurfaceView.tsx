@@ -203,6 +203,19 @@ export function SurfaceView() {
     update({ controls: reconcileControls(schema, view, rows, next) });
   };
 
+  const toggleOptional = (id: string, on: boolean) => {
+    if (!schema || !view || !state) return;
+    const controls = { ...state.controls };
+    if (on) {
+      const first = options[id]?.[0];
+      if (first === undefined) return;
+      controls[id] = first;
+    } else {
+      delete controls[id];
+    }
+    update({ controls: reconcileControls(schema, view, rows, controls) });
+  };
+
   const entry = data.registry?.find((x) => x.experiment_id === experimentId) ?? null;
   const ready = schema && view && state && slice;
   const cellsFilmstrip = view?.filmstrip ? ((state && options[view.filmstrip]) ?? []) : [];
@@ -258,7 +271,7 @@ export function SurfaceView() {
               summary={summary}
               onChange={(filters) => update({ filters })}
             />
-            <SurfaceSliders schema={schema} view={view} state={state} options={options} outer={outer} onControl={setControl} />
+            <SurfaceSliders schema={schema} view={view} state={state} options={options} outer={outer} onControl={setControl} onToggle={toggleOptional} />
             <HeatStage
               schema={schema}
               view={view}

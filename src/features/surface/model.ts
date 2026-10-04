@@ -163,6 +163,13 @@ export function reconcileControls(
   for (const id of order) {
     const opts = controlOptions(schema, view, rows, { ...controls, ...next })[id] ?? [];
     const cur = controls[id];
+    if (dimById(schema, id)?.optional) {
+      // optional controls exist only while switched on and while the current geometry has values for them
+      if (cur !== undefined && opts.length > 0) {
+        next[id] = typeof cur === "number" && opts.every((o) => typeof o === "number") && !opts.some((o) => close(o as number, cur)) ? nearest(opts as number[], cur) : cur;
+      }
+      continue;
+    }
     const keep = opts.some((o) => (typeof o === "number" && typeof cur === "number" ? close(o, cur) : o === cur));
     if (keep && cur !== undefined) next[id] = cur;
     else if (opts.length > 0) {
@@ -220,7 +227,12 @@ export function sliceRows(
     for (const id of view.controls) {
       if (free.has(id)) continue;
       const want = controls[id];
-      if (want === undefined) continue;
+      if (want === undefined) {
+        // an optional dimension that is switched off selects the rows that have no value for it
+        const off = dimById(schema, id);
+        if (off?.optional && typeof r[dimColumn(off, grid)] === "number") return false;
+        continue;
+      }
       if (id === GRID_ID) {
         if (r[GRID_ID] !== want) return false;
         continue;

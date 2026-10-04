@@ -158,6 +158,25 @@ describe("SurfaceView", () => {
     }
   });
 
+  it("Breakeven is an optional axis: a checkbox shows its slider and the Engine-run rows", async () => {
+    render(<SurfaceView />);
+    await openExperiment(/trailing geometry/);
+    await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
+    expect(screen.queryByRole("slider", { name: "Breakeven" })).toBeNull();
+    const box = screen.getByRole("checkbox", { name: /Breakeven/ }) as HTMLInputElement;
+    expect(box.disabled).toBe(true); // the default geometry has no breakeven rows
+    expect(screen.getByText(/no breakeven runs for this geometry/)).toBeTruthy();
+    fireEvent.change(screen.getByRole("slider", { name: "Trigger T" }), { target: { value: "1" } }); // T 7
+    fireEvent.change(screen.getByRole("slider", { name: "Trail D" }), { target: { value: "1" } }); // D 1
+    await waitFor(() => expect((screen.getByRole("checkbox", { name: /Breakeven/ }) as HTMLInputElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Breakeven/ }));
+    expect(await screen.findByRole("slider", { name: "Breakeven" })).toBeTruthy();
+    expect(screen.getAllByText(/6R/).length).toBeGreaterThan(0);
+    expect(document.querySelectorAll(".sx-cell.sx-run").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("checkbox", { name: /Breakeven/ }));
+    await waitFor(() => expect(screen.queryByRole("slider", { name: "Breakeven" })).toBeNull());
+  });
+
   it("starts with experiment cards (ticker, anchor, title) and selects nothing automatically", async () => {
     render(<SurfaceView />);
     const cards = within(await screen.findByRole("group", { name: "Experiments" })).getAllByRole("button");

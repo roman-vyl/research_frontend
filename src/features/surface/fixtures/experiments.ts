@@ -87,6 +87,7 @@ export const TRAILING_MANIFEST: ExperimentManifest = {
           R: { column: "trail_distance_r", unit: "R" },
         },
       },
+      { id: "be_trigger", label: "Breakeven", column: "be_trigger_r", unit: "R", optional: true },
     ],
     arms: {
       column: "arm",
@@ -105,7 +106,7 @@ export const TRAILING_MANIFEST: ExperimentManifest = {
         id: "cells",
         x: "lookback",
         y: "width",
-        controls: ["sl", "grid", "trigger", "distance"],
+        controls: ["sl", "grid", "trigger", "distance", "be_trigger"],
         default_metric: "net_pnl",
         filmstrip: "trigger",
       },
@@ -151,20 +152,24 @@ export const RATIO_RESULTS: ExperimentResults = (() => {
  */
 export const TRAILING_RESULTS: ExperimentResults = (() => {
   const cols = ["width", "lookback", "sl", "grid", "trigger.ATR", "trigger.R", "distance.ATR",
-    "distance.R", "arm", "net_pnl", "profit_factor", "max_drawdown_pct", "short_net_pnl", "run_id"];
+    "distance.R", "arm", "net_pnl", "profit_factor", "max_drawdown_pct", "short_net_pnl", "run_id", "be_trigger"];
   const rows: (number | string | null)[][] = [];
   let k = 0;
   for (const w of [3, 4]) {
     for (const lb of [20, 30]) {
-      rows.push([w, lb, 5, null, null, null, null, null, "control_tp5r", 1000 + w * 10, 1.1, -0.2, -50, null]);
+      rows.push([w, lb, 5, null, null, null, null, null, "control_tp5r", 1000 + w * 10, 1.1, -0.2, -50, null, null]);
       for (const t of [6, 7]) {
         for (const d of [0.5, 1]) {
           k += 1;
           rows.push([w, lb, 5, "R", t * 5, t, d * 5, d, "trailing_no_tp",
-            2000 + k * 100, 1.2 + k / 100, -0.15, k % 2 === 0 ? 30 : -30, k === 1 ? RUN("t") : null]);
+            2000 + k * 100, 1.2 + k / 100, -0.15, k % 2 === 0 ? 30 : -30, k === 1 ? RUN("t") : null, null]);
         }
       }
     }
+  }
+  // Breakeven rows of the cell 3/20, geometry T7/D1 (an Engine run each): stop to entry after 6R / 7R
+  for (const [be, c] of [[6, "b"], [7, "c"]] as const) {
+    rows.push([3, 20, 5, "R", 35, 7, 5, 1, "trailing_no_tp", 5000 + be * 100, 1.5, -0.1, 10, RUN(c), be]);
   }
   return {
     columns: cols,
