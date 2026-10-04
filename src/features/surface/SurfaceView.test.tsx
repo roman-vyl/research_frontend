@@ -163,17 +163,16 @@ describe("SurfaceView", () => {
     await openExperiment(/trailing geometry/);
     await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
     expect(screen.queryByRole("slider", { name: "Breakeven" })).toBeNull();
-    const box = screen.getByRole("checkbox", { name: /Breakeven/ }) as HTMLInputElement;
-    expect(box.disabled).toBe(true); // the default geometry has no breakeven rows
-    expect(screen.getByText(/no breakeven runs for this geometry/)).toBeTruthy();
-    fireEvent.change(screen.getByRole("slider", { name: "Trigger T" }), { target: { value: "1" } }); // T 7
-    fireEvent.change(screen.getByRole("slider", { name: "Trail D" }), { target: { value: "1" } }); // D 1
-    await waitFor(() => expect((screen.getByRole("checkbox", { name: /Breakeven/ }) as HTMLInputElement).disabled).toBe(false));
-    fireEvent.click(screen.getByRole("checkbox", { name: /Breakeven/ }));
+    const box = () => screen.getByRole("checkbox", { name: /Breakeven/ }) as HTMLInputElement;
+    expect(box().disabled).toBe(true); // the default geometry has no breakeven rows
+    expect(screen.getByText(/none for this geometry/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Go to/ })); // jumps to the geometry that has them
+    await waitFor(() => expect(box().disabled).toBe(false));
+    fireEvent.click(box());
     expect(await screen.findByRole("slider", { name: "Breakeven" })).toBeTruthy();
     expect(screen.getAllByText(/6R/).length).toBeGreaterThan(0);
     expect(document.querySelectorAll(".sx-cell.sx-run").length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("checkbox", { name: /Breakeven/ }));
+    fireEvent.click(box());
     await waitFor(() => expect(screen.queryByRole("slider", { name: "Breakeven" })).toBeNull());
   });
 

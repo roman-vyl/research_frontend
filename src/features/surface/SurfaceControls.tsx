@@ -87,9 +87,12 @@ export function SurfaceSliders({
   outer,
   onControl,
   onToggle,
+  hints,
 }: Pick<Props, "schema" | "view" | "state" | "options" | "outer" | "onControl"> & {
   /** Switch an optional control (for example Breakeven) on or off. */
   onToggle: (id: string, on: boolean) => void;
+  /** Where an optional control has values in this slice: a short label and a jump to that geometry. */
+  hints: Record<string, { label: string; go: () => void } | undefined>;
 }) {
   const grid = typeof state.controls[GRID_ID] === "string" ? (state.controls[GRID_ID] as string) : null;
   const sl = typeof state.controls.sl === "number" ? state.controls.sl : null;
@@ -157,7 +160,20 @@ export function SurfaceSliders({
                   </span>
                 </div>
               ) : (
-                <span className="sx-note">{available ? "off: plain trailing rows" : "no breakeven runs for this geometry"}</span>
+                <span className="sx-note">
+                  {available ? (
+                    "off: plain trailing rows"
+                  ) : hints[id] ? (
+                    <>
+                      none for this geometry.{" "}
+                      <button type="button" className="sx-fbtn" onClick={hints[id]!.go}>
+                        Go to {hints[id]!.label}
+                      </button>
+                    </>
+                  ) : (
+                    "none for this stop size"
+                  )}
+                </span>
               )}
             </div>
           );

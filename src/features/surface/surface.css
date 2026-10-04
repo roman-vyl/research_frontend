@@ -132,3 +132,8 @@
 
 .sx .sx-check{ display:flex; align-items:center; gap:6px; cursor:pointer; }
 .sx .sx-check input{ accent-color:var(--accent); }
+
+.sx .sx-three .sx-control-group{ min-width:270px; }
+.sx .sx-sl-row input[type=range]{ min-width:80px; }
+.sx .sx-check input{ width:15px; height:15px; margin:0; flex-shrink:0; }
+.sx .sx-note .sx-fbtn{ margin-top:4px; }

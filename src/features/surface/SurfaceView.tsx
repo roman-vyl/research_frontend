@@ -17,8 +17,11 @@ import {
   addNetPnl,
   armLabel,
   controlOptions,
+  controlReadout,
   convertGrid,
   defaultState,
+  dimById,
+  dimColumn,
   dimValue,
   initialEquity,
   makeIndexer,
@@ -216,6 +219,52 @@ export function SurfaceView() {
     update({ controls: reconcileControls(schema, view, rows, controls) });
   };
 
+  // For each optional control: the geometry of this slice that has the most rows with a value for it.
+  const optionalHints = useMemo(() => {
+    const out: Record<string, { label: string; go: () => void } | undefined> = {};
+    if (!schema || !view || !state) return out;
+    const free = new Set([view.x, view.y, ...(view.aggregate_over ?? [])]);
+    const arms = treatmentArms(schema);
+    for (const id of view.controls) {
+      const od = dimById(schema, id);
+      if (!od?.optional) continue;
+      const geo = view.controls.filter((c) => c !== data.outerId && !free.has(c) && c !== id && !dimById(schema, c)?.optional);
+      const counts = new Map<string, { n: number; values: Record<string, string | number> }>();
+      for (const r of rows) {
+        if (arms && !arms.includes(String(r.arm))) continue;
+        const grid = typeof r[GRID_ID] === "string" ? (r[GRID_ID] as string) : null;
+        if (typeof r[dimColumn(od, grid)] !== "number") continue;
+        const values: Record<string, string | number> = {};
+        for (const c of geo) {
+          if (c === GRID_ID) {
+            if (grid !== null) values[c] = grid;
+            continue;
+          }
+          const d = dimById(schema, c);
+          const v = d ? r[dimColumn(d, grid)] : null;
+          if (typeof v === "number") values[c] = v;
+        }
+        const key = JSON.stringify(values);
+        const hit = counts.get(key) ?? { n: 0, values };
+        hit.n += 1;
+        counts.set(key, hit);
+      }
+      const best = [...counts.values()].sort((a, b) => b.n - a.n)[0];
+      if (!best) continue;
+      const g = typeof best.values[GRID_ID] === "string" ? (best.values[GRID_ID] as string) : null;
+      const sl = typeof state.controls.sl === "number" ? state.controls.sl : null;
+      const label = Object.entries(best.values)
+        .map(([c, v]) => (c === GRID_ID ? `${v} grid` : `${dimById(schema, c)?.label ?? c} ${controlReadout(schema, c, v as number, g, sl).main}`))
+        .join(" · ");
+      out[id] = {
+        label,
+        go: () => update({ controls: reconcileControls(schema, view, rows, { ...state.controls, ...best.values }) }),
+      };
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schema, view, state, rows, data.outerId]);
+
   const entry = data.registry?.find((x) => x.experiment_id === experimentId) ?? null;
   const ready = schema && view && state && slice;
   const cellsFilmstrip = view?.filmstrip ? ((state && options[view.filmstrip]) ?? []) : [];
@@ -271,7 +320,7 @@ export function SurfaceView() {
               summary={summary}
               onChange={(filters) => update({ filters })}
             />
-            <SurfaceSliders schema={schema} view={view} state={state} options={options} outer={outer} onControl={setControl} onToggle={toggleOptional} />
+            <SurfaceSliders schema={schema} view={view} state={state} options={options} outer={outer} onControl={setControl} onToggle={toggleOptional} hints={optionalHints} />
             <HeatStage
               schema={schema}
               view={view}
