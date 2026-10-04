@@ -176,3 +176,16 @@ by the manifest `result_schema` and the result rows.
 - **WHEN** the manifest declares several comparison arms and the user picks one
 - **THEN** the comparison figures, differences and filters use that arm.
 
+### Requirement: The session survives a page reload
+
+The application SHALL remember, in the browser, the active tab, the selected run, the selected
+trade of that run, and the Surface state (open Experiment, SL slice, metric, arm view, comparison
+arm, slider positions, selected point, filters), and restore them when the page is loaded again.
+Values that no longer exist in the data SHALL fall back to a valid option. Browser storage being
+unavailable SHALL NOT break the application.
+
+#### Scenario: Reload with a trade and sliders set
+
+- **WHEN** the user has selected a trade and moved the Surface sliders, and then reloads the page
+- **THEN** the same tab, run, trade, Experiment and slider positions are shown again.
+

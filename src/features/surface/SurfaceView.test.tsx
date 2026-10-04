@@ -26,6 +26,7 @@ vi.mock("@/shared/context/WorkbenchContext", () => ({
 }));
 
 import { SurfaceView } from "@/features/surface/SurfaceView";
+import { setSessionPersistenceForTests } from "@/shared/session/storage";
 
 function wireApi(): void {
   fetchExperiments.mockResolvedValue(REGISTRY);
@@ -128,6 +129,33 @@ describe("SurfaceView", () => {
     expect(screen.getByRole("button", { name: "PF" }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "Δ vs CONTROL · TP 5R" }));
     expect(screen.getByRole("button", { name: "Δ vs CONTROL · TP 5R" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("keeps the open experiment, sliders, metric and selected point across a page reload", async () => {
+    setSessionPersistenceForTests(true);
+    try {
+      localStorage.clear();
+      const first = render(<SurfaceView />);
+      await openExperiment(/trailing geometry/);
+      await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
+      fireEvent.click(screen.getByRole("button", { name: "PF" }));
+      const slider = screen.getByRole("slider", { name: "Trigger T" }) as HTMLInputElement;
+      fireEvent.change(slider, { target: { value: "1" } }); // second trigger option
+      const trigger = slider.nextElementSibling!.textContent;
+      const cell = document.querySelector(".sx-cell:not(.sx-empty)")!;
+      fireEvent.click(cell);
+      await screen.findByLabelText("Point details");
+      first.unmount(); // "reload": a fresh component reads what the previous one stored
+      render(<SurfaceView />);
+      await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
+      expect(screen.getByRole("button", { name: "PF" }).getAttribute("aria-pressed")).toBe("true");
+      expect((screen.getByRole("slider", { name: "Trigger T" }) as HTMLInputElement).nextElementSibling!.textContent).toBe(trigger);
+      expect(await screen.findByLabelText("Point details")).toBeTruthy();
+      expect(screen.queryByRole("group", { name: "Experiments" })).toBeNull();
+    } finally {
+      localStorage.clear();
+      setSessionPersistenceForTests(false);
+    }
   });
 
   it("starts with experiment cards (ticker, anchor, title) and selects nothing automatically", async () => {

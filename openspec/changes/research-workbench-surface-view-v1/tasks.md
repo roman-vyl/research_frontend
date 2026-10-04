@@ -23,6 +23,10 @@
 
 - [x] 4b.1 Restyle Surface after the research visualisations (segmented choices, sliders with play, percentile-rank heatmap, hover details, frame strip, filters), comparison-arm choice, light/dark scheme.
 
+## 4c. Session persistence
+
+- [x] 4c.1 Remember tab, run, selected trade and the Surface state in browser storage and restore them after a reload (guarded storage, off in tests unless enabled).
+
 ## 5. Verification
 
 - [ ] 5.1 Manual verification by the owner after the historical data is prepared: Experiment → Surface → point → CellDetails → Open run → Chart → Reports.

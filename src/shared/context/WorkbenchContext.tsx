@@ -53,6 +53,7 @@ import {
   strategyContextRefOptions,
 } from "@/features/chart/strategyContexts";
 import { candleRangeMs, selectedTradeEntryMarkerInView } from "@/features/chart/chartMarkers";
+import { readSession, writeSession } from "@/shared/session/storage";
 import {
   buildRenderWindowBoundsKey,
 } from "@/features/chart/chartRenderWindowDisplay";
@@ -307,7 +308,7 @@ const EMPTY_TRACE_DISPLAY_STATE: TraceDisplayState = {
 
 export function WorkbenchProvider({
   children,
-  initialActiveTab = "surface",
+  initialActiveTab,
 }: {
   children: ReactNode;
   initialActiveTab?: WorkbenchTab;
@@ -317,14 +318,29 @@ export function WorkbenchProvider({
   );
 }
 
+type StoredWorkbenchSession = {
+  activeTab?: WorkbenchTab;
+  runId?: string | null;
+  /** Selected trade per run id. */
+  tradeByRun?: Record<string, number | string>;
+};
+
+const SESSION_KEY = "workbench";
+const TABS: readonly WorkbenchTab[] = ["chart", "surface", "reports", "composer"];
+
 function WorkbenchProviderInner({
   children,
-  initialActiveTab = "surface",
+  initialActiveTab,
 }: {
   children: ReactNode;
   initialActiveTab?: WorkbenchTab;
 }) {
-  const [activeTab, setActiveTab] = useState<WorkbenchTab>(initialActiveTab);
+  const [storedSession] = useState(() => readSession<StoredWorkbenchSession>(SESSION_KEY));
+  const [activeTab, setActiveTab] = useState<WorkbenchTab>(
+    () =>
+      initialActiveTab ??
+      (storedSession?.activeTab && TABS.includes(storedSession.activeTab) ? storedSession.activeTab : "surface"),
+  );
   const [hasChartEverActivated, setHasChartEverActivated] = useState(false);
   const [configDraft, setConfigDraft] = useState<StrategyConfigDraft | null>(null);
   const [configLoadStatus, setConfigLoadStatus] = useState<ConfigLoadStatus>("loading");
@@ -374,7 +390,9 @@ function WorkbenchProviderInner({
   const [chartShowTradeManagementExitMarkers, setChartShowTradeManagementExitMarkers] =
     useState(false);
   const [runs, setRuns] = useState<RunSummary[]>([]);
-  const [selectedRunId, setSelectedRunIdState] = useState<string | null>(null);
+  const [selectedRunId, setSelectedRunIdState] = useState<string | null>(() =>
+    initialActiveTab === undefined && typeof storedSession?.runId === "string" ? storedSession.runId : null,
+  );
   const [runDetail, setRunDetail] = useState<RunDetail | null>(null);
   const [runTrades, setRunTrades] = useState<TradeRecord[]>([]);
   const [runMetrics, setRunMetrics] = useState<RunMetrics | null>(null);
@@ -604,8 +622,32 @@ function WorkbenchProviderInner({
       return;
     }
     prevRunIdForTradeBootstrapRef.current = runId;
+    // After a page refresh keep the trade the user had selected in this run.
+    const remembered = storedSession?.tradeByRun?.[runId];
+    if (remembered !== undefined && isKnownTrade(runTrades, remembered)) {
+      const trade = findTradeById(runTrades, remembered);
+      const entryMs = trade ? resolveTradeEntryTimeMs(trade) : null;
+      setSelectedTradeId(remembered);
+      setSelectedBarTimeSec(entryMs !== null ? Math.floor(entryMs / 1000) : null);
+      return;
+    }
     applyTradeFocusSelection(runTrades);
-  }, [runDetail, runTrades, applyTradeFocusSelection]);
+  }, [runDetail, runTrades, applyTradeFocusSelection, storedSession]);
+
+  // Remember tab, run and the selected trade of the loaded run (see shared/session/storage).
+  useEffect(() => {
+    const prev = readSession<StoredWorkbenchSession>(SESSION_KEY);
+    const tradeByRun = { ...(prev?.tradeByRun ?? {}) };
+    if (
+      selectedRunId !== null &&
+      selectedTradeId !== null &&
+      runDetail !== null &&
+      runDetail.manifest.run_id === selectedRunId
+    ) {
+      tradeByRun[selectedRunId] = selectedTradeId;
+    }
+    writeSession(SESSION_KEY, { activeTab, runId: selectedRunId, tradeByRun });
+  }, [activeTab, selectedRunId, selectedTradeId, runDetail]);
 
   useLayoutEffect(() => {
     if (selectedTradeId === null) {
@@ -949,7 +991,7 @@ function WorkbenchProviderInner({
       callbacks={renderViewportCallbacks}
     >
       <WorkbenchProviderContexts
-        initialActiveTab={initialActiveTab}
+        initialActiveTab={initialActiveTab ?? "surface"}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         hasChartEverActivated={hasChartEverActivated}

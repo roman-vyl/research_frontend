@@ -1,7 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
+import { metricId } from "@/api/experiments";
+
 import "@/features/surface/surface.css";
 import { useWorkbenchReport, useWorkbenchShell } from "@/shared/context/WorkbenchContext";
+import { readSession, writeSession } from "@/shared/session/storage";
 import { CellDetails } from "@/features/surface/CellDetails";
 import { FiltersPanel } from "@/features/surface/FiltersPanel";
 import { HeatStage } from "@/features/surface/HeatStage";
@@ -16,6 +19,7 @@ import {
   controlOptions,
   convertGrid,
   defaultState,
+  dimValue,
   initialEquity,
   makeIndexer,
   passes,
@@ -29,6 +33,17 @@ import {
   type ViewState,
 } from "@/features/surface/model";
 import { useExperimentData } from "@/features/surface/useExperimentData";
+
+type StoredSurface = {
+  experimentId: string | null;
+  outerValue: number | null;
+  metric?: string;
+  mode?: ViewMode;
+  compare?: string | null;
+  controls?: Record<string, string | number>;
+  selected?: { x: number; y: number } | null;
+};
+const SESSION_KEY = "surface";
 
 const filtersKey = (experimentId: string): string => `surface.filters.${experimentId}`;
 
@@ -74,8 +89,10 @@ export function SurfaceView() {
   const { setActiveTab } = useWorkbenchShell();
   const rootRef = useRef<HTMLElement>(null);
   const tokens = useTokens(rootRef);
-  const [experimentId, setExperimentId] = useState<string | null>(null);
-  const [outerValue, setOuterValue] = useState<number | null>(null);
+  // What a page refresh restores: the open Experiment, the SL slice, metric, arm view, sliders and the selected point.
+  const restoreRef = useRef<StoredSurface | null>(readSession<StoredSurface>(SESSION_KEY));
+  const [experimentId, setExperimentId] = useState<string | null>(restoreRef.current?.experimentId ?? null);
+  const [outerValue, setOuterValue] = useState<number | null>(restoreRef.current?.outerValue ?? null);
   const data = useExperimentData(experimentId, outerValue);
   const { manifest, slice, outer } = data;
   const equity = useMemo(() => initialEquity(manifest), [manifest]);
@@ -84,9 +101,11 @@ export function SurfaceView() {
   const [selected, setSelected] = useState<Row | null>(null);
 
   useEffect(() => {
-    setOuterValue(null);
+    const restore = restoreRef.current;
+    setOuterValue(restore && restore.experimentId === experimentId ? restore.outerValue : null);
     setState(null);
     setSelected(null);
+    if (restore && restore.experimentId !== experimentId) restoreRef.current = null;
   }, [experimentId]);
 
   useEffect(() => {
@@ -96,16 +115,61 @@ export function SurfaceView() {
   // The cells view is the first one that is not an aggregate.
   const view = schema ? (schema.view.find((v) => !v.aggregate_over) ?? schema.view[0]) : null;
 
-  // (Re)initialise the view state when a slice arrives.
+  // (Re)initialise the view state when a slice arrives (first time: from the remembered session, if any).
   useEffect(() => {
     if (!schema || !view || !slice || data.outerId === null || outerValue === null || experimentId === null) return;
+    const sliceRows0 = addNetPnl(slice.rows, equity);
+    const restore = restoreRef.current && restoreRef.current.experimentId === experimentId ? restoreRef.current : null;
+    restoreRef.current = null;
     setState((prev) => {
-      const base = prev ?? { ...defaultState(schema, view.id, addNetPnl(slice.rows, equity)), filters: loadFilters(experimentId) };
-      const controls = reconcileControls(schema, view, addNetPnl(slice.rows, equity), { ...base.controls, [data.outerId as string]: outerValue });
+      let base = prev;
+      if (!base) {
+        base = { ...defaultState(schema, view.id, sliceRows0), filters: loadFilters(experimentId) };
+        if (restore) {
+          const metrics = new Set(schema.metrics.map(metricId));
+          base = {
+            ...base,
+            metric: restore.metric && metrics.has(restore.metric) ? restore.metric : base.metric,
+            mode: restore.mode && (schema.arms || restore.mode === "treatment") ? restore.mode : base.mode,
+            compare:
+              restore.compare && schema.arms && restore.compare in schema.arms.roles ? restore.compare : base.compare,
+            controls: { ...base.controls, ...(restore.controls ?? {}) },
+          };
+        }
+      }
+      const controls = reconcileControls(schema, view, sliceRows0, { ...base.controls, [data.outerId as string]: outerValue });
       return { ...base, controls: { ...controls, [data.outerId as string]: outerValue } };
     });
-    setSelected(null);
+    let point: Row | null = null;
+    if (restore?.selected) {
+      const pos = restore.selected;
+      point =
+        sliceRows0.find(
+          (r) =>
+            (!schema.arms || treatmentArms(schema)?.includes(String(r.arm))) &&
+            dimValue(schema, r, view.x, null) === pos.x &&
+            dimValue(schema, r, view.y, null) === pos.y,
+        ) ?? null;
+    }
+    setSelected(point);
   }, [schema, view, slice, outerValue, data.outerId, experimentId, equity]);
+
+  // Remember the session for the next page load.
+  useEffect(() => {
+    if (experimentId !== null && state === null) return; // still restoring: keep what was stored
+    writeSession(SESSION_KEY, {
+      experimentId,
+      outerValue,
+      metric: state?.metric,
+      mode: state?.mode,
+      compare: state?.compare,
+      controls: state?.controls,
+      selected:
+        schema && view && selected
+          ? { x: dimValue(schema, selected, view.x, null), y: dimValue(schema, selected, view.y, null) }
+          : null,
+    });
+  }, [experimentId, outerValue, state, selected, schema, view]);
 
   const rows = useMemo(() => addNetPnl(slice?.rows ?? [], equity), [slice, equity]);
   const options = useMemo(
