@@ -17,6 +17,7 @@ import {
 const PF = "profit_factor";
 const DD = "max_drawdown_pct";
 const CUM = "cumulative_net_r";
+const WIN = "win_rate";
 
 const has = (schema: ExperimentResultSchema, id: string): boolean => metricById(schema, id) !== undefined;
 
@@ -66,7 +67,7 @@ export function summaryCards(
     val(primary, "base", `median ${pm.label}, ${compareName}`);
     val(primary, "delta", `median Δ ${pm.label}`);
   }
-  for (const m of [PF, DD, CUM]) {
+  for (const m of [PF, WIN, DD, CUM]) {
     const metric = metricById(schema, m);
     if (!metric || m === primary) continue;
     val(m, "value", `median ${metric.label}`);
