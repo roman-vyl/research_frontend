@@ -4,6 +4,7 @@
  */
 import type { ExperimentResultSchema } from "@/api/experiments";
 import {
+  activeConditions,
   baselineOf,
   formatCell,
   makeIndexer,
@@ -30,7 +31,10 @@ const need = (schema: ExperimentResultSchema, id: string) => metricById(schema, 
 
 export type SummaryCard = { label: string; value: string };
 
-/** The row of figures above the heatmap (medians over the frame's cells, counts better than the comparison). */
+/**
+ * The row of figures above the heatmap: medians over the frame's cells and counts better than the comparison.
+ * With active filters, every figure is computed over the cells that pass them.
+ */
 export function summaryCards(
   schema: ExperimentResultSchema,
   sliced: Row[],
@@ -40,9 +44,11 @@ export function summaryCards(
   compareName: string,
 ): SummaryCard[] {
   const idx = makeIndexer(schema, rows, state.compare);
+  const filtered = activeConditions(state.filters).length > 0;
+  const cells = filtered ? sliced.filter(makePasses(schema, sliced, state.filters, idx)) : sliced;
   const med = (m: string, kind: "value" | "delta" | "base"): number | null => {
     const xs: number[] = [];
-    for (const r of sliced) {
+    for (const r of cells) {
       const v = r[m];
       if (typeof v !== "number") continue;
       if (kind === "value") xs.push(v);
@@ -75,9 +81,9 @@ export function summaryCards(
     if (schema.arms && m === CUM) val(m, "delta", `median Δ ${metric.label}`);
   }
   if (schema.arms) {
-    const n = sliced.length;
+    const n = cells.length;
     const beat = (ms: string[]): number =>
-      sliced.filter((r) =>
+      cells.filter((r) =>
         ms.every((m) => {
           const v = r[m];
           const b = baselineOf(schema, r, idx(m));
@@ -88,11 +94,8 @@ export function summaryCards(
     const b3 = betterMetrics(schema, primary);
     if (b3.length > 1) cards.push({ label: `better: ${b3.map((m) => need(schema, m).label).join("+")}`, value: `${beat(b3)} / ${n}` });
   }
-  if (state.filters.length > 0) {
-    cards.push({
-      label: "cells passing filters",
-      value: `${sliced.filter(makePasses(schema, sliced, state.filters, idx)).length} / ${sliced.length}`,
-    });
+  if (filtered) {
+    cards.push({ label: "cells passing filters · figures above are over these", value: `${cells.length} / ${sliced.length}` });
   }
   return cards;
 }
