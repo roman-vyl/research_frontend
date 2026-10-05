@@ -341,7 +341,8 @@ export function passes(
   for (const c of activeConditions(filters)) {
     const x = conditionValue(schema, row, c, indexByMetric);
     if (x === null) return false;
-    const limit = c.value as number;
+    // Fraction metrics (win rate, return, drawdown, top-5 share) are shown and entered in percent / pp.
+    const limit = metricById(schema, c.metric)?.format === "fraction" ? (c.value as number) / 100 : (c.value as number);
     if (c.op === ">=") {
       if (!(x >= limit)) return false;
     } else if (c.op === "<=") {

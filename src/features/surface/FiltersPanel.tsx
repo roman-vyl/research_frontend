@@ -42,7 +42,7 @@ export function FiltersPanel({ schema, filters, compare, summary, onChange }: Pr
               aria-label="threshold"
               type="text"
               inputMode="decimal"
-              placeholder={f.op === "top" || f.op === "bottom" ? "percent, e.g. 10" : "value"}
+              placeholder={f.op === "top" || f.op === "bottom" ? "percent, e.g. 10" : metrics.find((m) => metricId(m) === f.metric)?.format === "fraction" ? (f.kind === "delta" ? "pp, e.g. 5" : "%, e.g. 25") : "value"}
               defaultValue={f.value ?? ""}
               onChange={(e) => {
                 const v = parseFloat(e.target.value.replace(",", "."));

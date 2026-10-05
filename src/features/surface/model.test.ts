@@ -97,6 +97,16 @@ describe("surface model", () => {
     expect(f({ ...pf, value: 5 })).toBe(0);
   });
 
+  it("takes thresholds of fraction metrics in percent, as they are shown", () => {
+    const rows = sliceRows(T, cellsView, trailingRows, defaultState(T, "cells", trailingRows).controls, treatmentArms(T));
+    const idx = makeIndexer(T, trailingRows, null);
+    const dd = rows.map((r) => r.max_drawdown_pct as number).sort((a, b) => a - b);
+    const mid = dd[dd.length >> 1];
+    const c: Condition = { id: "d", metric: "max_drawdown_pct", kind: "value", op: ">=", value: mid * 100 };
+    expect(rows.filter((r) => passes(T, r, [c], idx)).length).toBe(dd.filter((v) => v >= mid - 1e-12).length);
+    expect(rows.filter((r) => passes(T, r, [{ ...c, value: mid }], idx)).length).toBeLessThan(rows.length);
+  });
+
   it("adds Net PnL (return x initial equity) only when the table has no dollar metric", () => {
     const eq = initialEquity(RATIO_MANIFEST);
     expect(eq).toBe(10000);
