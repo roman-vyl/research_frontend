@@ -146,3 +146,7 @@
 .sx .sx-eq-sel{ stroke:var(--ink); stroke-width:2.4; opacity:1; }
 .sx .sx-eq-hover{ stroke:var(--ink); opacity:.4; }
 .sx .sx-eq-hovertext{ font-family:"IBM Plex Mono", monospace; font-size:10.5px; fill:var(--ink); }
+.sx .sx-three .sx-control-group.sx-btns{ flex:0 1 auto; min-width:0; }
+.sx .sx-btns .sx-sl-row{ flex-wrap:wrap; gap:8px 12px; }
+.sx .sx-btns .sx-segmented{ flex-shrink:0; }
+.sx .sx-btns .sx-ro{ min-width:0; text-align:left; }

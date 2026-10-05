@@ -25,6 +25,8 @@ type Props = {
   onControl: (id: string, value: string | number) => void;
 };
 
+/** Controls with at most this many values are a row of buttons; longer ones stay sliders. */
+const BUTTONS_MAX = 6;
 const PLAY_MS = 1100;
 
 export function SurfaceControls({ schema, view, state, options, onMetric, onMode, onCompare, onControl }: Omit<Props, "outer">) {
@@ -179,7 +181,7 @@ export function SurfaceSliders({
           );
         }
         return (
-          <div className="sx-control-group" key={id}>
+          <div className={opts.length <= BUTTONS_MAX ? "sx-control-group sx-btns" : "sx-control-group"} key={id}>
             <span className="sx-control-label">
               {dim?.label ?? id}
               {unit && <span className="sx-unit-tag">{unit}</span>}
@@ -205,21 +207,31 @@ export function SurfaceSliders({
                   </svg>
                 </button>
               )}
-              <input
-                type="range"
-                aria-label={dim?.label ?? id}
-                min={0}
-                max={Math.max(0, opts.length - 1)}
-                step={1}
-                value={index}
-                disabled={opts.length < 2}
-                onChange={(e) => {
-                  const o = opts[Number(e.target.value)];
-                  if (o !== undefined) onControl(id, o);
-                }}
-              />
+              {opts.length <= BUTTONS_MAX ? (
+                <div className="sx-segmented" role="group" aria-label={dim?.label ?? id}>
+                  {opts.map((o) => (
+                    <button key={o} type="button" aria-pressed={o === cur} onClick={() => onControl(id, o)}>
+                      {controlReadout(schema, id, o, grid, sl).main}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <input
+                  type="range"
+                  aria-label={dim?.label ?? id}
+                  min={0}
+                  max={Math.max(0, opts.length - 1)}
+                  step={1}
+                  value={index}
+                  disabled={opts.length < 2}
+                  onChange={(e) => {
+                    const o = opts[Number(e.target.value)];
+                    if (o !== undefined) onControl(id, o);
+                  }}
+                />
+              )}
               <span className="sx-ro">
-                {ro?.main}
+                {opts.length <= BUTTONS_MAX ? null : ro?.main}
                 {ro?.alt && <small>{ro.alt}</small>}
               </span>
             </div>

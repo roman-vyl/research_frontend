@@ -154,9 +154,10 @@ describe("SurfaceView", () => {
       await openExperiment(/trailing geometry/);
       await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
       fireEvent.click(screen.getByRole("button", { name: "PF" }));
-      const slider = screen.getByRole("slider", { name: "Trigger T" }) as HTMLInputElement;
-      fireEvent.change(slider, { target: { value: "1" } }); // second trigger option
-      const trigger = slider.nextElementSibling!.textContent;
+      const triggers = screen.getByRole("group", { name: "Trigger T" });
+      const second = triggers.querySelectorAll("button")[1]; // second trigger option
+      fireEvent.click(second);
+      const trigger = second.textContent;
       const cell = document.querySelector(".sx-cell:not(.sx-empty)")!;
       fireEvent.click(cell);
       await screen.findByLabelText("Point details");
@@ -164,7 +165,8 @@ describe("SurfaceView", () => {
       render(<SurfaceView />);
       await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
       expect(screen.getByRole("button", { name: "PF" }).getAttribute("aria-pressed")).toBe("true");
-      expect((screen.getByRole("slider", { name: "Trigger T" }) as HTMLInputElement).nextElementSibling!.textContent).toBe(trigger);
+      const pressed = screen.getByRole("group", { name: "Trigger T" }).querySelector('button[aria-pressed="true"]');
+      expect(pressed!.textContent).toBe(trigger);
       expect(await screen.findByLabelText("Point details")).toBeTruthy();
       expect(screen.queryByRole("group", { name: "Experiments" })).toBeNull();
     } finally {
