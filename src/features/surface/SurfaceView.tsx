@@ -6,6 +6,7 @@ import "@/features/surface/surface.css";
 import { useWorkbenchReport, useWorkbenchShell } from "@/shared/context/WorkbenchContext";
 import { readSession, writeSession } from "@/shared/session/storage";
 import { CellDetails } from "@/features/surface/CellDetails";
+import { EquityPanel } from "@/features/surface/EquityPanel";
 import { FiltersPanel } from "@/features/surface/FiltersPanel";
 import { HeatStage } from "@/features/surface/HeatStage";
 import { LIGHT_TOKENS, readTokens, type Tokens } from "@/features/surface/color";
@@ -329,6 +330,15 @@ export function SurfaceView() {
               filmstripOptions={cellsFilmstrip}
               onSelect={setSelected}
               onPickFrame={(v) => view.filmstrip && setControl(view.filmstrip, v)}
+            />
+            <EquityPanel
+              schema={schema}
+              view={view}
+              rows={rows}
+              state={state}
+              selected={selected}
+              initialEquity={equity}
+              onSelect={setSelected}
             />
             {selected && (
               <CellDetails

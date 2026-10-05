@@ -135,3 +135,14 @@
 .sx .sx-sl-row input[type=range]{ min-width:80px; }
 .sx .sx-check input{ width:15px; height:15px; margin:0; flex-shrink:0; }
 .sx .sx-note .sx-fbtn{ margin-top:4px; }
+.sx .sx-equity{ padding:14px 16px; display:flex; flex-direction:column; gap:10px; }
+.sx .sx-equity-head{ display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; justify-content:space-between; }
+.sx .sx-equity svg{ display:block; overflow:visible; }
+.sx .sx-eq-grid{ stroke:var(--hair); stroke-dasharray:2 4; }
+.sx .sx-eq-zero{ stroke:var(--axis); }
+.sx .sx-eq-tick{ font-family:"IBM Plex Mono", monospace; font-size:10px; fill:var(--ink-muted); }
+.sx .sx-eq-line{ fill:none; stroke:var(--accent); stroke-width:1; opacity:.35; cursor:pointer; stroke-linejoin:round; }
+.sx .sx-eq-line:hover{ opacity:.9; stroke-width:1.6; }
+.sx .sx-eq-sel{ stroke:var(--ink); stroke-width:2.4; opacity:1; }
+.sx .sx-eq-hover{ stroke:var(--ink); opacity:.4; }
+.sx .sx-eq-hovertext{ font-family:"IBM Plex Mono", monospace; font-size:10.5px; fill:var(--ink); }
