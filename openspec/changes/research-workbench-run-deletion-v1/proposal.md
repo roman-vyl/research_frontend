@@ -8,9 +8,10 @@ call it, so today deletion is only possible by hand.
 
 ## What Changes
 
-- Selection mode on the Surface heat map: Ctrl/Cmd+click toggles a cell,
-  Shift+drag selects a rectangle, two buttons select the visible cells that pass or
-  do not pass the active filters. Selection acts on the **visible slice only** (the
+- Selection on the Surface heat map: a "Select cells" select mode in which a plain
+  click toggles a cell and a plain drag selects a rectangle; outside the mode
+  Ctrl/Cmd+click toggles a cell and Shift+drag selects a rectangle; two buttons
+  select the visible cells that pass or do not pass the active filters. Selection acts on the **visible slice only** (the
   loaded outer slice, for example SL, plus the current grid, arm and fixed
   controls), never on the whole Experiment.
 - A selection bar: "N cells selected · R runs · B cells without run" and one action
