@@ -5,6 +5,7 @@
  */
 import {
   metricId,
+  type CalculationCoords,
   type ExperimentManifest,
   type ExperimentDimension,
   type ExperimentMetric,
@@ -547,7 +548,35 @@ export type SelectionRuns = {
   withoutRun: number;
   /** Distinct non-empty `run_id` of all rows behind the selected cells. */
   runIds: string[];
+  /** One Calculate address per addressable row behind the selected cells, whatever its `run_id`. */
+  calcCoords: CalculationCoords[];
+  /** Rows behind the selected cells with no value for a dimension (no address can be built). */
+  notAddressable: number;
 };
+
+export const EMPTY_SELECTION: SelectionRuns = { cells: 0, withoutRun: 0, runIds: [], calcCoords: [], notAddressable: 0 };
+
+/**
+ * Calculate address of a row in the active grid: every dimension id with the row's value, plus `grid` and `arm`
+ * when the schema has them; `null` when a value is missing. Whether the row can be calculated is the backend's call.
+ */
+export function calculationCoords(schema: ExperimentResultSchema, row: Row, grid: string | null): CalculationCoords | null {
+  const out: CalculationCoords = {};
+  for (const dim of schema.dimensions) {
+    const v = row[dimColumn(dim, grid)];
+    if (typeof v !== "number") return null;
+    out[dim.id] = v;
+  }
+  if (gridsOf(schema).length > 0) {
+    if (grid === null) return null;
+    out[GRID_ID] = grid;
+  }
+  if (schema.arms) {
+    if (typeof row.arm !== "string" || row.arm === "") return null;
+    out.arm = row.arm;
+  }
+  return out;
+}
 
 const runIdOf = (r: Row): string | null => (typeof r.run_id === "string" && r.run_id !== "" ? r.run_id : null);
 
@@ -565,7 +594,7 @@ export function selectionRuns(
   const grid = activeGrid(schema, state.controls);
   const xd = dimById(schema, view.x);
   const yd = dimById(schema, view.y);
-  if (!xd || !yd || selection.size === 0) return { cells: 0, withoutRun: 0, runIds: [] };
+  if (!xd || !yd || selection.size === 0) return EMPTY_SELECTION;
   const sliced = sliceRows(schema, view, rows, state.controls, treatmentArms(schema));
   const compareArm = schema.arms && state.mode !== "treatment" ? (state.compare ?? schema.arms.baseline) : null;
   const byMatch = new Map<string, Row[]>();
@@ -579,6 +608,7 @@ export function selectionRuns(
     }
   }
   const perCell = new Map<string, Set<string>>();
+  const behind = new Set<Row>();
   for (const r of sliced) {
     const x = r[dimColumn(xd, grid)];
     const y = r[dimColumn(yd, grid)];
@@ -587,10 +617,12 @@ export function selectionRuns(
     if (!selection.has(key)) continue;
     let ids = perCell.get(key);
     if (!ids) perCell.set(key, (ids = new Set()));
+    behind.add(r);
     const own = runIdOf(r);
     if (own) ids.add(own);
     if (compareArm !== null) {
       for (const b of byMatch.get(matchKey(schema, r)) ?? []) {
+        behind.add(b);
         const id = runIdOf(b);
         if (id) ids.add(id);
       }
@@ -602,7 +634,14 @@ export function selectionRuns(
     if (ids.size === 0) withoutRun += 1;
     for (const id of ids) all.add(id);
   }
-  return { cells: perCell.size, withoutRun, runIds: [...all].sort() };
+  const calcCoords: CalculationCoords[] = [];
+  let notAddressable = 0;
+  for (const r of behind) {
+    const c = calculationCoords(schema, r, grid);
+    if (c) calcCoords.push(c);
+    else notAddressable += 1;
+  }
+  return { cells: perCell.size, withoutRun, runIds: [...all].sort(), calcCoords, notAddressable };
 }
 
 /** GB (10^9 bytes) with two decimals. */

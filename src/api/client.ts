@@ -27,6 +27,10 @@ import type {
   ExperimentRegistry,
   ExperimentResults,
   ExperimentStorage,
+  CalculationCoords,
+  CalculationJob,
+  CalculationPlan,
+  CalculationStarted,
   RunDeletionPlan,
   RunDeletionResult,
 } from "@/api/experiments";
@@ -37,40 +41,48 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.repl
 export class ApiError extends Error {
   readonly status: number;
   readonly detail: string;
+  /** Backend error code (`{ error }` of the service error body), when present. */
+  readonly code: string | null;
+  readonly details: Record<string, unknown>;
 
-  constructor(status: number, detail: string) {
+  constructor(status: number, detail: string, code: string | null = null, details: Record<string, unknown> = {}) {
     super(detail);
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
+    this.code = code;
+    this.details = details;
   }
 }
 
-async function readErrorDetail(res: Response): Promise<string> {
+async function readError(res: Response): Promise<ApiError> {
   try {
     const body = (await res.json()) as {
       detail?: string | { msg?: string }[];
       message?: string;
+      error?: string;
+      details?: Record<string, unknown>;
     };
+    const code = typeof body.error === "string" ? body.error : null;
+    const details = body.details && typeof body.details === "object" ? body.details : {};
+    let detail = res.statusText;
     if (typeof body.detail === "string") {
-      return body.detail;
+      detail = body.detail;
+    } else if (typeof body.message === "string") {
+      detail = body.message;
+    } else if (Array.isArray(body.detail)) {
+      detail = body.detail.map((d) => d.msg ?? JSON.stringify(d)).join("; ");
     }
-    if (typeof body.message === "string") {
-      return body.message;
-    }
-    if (Array.isArray(body.detail)) {
-      return body.detail.map((d) => d.msg ?? JSON.stringify(d)).join("; ");
-    }
-    return res.statusText;
+    return new ApiError(res.status, detail, code, details);
   } catch {
-    return res.statusText;
+    return new ApiError(res.status, res.statusText);
   }
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, init);
   if (!res.ok) {
-    throw new ApiError(res.status, await readErrorDetail(res));
+    throw await readError(res);
   }
   return (await res.json()) as T;
 }
@@ -394,6 +406,35 @@ export async function planRunDeletion(experimentId: string, runIds: string[]): P
 /** Irreversible: deletes the planned runs. A changed table or selection is `ApiError` 409 (`plan_stale`). */
 export async function deleteRuns(experimentId: string, runIds: string[], planToken: string): Promise<RunDeletionResult> {
   return postJson<RunDeletionResult>(runsPath(experimentId, "delete"), { run_ids: runIds, plan_token: planToken });
+}
+
+/** Which of the sent rows can be calculated; `has_run` and other skip reasons come from the backend. Changes nothing. */
+export async function planCalculation(experimentId: string, rows: CalculationCoords[]): Promise<CalculationPlan> {
+  return postJson<CalculationPlan>(runsPath(experimentId, "calculate-plan"), { rows: rows.map((coords) => ({ coords })) });
+}
+
+/** Starts a calculation job for the planned rows. `ApiError` 409 with code `plan_stale` or `job_running`. */
+export async function calculateRows(
+  experimentId: string,
+  rows: CalculationCoords[],
+  planToken: string,
+): Promise<CalculationStarted> {
+  return postJson<CalculationStarted>(runsPath(experimentId, "calculate"), {
+    rows: rows.map((coords) => ({ coords })),
+    plan_token: planToken,
+  });
+}
+
+const calculationPath = (experimentId: string, jobId: string, action = ""): string =>
+  `/api/research/experiments/${encodeURIComponent(experimentId)}/calculations/${encodeURIComponent(jobId)}${action}`;
+
+export async function getCalculation(experimentId: string, jobId: string): Promise<CalculationJob> {
+  return requestJson<CalculationJob>(calculationPath(experimentId, jobId));
+}
+
+/** Asks the backend to stop the job; rows not yet calculated end as `cancelled`. */
+export async function cancelCalculation(experimentId: string, jobId: string): Promise<CalculationJob> {
+  return postJson<CalculationJob>(calculationPath(experimentId, jobId, "/cancel"), {});
 }
 
 /** Counts and size of one Experiment; `cached` never computes the size, `compute` does on a cache miss. */

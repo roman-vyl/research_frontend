@@ -112,6 +112,47 @@ export type RunDeletionResult = {
   backup: string;
 };
 
+/** Row address for Calculate: every dimension id, plus `grid` and `arm` when the schema has them. */
+export type CalculationCoords = Record<string, number | string>;
+
+/** `POST .../runs/calculate-plan`: the backend decides per sent row (reasons: `has_run`, `row_not_found`, ...). */
+export type CalculationPlan = {
+  rows: {
+    position: number;
+    coords: CalculationCoords;
+    status: "calculable" | "skipped";
+    config_hash?: string;
+    reason?: string;
+    message?: string;
+  }[];
+  calculable_count: number;
+  plan_token: string;
+};
+
+export type CalculationStarted = { job_id: string; row_count: number };
+
+export type CalculationOutcome = "pending" | "published" | "parity_failed" | "engine_failed" | "row_stale" | "cancelled";
+
+/** `GET .../calculations/{job_id}`; `parity` lists the metrics that differed (stored value vs Engine value). */
+export type CalculationJob = {
+  job_id: string;
+  experiment_id: string;
+  state: "running" | "completed" | "cancelled" | "failed";
+  counts: Partial<Record<CalculationOutcome, number>>;
+  rows: {
+    position: number;
+    coords: CalculationCoords;
+    row_index: number | null;
+    config_hash: string | null;
+    outcome: CalculationOutcome;
+    run_id?: string;
+    parity?: { column: string; expected: string; actual: string }[];
+    message?: string;
+  }[];
+  backup?: string;
+  error?: string;
+};
+
 /** Storage of one Experiment (`GET .../storage`): counts from the table, size from disk (cached). */
 export type ExperimentStorage = {
   experiment_id: string;
