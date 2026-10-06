@@ -1,6 +1,6 @@
 ## 0. Dependency (separate research_service change, not part of this change)
 
-- [ ] 0.1 `GET /api/research/experiments/{experiment_id}/storage?size=cached|compute` as in `design.md` "Backend contract"; deployed on the stack.
+- [x] 0.1 `GET /api/research/experiments/{experiment_id}/storage?size=cached|compute` as in `design.md` "Backend contract"; deployed on the stack.
 
 ## 1. research_frontend
 
