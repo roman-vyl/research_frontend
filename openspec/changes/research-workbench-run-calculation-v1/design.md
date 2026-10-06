@@ -12,10 +12,14 @@ in memory.
 ### D1. Rows, not cells
 
 A selected cell can stand for several rows (aggregation, arms). Calculate sends one
-`coords` per row without `run_id` behind the selected cells, built from that row's
-values in the active grid. Rows with `run_id` are counted as "has run" and not sent.
-Rows with no value for a dimension (an optional dimension switched off) cannot be
-addressed and are counted as "not addressable", not sent.
+`coords` per addressable row behind the selected cells, built from that row's values
+in the active grid, whatever its `run_id`. The backend plan alone decides what is
+calculable and reports `has_run`, `ambiguous_row`, `row_not_found`, `invalid_spec` and
+other skip reasons, so the counts match the server state at plan time even if the row
+changed after the slice was loaded. The frontend drops only rows for which no
+`coords` can be built (no value for a dimension, e.g. an optional dimension switched
+off) and counts them as "not addressable". The 2 000 limit applies to the sent
+`coords`.
 
 ### D2. Availability from the manifest only
 

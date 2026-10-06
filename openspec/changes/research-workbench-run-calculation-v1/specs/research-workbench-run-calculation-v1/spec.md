@@ -14,30 +14,43 @@ than 2 000.
 
 #### Scenario: Too many rows
 
-- **WHEN** the selection has 2 001 rows without a run
+- **WHEN** the selection has 2 001 addressable rows
 - **THEN** "Calculate" is disabled and says that at most 2 000 rows can be calculated at once.
 
 ### Requirement: Rows of a selection for Calculate
 
-N SHALL be the number of rows without `run_id` behind the selected cells in the
-current slice and controls. For each such row the request SHALL carry `coords` with
-every dimension id of `result_schema` and the row's value in the active grid, plus
-`grid` when a dimension has grids and `arm` when the schema has arms. Rows with
-`run_id` SHALL NOT be sent and SHALL be counted as "has run". Rows without a value
-for a dimension SHALL NOT be sent and SHALL be counted as "not addressable".
+N SHALL be the number of addressable rows behind the selected cells in the current
+slice and controls, regardless of `run_id`. For each such row the request SHALL carry
+`coords` with every dimension id of `result_schema` and the row's value in the active
+grid, plus `grid` when a dimension has grids and `arm` when the schema has arms. The
+frontend SHALL NOT decide calculability from `run_id`; it SHALL be taken only from the
+`calculate-plan` response. Rows without a value for a dimension SHALL NOT be sent and
+SHALL be counted as "not addressable". The 2 000 limit SHALL apply to the number of
+`coords` sent.
 
 #### Scenario: Aggregated cell
 
-- **WHEN** a selected cell stands for three rows, one of them with `run_id`
-- **THEN** two `coords` are sent and the bar shows one row with a run.
+- **WHEN** a selected cell stands for three addressable rows, one of them with `run_id`
+- **THEN** three `coords` are sent to `calculate-plan`.
+
+#### Scenario: Row not addressable
+
+- **WHEN** a selected row has no value for a dimension
+- **THEN** it is not sent and is counted as "not addressable".
 
 ### Requirement: Plan before calculation
 
-"Calculate" SHALL first call `calculate-plan` and show the calculable count, the
-skipped rows grouped by reason and the rule that a row is published only when the
+"Calculate" SHALL first call `calculate-plan` and show, from its response, Selected
+(rows sent), Calculable, Has run (reason `has_run`) and Other skipped grouped by
+reason, and the rule that a row is published only when the
 Engine reproduces its stored metrics, otherwise it stays unchanged. `calculate` SHALL
 be sent only after the user presses "Calculate" in the dialog, with the plan's
 `plan_token`, and only when the calculable count is greater than 0.
+
+#### Scenario: Plan counts
+
+- **WHEN** 120 rows are sent and the plan returns 83 calculable, 31 `has_run` and 6 other skipped
+- **THEN** the dialog shows Selected 120, Calculable 83, Has run 31, Other skipped 6.
 
 #### Scenario: Stale plan
 
