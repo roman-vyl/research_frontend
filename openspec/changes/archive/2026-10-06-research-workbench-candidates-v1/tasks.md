@@ -11,4 +11,4 @@
 
 ## 2. Manual check (owner)
 
-- [ ] 2.1 Star an Engine point and a replay point on real Surfaces; open both from the Candidates tab on Chart and on Surface.
+- [x] 2.1 Star an Engine point and a replay point on real Surfaces; open both from the Candidates tab on Chart and on Surface. Confirmed by the owner on real data 2026-10-06: star, Candidates tab, details, Chart and On Surface work.
