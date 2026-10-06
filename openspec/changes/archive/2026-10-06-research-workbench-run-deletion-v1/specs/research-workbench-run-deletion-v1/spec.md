@@ -16,12 +16,31 @@ or `selectedRunId`.
 
 The user SHALL be able to toggle a cell with Ctrl/Cmd+click, select a rectangle with
 Shift+drag, and select all visible cells that pass or that do not pass the active
-filters. A plain click SHALL keep its current meaning (show the point in CellDetails).
+filters. Outside select mode a plain click SHALL keep its current meaning (show the
+point in CellDetails).
 
 #### Scenario: Bulk select by filters
 
 - **WHEN** filters grey out some cells and the user presses "Select not passing"
 - **THEN** exactly the greyed visible cells are selected.
+
+### Requirement: Select mode
+
+The selection bar SHALL have a "Select cells" button that turns select mode on. In
+select mode a plain click SHALL toggle a cell, a plain drag SHALL add a rectangle of
+cells, and the point shown in CellDetails SHALL NOT change. "Done selecting" or Esc
+SHALL turn select mode off and keep the selected cells; after that a plain click SHALL
+show the point in CellDetails again.
+
+#### Scenario: Pick by click in select mode
+
+- **WHEN** the user presses "Select cells" and clicks a cell twice
+- **THEN** the cell is selected after the first click and not selected after the second, and CellDetails is not opened.
+
+#### Scenario: Leave select mode
+
+- **WHEN** the user drags over a rectangle in select mode and presses Esc
+- **THEN** the rectangle stays selected and a plain click on a cell shows its point in CellDetails.
 
 ### Requirement: Run ids of a selection
 

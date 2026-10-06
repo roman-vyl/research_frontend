@@ -41,6 +41,17 @@ run" when none of its rows has a `run_id`.
 "Select passing" and "Select not passing" use the same pass test that greys cells
 today. Manual toggling ignores filters: a greyed cell can be selected by hand.
 
+### D2a. Select mode for manual picking
+
+Ctrl/Cmd+click and Shift+drag were easy to miss, so the selection bar has a
+"Select cells" button that turns select mode on. In select mode a plain click toggles
+a cell and a plain drag adds a rectangle; a press and release on the same cell counts
+as a click. The point shown in CellDetails does not change while the mode is on.
+"Done selecting" or Esc (when no deletion dialog is open) turns the mode off and keeps
+the picked cells, so they can still be deleted; a plain click again shows the point in
+CellDetails. Outside select mode the modifier gestures work as before. Changing what
+is visible clears the picked cells but leaves the mode as it is.
+
 ### D3. Plan, then typed confirmation
 
 "Delete runs (R)", where R is the number of distinct non-empty `run_id` behind

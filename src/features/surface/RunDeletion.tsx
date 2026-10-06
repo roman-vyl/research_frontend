@@ -6,6 +6,9 @@ import { formatGb, type SelectionRuns } from "@/features/surface/model";
 
 type BarProps = {
   selection: SelectionRuns;
+  /** In select mode a plain click toggles a cell and a plain drag adds a rectangle. */
+  selectMode: boolean;
+  onSelectMode: (on: boolean) => void;
   onSelectPassing: () => void;
   onSelectNotPassing: () => void;
   onClear: () => void;
@@ -13,20 +16,32 @@ type BarProps = {
 };
 
 /** Selection tools and the "Delete runs (R)" action; R is the number of distinct run ids. */
-export function SelectionBar({ selection, onSelectPassing, onSelectNotPassing, onClear, onDelete }: BarProps) {
+export function SelectionBar({ selection, selectMode, onSelectMode, onSelectPassing, onSelectNotPassing, onClear, onDelete }: BarProps) {
   const r = selection.runIds.length;
   return (
     <div className="sx-panel sx-selbar" role="group" aria-label="Selection">
       <span className="sx-fsum">
         {selection.cells} cells selected · {r} runs · {selection.withoutRun} cells without run
       </span>
+      <button
+        type="button"
+        className={`sx-fbtn${selectMode ? " sx-on" : ""}`}
+        aria-pressed={selectMode}
+        onClick={() => onSelectMode(!selectMode)}
+      >
+        {selectMode ? "Done selecting" : "Select cells"}
+      </button>
       <button type="button" className="sx-fbtn" onClick={onSelectPassing}>Select passing</button>
       <button type="button" className="sx-fbtn" onClick={onSelectNotPassing}>Select not passing</button>
       <button type="button" className="sx-fbtn" onClick={onClear} disabled={selection.cells === 0}>Clear</button>
       <button type="button" className="sx-fbtn sx-danger" onClick={onDelete} disabled={r === 0}>
         Delete runs ({r})
       </button>
-      <span className="sx-note">Ctrl/Cmd+click toggles a cell, Shift+drag selects a rectangle.</span>
+      <span className="sx-note">
+        {selectMode
+          ? "Click toggles a cell, drag selects a rectangle. Esc or Done selecting returns clicks to details."
+          : "Select cells to pick by click; Ctrl/Cmd+click toggles a cell, Shift+drag selects a rectangle."}
+      </span>
     </div>
   );
 }
