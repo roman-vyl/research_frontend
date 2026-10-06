@@ -1,4 +1,4 @@
-import { useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 
 import type { ExperimentResultSchema, ExperimentView } from "@/api/experiments";
 import { metricId } from "@/api/experiments";
@@ -10,6 +10,7 @@ import {
   armLabel,
   baselineOf,
   buildMatrix,
+  cellKey,
   controlReadout,
   dimById,
   dimValue,
@@ -36,12 +37,23 @@ type Props = {
   filmstripOptions: (string | number)[];
   onSelect: (row: Row) => void;
   onPickFrame: (value: number) => void;
+  /** Cells selected for an action (keys from `cellKey`); separate from the point shown in details. */
+  picked?: ReadonlySet<string>;
+  /** Ctrl/Cmd+click toggles one cell; Shift+drag adds a rectangle. */
+  onPick?: (keys: string[], how: "toggle" | "add") => void;
 };
+
+type Drag = { x0: number; y0: number; x1: number; y1: number };
+const inRect = (d: Drag, xi: number, yi: number): boolean =>
+  xi >= Math.min(d.x0, d.x1) && xi <= Math.max(d.x0, d.x1) && yi >= Math.min(d.y0, d.y1) && yi <= Math.max(d.y0, d.y1);
 
 type Tip = { x: number; y: number; row: Row };
 
-export function HeatStage({ schema, view, rows, state, tokens, selected, filmstripOptions, onSelect, onPickFrame }: Props) {
+export function HeatStage({ schema, view, rows, state, tokens, selected, filmstripOptions, onSelect, onPickFrame, picked, onPick }: Props) {
   const [tip, setTip] = useState<Tip | null>(null);
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const dragRef = useRef<Drag | null>(null);
+  dragRef.current = drag;
   const metric = metricById(schema, state.metric);
   const compare = state.compare ?? schema.arms?.baseline ?? null;
   const idx = useMemo(() => makeIndexer(schema, rows, compare), [schema, rows, compare]);
@@ -89,6 +101,25 @@ export function HeatStage({ schema, view, rows, state, tokens, selected, filmstr
     }
     return out;
   }, [schema, view, rows, state, filmstripOptions, idx, tokens, filtersOn, delta, metric]);
+
+  // A Shift+drag ends wherever the mouse is released.
+  useEffect(() => {
+    if (!drag) return;
+    const up = () => {
+      const d = dragRef.current;
+      setDrag(null);
+      if (!d || !onPick) return;
+      const keys: string[] = [];
+      matrix.ys.forEach((y, yi) =>
+        matrix.xs.forEach((x, xi) => {
+          if (matrix.cells[yi][xi] && inRect(d, xi, yi)) keys.push(cellKey(x, y));
+        }),
+      );
+      onPick(keys, "add");
+    };
+    window.addEventListener("mouseup", up);
+    return () => window.removeEventListener("mouseup", up);
+  }, [drag !== null, matrix, onPick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!metric || !frame) return null;
   const grid = typeof state.controls[GRID_ID] === "string" ? (state.controls[GRID_ID] as string) : null;
@@ -152,14 +183,24 @@ export function HeatStage({ schema, view, rows, state, tokens, selected, filmstr
                 const v = displayValue(schema, r, state.metric, state.mode, idx(state.metric));
                 const off = filtersOn && !passFrame(r);
                 const bg = colorOf(v, frame, tokens);
+                const isPicked = (picked?.has(cellKey(x, y)) ?? false) || (drag !== null && inRect(drag, xi, yi));
                 return (
                   <td key={x}>
                     <div
-                      className={`sx-cell${off ? " sx-off" : ""}${r === selected ? " sx-sel" : ""}${typeof r.run_id === "string" && r.run_id !== "" ? " sx-run" : ""}`}
+                      className={`sx-cell${off ? " sx-off" : ""}${r === selected ? " sx-sel" : ""}${typeof r.run_id === "string" && r.run_id !== "" ? " sx-run" : ""}${isPicked ? " sx-pick" : ""}`}
                       style={off ? undefined : { background: bg, color: textOn(bg, tokens) }}
                       onMouseMove={(e) => show(e, r)}
                       onMouseLeave={() => setTip(null)}
-                      onClick={() => onSelect(r)}
+                      onMouseDown={(e) => {
+                        if (!onPick || !e.shiftKey) return;
+                        e.preventDefault();
+                        setDrag({ x0: xi, y0: yi, x1: xi, y1: yi });
+                      }}
+                      onMouseEnter={() => drag && setDrag({ ...drag, x1: xi, y1: yi })}
+                      onClick={(e) => {
+                        if (onPick && (e.ctrlKey || e.metaKey)) onPick([cellKey(x, y)], "toggle");
+                        else if (!(onPick && e.shiftKey)) onSelect(r);
+                      }}
                     >
                       <span className="sx-v">{formatCell(metric, v, delta)}</span>
                     </div>

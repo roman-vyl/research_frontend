@@ -150,3 +150,16 @@
 .sx .sx-btns .sx-sl-row{ flex-wrap:wrap; gap:8px 12px; }
 .sx .sx-btns .sx-segmented{ flex-shrink:0; }
 .sx .sx-btns .sx-ro{ min-width:0; text-align:left; }
+.sx .sx-selbar{ display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; padding:10px 12px; }
+.sx .sx-fbtn:disabled{ opacity:.45; cursor:default; }
+.sx .sx-danger{ border-color:var(--neg-500); color:var(--neg-700); }
+.sx .sx-cell.sx-pick{ outline:2px dashed var(--accent); outline-offset:1px; }
+.sx .sx-modal-back{ position:fixed; inset:0; background:rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; z-index:60; padding:16px; }
+.sx .sx-modal{ max-width:520px; width:100%; padding:16px 18px; display:flex; flex-direction:column; gap:10px; }
+.sx .sx-modal h3{ margin:0; }
+.sx .sx-modal-actions{ display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; }
+.sx dl.sx-plan{ display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; margin:0; }
+.sx dl.sx-plan div{ display:flex; flex-direction:column; gap:2px; }
+.sx dl.sx-plan dt{ font-family:"IBM Plex Mono",monospace; font-size:10px; text-transform:uppercase; color:var(--ink-muted); }
+.sx dl.sx-plan dd{ margin:0; font-family:"IBM Plex Mono",monospace; font-size:13px; word-break:break-all; }
+.sx .sx-storage{ display:flex; flex-wrap:wrap; gap:4px 12px; font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-2); }

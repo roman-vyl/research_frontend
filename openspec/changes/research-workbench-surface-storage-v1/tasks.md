@@ -4,11 +4,11 @@
 
 ## 1. research_frontend
 
-- [ ] 1.1 API: `fetchExperimentStorage(experimentId, size)` and its type.
-- [ ] 1.2 Picker cards: storage block, `size=cached`, at most two requests at a time, session cache by `experiment_id`, "…" / "—" / "size not computed yet".
-- [ ] 1.3 Opened Experiment: block under the title with `size=compute`, not blocking the heat map; missing runs shown.
-- [ ] 1.4 Drop the stored numbers of an Experiment after a run deletion (when `research-workbench-run-deletion-v1` is present).
-- [ ] 1.5 Tests (mocked API): replay surface shows 0 Engine runs, null size, compute on open then size on the card, only `cached` from the picker, failed request still opens, no request to `/api/research/runs`.
+- [x] 1.1 API: `fetchExperimentStorage(experimentId, size)` and its type.
+- [x] 1.2 Picker cards: storage block, `size=cached`, at most two requests at a time, session cache by `experiment_id`, "…" / "—" / "size not computed yet".
+- [x] 1.3 Opened Experiment: block under the title with `size=compute`, not blocking the heat map; missing runs shown.
+- [x] 1.4 Drop the stored numbers of an Experiment after a run deletion (when `research-workbench-run-deletion-v1` is present).
+- [x] 1.5 Tests (mocked API): replay surface shows 0 Engine runs, null size, compute on open then size on the card, only `cached` from the picker, failed request still opens, no request to `/api/research/runs`.
 
 ## 2. Manual check (owner)
 

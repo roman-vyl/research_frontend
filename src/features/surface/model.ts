@@ -532,3 +532,76 @@ export function addNetPnl(rows: Row[], equity: number | null): Row[] {
   if (equity === null) return rows;
   return rows.map((r) => (typeof r.return_pct === "number" && r.net_pnl === undefined ? { ...r, net_pnl: r.return_pct * equity } : r));
 }
+
+/** Key of a heat map cell: its x and y values. */
+export const cellKey = (x: number, y: number): string => `${x}|${y}`;
+
+export type SelectionRuns = {
+  /** Selected cells present in the current matrix. */
+  cells: number;
+  /** Selected cells none of whose rows has a `run_id`. */
+  withoutRun: number;
+  /** Distinct non-empty `run_id` of all rows behind the selected cells. */
+  runIds: string[];
+};
+
+const runIdOf = (r: Row): string | null => (typeof r.run_id === "string" && r.run_id !== "" ? r.run_id : null);
+
+/**
+ * Run ids behind selected cells of the current slice and controls: every treatment row of a cell and,
+ * when the comparison arm is shown (baseline or difference), its matched comparison rows too.
+ */
+export function selectionRuns(
+  schema: ExperimentResultSchema,
+  view: ExperimentView,
+  rows: Row[],
+  state: Pick<ViewState, "controls" | "mode" | "compare">,
+  selection: ReadonlySet<string>,
+): SelectionRuns {
+  const grid = activeGrid(schema, state.controls);
+  const xd = dimById(schema, view.x);
+  const yd = dimById(schema, view.y);
+  if (!xd || !yd || selection.size === 0) return { cells: 0, withoutRun: 0, runIds: [] };
+  const sliced = sliceRows(schema, view, rows, state.controls, treatmentArms(schema));
+  const compareArm = schema.arms && state.mode !== "treatment" ? (state.compare ?? schema.arms.baseline) : null;
+  const byMatch = new Map<string, Row[]>();
+  if (compareArm !== null) {
+    for (const r of rows) {
+      if (r.arm !== compareArm) continue;
+      const k = matchKey(schema, r);
+      const list = byMatch.get(k);
+      if (list) list.push(r);
+      else byMatch.set(k, [r]);
+    }
+  }
+  const perCell = new Map<string, Set<string>>();
+  for (const r of sliced) {
+    const x = r[dimColumn(xd, grid)];
+    const y = r[dimColumn(yd, grid)];
+    if (typeof x !== "number" || typeof y !== "number") continue;
+    const key = cellKey(x, y);
+    if (!selection.has(key)) continue;
+    let ids = perCell.get(key);
+    if (!ids) perCell.set(key, (ids = new Set()));
+    const own = runIdOf(r);
+    if (own) ids.add(own);
+    if (compareArm !== null) {
+      for (const b of byMatch.get(matchKey(schema, r)) ?? []) {
+        const id = runIdOf(b);
+        if (id) ids.add(id);
+      }
+    }
+  }
+  const all = new Set<string>();
+  let withoutRun = 0;
+  for (const ids of perCell.values()) {
+    if (ids.size === 0) withoutRun += 1;
+    for (const id of ids) all.add(id);
+  }
+  return { cells: perCell.size, withoutRun, runIds: [...all].sort() };
+}
+
+/** GB (10^9 bytes) with two decimals. */
+export function formatGb(bytes: number): string {
+  return `${(bytes / 1e9).toFixed(2)} GB`;
+}

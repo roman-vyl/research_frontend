@@ -57,7 +57,7 @@ export function CellDetails({ schema, row, allRows, state, provenance, onOpenRun
       {runId ? (
         <button type="button" className="sx-fbtn sx-open" onClick={() => onOpenRun(runId)}>Open run</button>
       ) : (
-        <p className="sx-note">Engine run not available for this point; its metrics are shown above.</p>
+        <p className="sx-note">No full run: Engine run not available for this point; its metrics are shown above.</p>
       )}
     </aside>
   );

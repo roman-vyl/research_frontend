@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   fetchExperimentManifest,
@@ -29,6 +29,8 @@ const message = (e: unknown): string => (e instanceof Error ? e.message : "Reque
  */
 export function useExperimentData(experimentId: string | null, outerValue: number | null): ExperimentData & {
   outerId: string | null;
+  /** Drops the cached slices and requests the current slice again (after the table changed). */
+  reload: () => void;
 } {
   const [registry, setRegistry] = useState<ExperimentRegistryEntry[] | null>(null);
   const [manifest, setManifest] = useState<ExperimentManifest | null>(null);
@@ -37,6 +39,11 @@ export function useExperimentData(experimentId: string | null, outerValue: numbe
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cache = useRef(new Map<string, Slice>());
+  const [reloadToken, setReloadToken] = useState(0);
+  const reload = useCallback(() => {
+    cache.current.clear();
+    setReloadToken((t) => t + 1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -110,7 +117,7 @@ export function useExperimentData(experimentId: string | null, outerValue: numbe
         setLoading(false);
       });
     return () => ctl.abort();
-  }, [experimentId, outerId, outerValue]);
+  }, [experimentId, outerId, outerValue, reloadToken]);
 
   return {
     registry,
@@ -120,5 +127,6 @@ export function useExperimentData(experimentId: string | null, outerValue: numbe
     slice,
     loading,
     error,
+    reload,
   };
 }

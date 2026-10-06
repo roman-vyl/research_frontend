@@ -17,6 +17,8 @@ import {
   activeConditions,
   addNetPnl,
   armLabel,
+  buildMatrix,
+  cellKey,
   controlOptions,
   controlReadout,
   convertGrid,
@@ -28,6 +30,7 @@ import {
   makeIndexer,
   makePasses,
   reconcileControls,
+  selectionRuns,
   sliceRows,
   treatmentArms,
   withNetPnl,
@@ -37,6 +40,9 @@ import {
   type ViewState,
 } from "@/features/surface/model";
 import { useExperimentData } from "@/features/surface/useExperimentData";
+import { useExperimentStorage } from "@/features/surface/useExperimentStorage";
+import { DeleteRunsDialog, SelectionBar } from "@/features/surface/RunDeletion";
+import { StorageBlock } from "@/features/surface/StorageBlock";
 
 type StoredSurface = {
   experimentId: string | null;
@@ -101,6 +107,10 @@ export function SurfaceView() {
   const schema = useMemo(() => (manifest ? withNetPnl(manifest.result_schema, equity) : null), [manifest, equity]);
   const [state, setState] = useState<ViewState | null>(null);
   const [selected, setSelected] = useState<Row | null>(null);
+  const { storage, drop: dropStorage } = useExperimentStorage(data.registry, experimentId);
+  // Cells picked for "Delete runs": only cells of the visible slice and controls (keys from `cellKey`).
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  const [deleting, setDeleting] = useState<string[] | null>(null);
 
   useEffect(() => {
     const restore = restoreRef.current;
@@ -189,6 +199,53 @@ export function SurfaceView() {
     const cmp = schema.arms ? `, vs ${armLabel(state.compare ?? schema.arms.baseline)}` : "";
     return `${pass} / ${sliced.length} cells pass (${active.length} condition${active.length > 1 ? "s" : ""}${cmp})`;
   }, [schema, view, state, rows]);
+
+  // Any change of what is visible clears the picked cells.
+  const visibleKey = JSON.stringify([experimentId, outerValue, state?.controls ?? null, state?.mode ?? null, state?.compare ?? null]);
+  useEffect(() => setPicked(new Set()), [visibleKey]);
+
+  const passSplit = useMemo(() => {
+    const out = { passing: [] as string[], notPassing: [] as string[] };
+    if (!schema || !view || !state) return out;
+    const sliced = sliceRows(schema, view, rows, state.controls, treatmentArms(schema));
+    const matrix = buildMatrix(schema, view, sliced, state.controls);
+    const filtersOn = activeConditions(state.filters).length > 0;
+    const pass = makePasses(schema, sliced, state.filters, makeIndexer(schema, rows, state.compare ?? schema.arms?.baseline ?? null));
+    matrix.ys.forEach((y, yi) =>
+      matrix.xs.forEach((x, xi) => {
+        const r = matrix.cells[yi][xi];
+        if (!r) return;
+        (!filtersOn || pass(r) ? out.passing : out.notPassing).push(cellKey(x, y));
+      }),
+    );
+    return out;
+  }, [schema, view, state, rows]);
+
+  const selection = useMemo(
+    () => (schema && view && state ? selectionRuns(schema, view, rows, state, picked) : { cells: 0, withoutRun: 0, runIds: [] }),
+    [schema, view, state, rows, picked],
+  );
+
+  const pick = (keys: string[], how: "toggle" | "add") =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      for (const k of keys) {
+        if (how === "toggle" && next.has(k)) next.delete(k);
+        else next.add(k);
+      }
+      return next;
+    });
+
+  const afterDeletion = () => {
+    if (experimentId === null) return;
+    setPicked(new Set());
+    dropStorage(experimentId);
+    // Reload the slice and keep the point shown in details (its run_id may now be empty).
+    const x = schema && view && selected ? dimValue(schema, selected, view.x, null) : null;
+    const y = schema && view && selected ? dimValue(schema, selected, view.y, null) : null;
+    restoreRef.current = { experimentId, outerValue, selected: x !== null && y !== null ? { x, y } : null };
+    data.reload();
+  };
 
   const update = (patch: Partial<ViewState>) => {
     setState((s) => (s ? { ...s, ...patch } : s));
@@ -285,6 +342,7 @@ export function SurfaceView() {
                 <button type="button" key={x.experiment_id} className="sx-card sx-panel" onClick={() => setExperimentId(x.experiment_id)}>
                   <span className="sx-eyebrow">{x.ticker} · {x.anchor}</span>
                   <span className="sx-card-title">{x.title}</span>
+                  <StorageBlock entry={storage[x.experiment_id]} />
                 </button>
               ))}
               {data.registry !== null && data.registry.length === 0 && <p className="sx-note">No experiments are registered.</p>}
@@ -296,6 +354,7 @@ export function SurfaceView() {
               <button type="button" className="sx-fbtn" onClick={() => setExperimentId(null)}>← All experiments</button>
             </div>
             <SurfaceHeader entry={entry} manifest={manifest} />
+            <StorageBlock entry={storage[experimentId]} />
           </>
         )}
         {data.error && <p role="alert" className="sx-error">{data.error}</p>}
@@ -320,6 +379,13 @@ export function SurfaceView() {
               onChange={(filters) => update({ filters })}
             />
             <SurfaceSliders schema={schema} view={view} state={state} options={options} outer={outer} onControl={setControl} onToggle={toggleOptional} hints={optionalHints} />
+            <SelectionBar
+              selection={selection}
+              onSelectPassing={() => setPicked(new Set(passSplit.passing))}
+              onSelectNotPassing={() => setPicked(new Set(passSplit.notPassing))}
+              onClear={() => setPicked(new Set())}
+              onDelete={() => setDeleting(selection.runIds)}
+            />
             <HeatStage
               schema={schema}
               view={view}
@@ -330,6 +396,8 @@ export function SurfaceView() {
               filmstripOptions={cellsFilmstrip}
               onSelect={setSelected}
               onPickFrame={(v) => view.filmstrip && setControl(view.filmstrip, v)}
+              picked={picked}
+              onPick={pick}
             />
             <EquityPanel
               schema={schema}
@@ -351,6 +419,14 @@ export function SurfaceView() {
                   setSelectedRunId(runId);
                   setActiveTab("chart");
                 }}
+              />
+            )}
+            {deleting && experimentId !== null && (
+              <DeleteRunsDialog
+                experimentId={experimentId}
+                runIds={deleting}
+                onClose={() => setDeleting(null)}
+                onDeleted={afterDeletion}
               />
             )}
             <footer>

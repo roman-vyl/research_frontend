@@ -90,3 +90,39 @@ export type ExperimentFilters = Record<string, string | number>;
 export function metricId(metric: ExperimentMetric): string {
   return metric.id ?? metric.column;
 }
+
+/** Dry run of a run deletion (`POST .../runs/delete-plan`); nothing is changed. */
+export type RunDeletionPlan = {
+  run_count: number;
+  file_count: number;
+  bytes: number;
+  already_absent: number;
+  skipped: { run_id: string; reason: string }[];
+  plan_token: string;
+};
+
+/** Result of `POST .../runs/delete`. */
+export type RunDeletionResult = {
+  deleted: number;
+  already_absent: number;
+  cleared_rows: number;
+  file_count: number;
+  bytes: number;
+  skipped: { run_id: string; reason: string }[];
+  backup: string;
+};
+
+/** Storage of one Experiment (`GET .../storage`): counts from the table, size from disk (cached). */
+export type ExperimentStorage = {
+  experiment_id: string;
+  rows: number;
+  engine_runs: number;
+  distinct_run_ids: number;
+  size: {
+    bytes: number;
+    run_bytes: number;
+    experiment_folder_bytes: number;
+    missing_runs: number;
+    computed_at: string;
+  } | null;
+};

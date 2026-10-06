@@ -26,6 +26,9 @@ import type {
   ExperimentManifest,
   ExperimentRegistry,
   ExperimentResults,
+  ExperimentStorage,
+  RunDeletionPlan,
+  RunDeletionResult,
 } from "@/api/experiments";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
@@ -376,5 +379,28 @@ export async function fetchExperimentResults(params: {
   return requestJson<ExperimentResults>(
     `/api/research/experiments/${encodeURIComponent(params.experimentId)}/results${query ? `?${query}` : ""}`,
     { signal: params.signal },
+  );
+}
+
+const runsPath = (experimentId: string, action: string): string =>
+  `/api/research/experiments/${encodeURIComponent(experimentId)}/runs/${action}`;
+
+/** Dry run: how many runs, files and bytes a deletion would remove. Changes nothing. */
+export async function planRunDeletion(experimentId: string, runIds: string[]): Promise<RunDeletionPlan> {
+  return postJson<RunDeletionPlan>(runsPath(experimentId, "delete-plan"), { run_ids: runIds });
+}
+
+/** Irreversible: deletes the planned runs. A changed table or selection is `ApiError` 409 (`plan_stale`). */
+export async function deleteRuns(experimentId: string, runIds: string[], planToken: string): Promise<RunDeletionResult> {
+  return postJson<RunDeletionResult>(runsPath(experimentId, "delete"), { run_ids: runIds, plan_token: planToken });
+}
+
+/** Counts and size of one Experiment; `cached` never computes the size, `compute` does on a cache miss. */
+export async function fetchExperimentStorage(
+  experimentId: string,
+  size: "cached" | "compute",
+): Promise<ExperimentStorage> {
+  return requestJson<ExperimentStorage>(
+    `/api/research/experiments/${encodeURIComponent(experimentId)}/storage?size=${size}`,
   );
 }
