@@ -227,8 +227,25 @@ describe("Candidates tab", () => {
     const row = await rowOf(/fixed SL/);
     expect(within(row).getByText("2,500")).toBeTruthy(); // 0.25 × 10000
     expect(within(row).getByText("25.0%")).toBeTruthy();
-    expect(row.textContent).toContain("EMA500 · Initial SL 5 ATR · TP / SL 5 R · fee 0.001 per side");
+    expect(row.textContent).toContain("EMA500 · Initial SL 5 ATR · TP / SL 5 R · fee 0.1% per side");
     expect(fetchRunSummaries).not.toHaveBeenCalled();
+  });
+
+  it("metric labels come from the Experiment manifest", async () => {
+    shortlist = [candidate("cand_1", R_COORDS, { current: CURRENT({ metrics: { return_pct: 0.25, realised_trade_count: 12 } }) })];
+    fetchExperimentManifest.mockImplementation(async () => ({
+      ...RATIO_MANIFEST,
+      result_schema: {
+        ...RATIO_MANIFEST.result_schema,
+        metrics: [...RATIO_MANIFEST.result_schema.metrics.filter((m) => m.column !== "realised_trade_count"),
+          { column: "realised_trade_count", label: "Closed trades", format: "integer" }],
+      },
+    }));
+    render(<CandidatesPanel />);
+    const table = await screen.findByRole("table", { name: "Candidates" });
+    await waitFor(() =>
+      expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toContain("Closed trades"),
+    );
   });
 
   it("a table's own net_pnl wins over the derived one", async () => {

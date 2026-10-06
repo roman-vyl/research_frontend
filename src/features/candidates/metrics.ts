@@ -1,6 +1,6 @@
 /**
- * Candidate metrics as the tab shows them. A record carries metric ids only, so labels and formats of the
- * usual ones are listed here; other ids are shown as plain numbers.
+ * Candidate metrics as the tab shows them. A record carries metric ids only; labels and formats come from
+ * the Experiment manifests (`metricDefs`), with a fallback for Net PnL and ids no manifest declares.
  */
 import type { ExperimentMetric, ExperimentResultSchema } from "@/api/experiments";
 import type { Candidate, CandidateMeaning } from "@/api/candidates";
@@ -13,13 +13,29 @@ const KNOWN: Record<string, Omit<ExperimentMetric, "column">> = {
   max_drawdown_pct: { label: "Max DD", format: "fraction" },
   win_rate: { label: "Win rate", format: "fraction" },
   realised_trade_count: { label: "Trades", format: "integer" },
-  cum_r: { label: "Cum R", format: "number", unit: "R" },
+  cumulative_net_r: { label: "Cum. R", format: "number", unit: "R" },
 };
 const ORDER = Object.keys(KNOWN);
 
 export const MAX_DD = "max_drawdown_pct";
 
-export function metricInfo(id: string): ExperimentMetric {
+/** Metric definitions by id, taken from the manifests' `result_schema.metrics` (the first declaration wins). */
+export type MetricDefs = Record<string, ExperimentMetric>;
+
+export function metricDefs(schemas: ExperimentResultSchema[]): MetricDefs {
+  const out: MetricDefs = {};
+  for (const schema of schemas) {
+    for (const m of schema.metrics) {
+      const id = m.id ?? m.column;
+      if (!out[id]) out[id] = { ...m, column: id };
+    }
+  }
+  return out;
+}
+
+export function metricInfo(id: string, defs: MetricDefs = {}): ExperimentMetric {
+  const declared = defs[id];
+  if (declared) return declared;
   const known = KNOWN[id];
   if (known) return { column: id, ...known };
   const text = id.replace(/_/g, " ");
@@ -58,14 +74,14 @@ export function metricIds(all: Shown[]): string[] {
 }
 
 /** Stand-in schema so `FiltersPanel` and the Surface's condition rules apply to candidate metrics. */
-export function filterSchema(ids: string[]): ExperimentResultSchema {
+export function filterSchema(ids: string[], defs: MetricDefs = {}): ExperimentResultSchema {
   return {
     contract_version: "candidates",
     table: "candidates",
     run_id_column: "run_id",
     provenance: {},
     dimensions: [],
-    metrics: ids.map(metricInfo),
+    metrics: ids.map((id) => metricInfo(id, defs)),
     view: [],
   };
 }

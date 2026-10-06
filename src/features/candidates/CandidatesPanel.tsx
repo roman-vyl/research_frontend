@@ -1,13 +1,15 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 
-import { ApiError } from "@/api/client";
+import { ApiError, fetchExperimentManifest } from "@/api/client";
 import type { Candidate, CandidateMeaning } from "@/api/candidates";
+import type { ExperimentResultSchema } from "@/api/experiments";
 import "@/features/surface/surface.css";
 import { emitFocus } from "@/features/candidates/focus";
 import {
   depthConditions,
   depthRow,
   filterSchema,
+  metricDefs,
   metricIds,
   metricInfo,
   shownMetrics,
@@ -20,6 +22,33 @@ import { useWorkbenchReport, useWorkbenchShell } from "@/shared/context/Workbenc
 import { readSession, writeSession } from "@/shared/session/storage";
 
 const FILTERS_KEY = "candidates.filters";
+
+/** Result schemas of the candidates' Experiments, for metric labels and formats; a failed manifest is skipped. */
+function useResultSchemas(experimentIds: string[]): ExperimentResultSchema[] {
+  const [schemas, setSchemas] = useState<Record<string, ExperimentResultSchema>>({});
+  const key = [...new Set(experimentIds)].sort().join("\n");
+  useEffect(() => {
+    let alive = true;
+    const wanted = key ? key.split("\n") : [];
+    void Promise.all(
+      wanted.map((id) =>
+        fetchExperimentManifest(id).then(
+          (m) => [id, m.result_schema] as const,
+          () => null,
+        ),
+      ),
+    ).then((loaded) => {
+      if (!alive) return;
+      const next: Record<string, ExperimentResultSchema> = {};
+      for (const item of loaded) if (item && item[1]) next[item[0]] = item[1];
+      setSchemas(next);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [key]);
+  return useMemo(() => Object.values(schemas), [schemas]);
+}
 
 function loadFilters(): Condition[] {
   const raw = readSession<unknown>(FILTERS_KEY);
@@ -47,8 +76,10 @@ function meaningLine(c: Candidate): string {
     return coords.join(" · ");
   }
   const parts = [m.anchor, ...m.coords.filter((x) => x.value !== null).map((x) => `${x.label} ${x.value}${x.unit ? ` ${x.unit}` : ""}`)];
-  const fee = m.fixed_params.entry_fee_rate;
-  if (fee !== undefined && fee !== null) parts.push(`fee ${text(fee)} per side`);
+  const fee = m.fixed_params?.entry_fee_rate;
+  const rate = typeof fee === "number" || typeof fee === "string" ? Number(fee) : NaN;
+  if (Number.isFinite(rate)) parts.push(`fee ${Number((rate * 100).toPrecision(6))}% per side`);
+  else if (fee !== undefined && fee !== null) parts.push(`fee ${text(fee)} per side`);
   return parts.join(" · ");
 }
 
@@ -79,7 +110,7 @@ function Details({ c, meaning }: { c: Candidate; meaning: CandidateMeaning | nul
               <dd>{x.value === null ? "—" : `${x.value}${x.unit ? ` ${x.unit}` : ""}`}</dd>
             </div>
           ))}
-          {Object.entries(meaning.fixed_params).map(([k, v]) => (
+          {Object.entries(meaning.fixed_params ?? {}).map(([k, v]) => (
             <div key={k}><dt>{k}</dt><dd>{text(v)}</dd></div>
           ))}
         </dl>
@@ -117,9 +148,11 @@ export function CandidatesPanel() {
     void loadCandidates();
   }, []);
 
+  const schemas = useResultSchemas(candidates.map((c) => c.experiment_id));
+  const defs = useMemo(() => metricDefs(schemas), [schemas]);
   const shown = useMemo(() => candidates.map(shownMetrics), [candidates]);
   const ids = useMemo(() => metricIds(shown), [shown]);
-  const schema = useMemo(() => filterSchema(ids), [ids]);
+  const schema = useMemo(() => filterSchema(ids, defs), [ids, defs]);
 
   const visible = useMemo(() => {
     const rows = shown.map((s) => depthRow(s.metrics));
@@ -150,7 +183,7 @@ export function CandidatesPanel() {
   };
 
   const cell = (id: string, s: Shown, changed: boolean) => {
-    const m = metricInfo(id);
+    const m = metricInfo(id, defs);
     const v = s.metrics[id];
     const was = s.snapshot[id];
     return (
@@ -199,7 +232,7 @@ export function CandidatesPanel() {
                     <th>Meaning</th>
                     <th>State</th>
                     {ids.map((id) => {
-                      const m = metricInfo(id);
+                      const m = metricInfo(id, defs);
                       return <th key={id}>{m.label}{m.unit ? ` ${m.unit}` : ""}</th>;
                     })}
                     <th>Picked</th>

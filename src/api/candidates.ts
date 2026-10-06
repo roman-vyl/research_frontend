@@ -22,7 +22,7 @@ export type CandidateMeaning = {
     component_id?: string | null;
     component_param?: string | null;
   }[];
-  fixed_params: Record<string, unknown>;
+  fixed_params: Record<string, unknown> | null;
 };
 
 export type CandidateRowState = "same" | "changed" | "missing" | "ambiguous";
