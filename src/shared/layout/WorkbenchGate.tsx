@@ -3,7 +3,15 @@ import type { ReactNode } from "react";
 import { useWorkbenchShell } from "@/shared/context/WorkbenchContext";
 
 export function WorkbenchGate({ children }: { children: ReactNode }) {
-  const { reportLoadStatus, reportError, reloadReport } = useWorkbenchShell();
+  const { reportLoadStatus, reportError, reloadReport, selectedRunId } = useWorkbenchShell();
+
+  if (selectedRunId === null) {
+    return (
+      <div className="workbench-gate">
+        <p>Open a run from the Surface tab.</p>
+      </div>
+    );
+  }
 
   if (reportLoadStatus === "loading") {
     return (

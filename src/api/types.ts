@@ -113,6 +113,23 @@ export type SingleInstanceBacktestResult = {
   run_id: string;
   instance_id: string;
   strategy_evaluation: StrategyEvaluationResult;
+  /**
+   * Canonical execution facts. Older frontend fixtures may omit this field,
+   * so consumers must treat it as an optional projection.
+   */
+  execution_events?: ExecutionEvent[];
+};
+
+export type ExecutionEvent = {
+  event_id: string;
+  event_type: "entry_filled" | "position_reduced" | "exit_filled" | "position_left_open";
+  instance_id: string;
+  position_id: string;
+  side: "long" | "short";
+  bar_index: number;
+  time_ms: number;
+  fill_id: string | null;
+  metadata: JsonObject;
 };
 
 export type RunArtifactManifest = {
@@ -553,7 +570,7 @@ export type SignalTraceBundle = {
   short: SideSignalTrace;
 };
 
-export type WorkbenchTab = "chart" | "composer" | "reports";
+export type WorkbenchTab = "chart" | "surface" | "composer" | "reports" | "candidates";
 
 export function msToChartTime(openTimeMs: number): number {
   return Math.floor(openTimeMs / 1000);

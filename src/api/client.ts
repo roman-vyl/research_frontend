@@ -21,6 +21,16 @@ import {
   type StrategyConfigDraft,
   type ValidationResult,
 } from "@/api/types";
+import type {
+  ExperimentFilters,
+  ExperimentManifest,
+  ExperimentRegistry,
+  ExperimentResults,
+  ExperimentStorage,
+  RunDeletionPlan,
+  RunDeletionResult,
+} from "@/api/experiments";
+import type { Candidate, CandidateCoordsRequest, CandidateList } from "@/api/candidates";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
 
@@ -38,9 +48,15 @@ export class ApiError extends Error {
 
 async function readErrorDetail(res: Response): Promise<string> {
   try {
-    const body = (await res.json()) as { detail?: string | { msg?: string }[] };
+    const body = (await res.json()) as {
+      detail?: string | { msg?: string }[];
+      message?: string;
+    };
     if (typeof body.detail === "string") {
       return body.detail;
+    }
+    if (typeof body.message === "string") {
+      return body.message;
     }
     if (Array.isArray(body.detail)) {
       return body.detail.map((d) => d.msg ?? JSON.stringify(d)).join("; ");
@@ -334,4 +350,78 @@ export async function selectSavedConfig(
 
 export async function runBacktest(body: RunBacktestRequest): Promise<BacktestResult> {
   return dbgTimed("api.runBacktest", () => postJson<BacktestResult>("/api/research/backtests", body));
+}
+
+export async function fetchExperiments(): Promise<ExperimentRegistry> {
+  return requestJson<ExperimentRegistry>("/api/research/experiments");
+}
+
+export async function fetchExperimentManifest(experimentId: string): Promise<ExperimentManifest> {
+  return requestJson<ExperimentManifest>(
+    `/api/research/experiments/${encodeURIComponent(experimentId)}`,
+  );
+}
+
+/** Results are requested filtered (at least by one outer dimension): the full table is large. */
+export async function fetchExperimentResults(params: {
+  experimentId: string;
+  filters: ExperimentFilters;
+  columns?: string[];
+  signal?: AbortSignal;
+}): Promise<ExperimentResults> {
+  const qs = new URLSearchParams();
+  for (const [id, value] of Object.entries(params.filters)) {
+    qs.set(id, String(value));
+  }
+  if (params.columns && params.columns.length > 0) {
+    qs.set("columns", params.columns.join(","));
+  }
+  const query = qs.toString();
+  return requestJson<ExperimentResults>(
+    `/api/research/experiments/${encodeURIComponent(params.experimentId)}/results${query ? `?${query}` : ""}`,
+    { signal: params.signal },
+  );
+}
+
+const runsPath = (experimentId: string, action: string): string =>
+  `/api/research/experiments/${encodeURIComponent(experimentId)}/runs/${action}`;
+
+/** Dry run: how many runs, files and bytes a deletion would remove. Changes nothing. */
+export async function planRunDeletion(experimentId: string, runIds: string[]): Promise<RunDeletionPlan> {
+  return postJson<RunDeletionPlan>(runsPath(experimentId, "delete-plan"), { run_ids: runIds });
+}
+
+/** Irreversible: deletes the planned runs. A changed table or selection is `ApiError` 409 (`plan_stale`). */
+export async function deleteRuns(experimentId: string, runIds: string[], planToken: string): Promise<RunDeletionResult> {
+  return postJson<RunDeletionResult>(runsPath(experimentId, "delete"), { run_ids: runIds, plan_token: planToken });
+}
+
+/** Counts and size of one Experiment; `cached` never computes the size, `compute` does on a cache miss. */
+export async function fetchExperimentStorage(
+  experimentId: string,
+  size: "cached" | "compute",
+): Promise<ExperimentStorage> {
+  return requestJson<ExperimentStorage>(
+    `/api/research/experiments/${encodeURIComponent(experimentId)}/storage?size=${size}`,
+  );
+}
+
+/** The candidate shortlist with the current state of each record's row. */
+export async function listCandidates(): Promise<CandidateList> {
+  return requestJson<CandidateList>("/api/research/candidates");
+}
+
+/** Stars a point by its coordinates only: the service builds the `candidate_id` (404 / 409 / 400 are `ApiError`). */
+export async function starCandidate(experimentId: string, coords: CandidateCoordsRequest): Promise<Candidate> {
+  return requestJson<Candidate>("/api/research/candidates", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ experiment_id: experimentId, coords }),
+  });
+}
+
+export async function unstarCandidate(candidateId: string): Promise<{ removed: boolean }> {
+  return requestJson<{ removed: boolean }>(`/api/research/candidates/${encodeURIComponent(candidateId)}`, {
+    method: "DELETE",
+  });
 }

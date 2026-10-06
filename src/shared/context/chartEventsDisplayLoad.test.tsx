@@ -21,6 +21,7 @@ import {
   useWorkbenchChart,
   useWorkbenchShell,
 } from "@/shared/context/WorkbenchContext";
+import { SelectRunOnMount } from "@/test/selectRun";
 
 const fetchRunDetail = vi.fn<typeof import("@/api/client").fetchRunDetail>();
 const fetchRunTrades = vi.fn<typeof import("@/api/client").fetchRunTrades>();
@@ -184,7 +185,12 @@ function ShellSliceCapture() {
 }
 
 function Host({ children }: { children?: ReactNode }) {
-  return <WorkbenchProvider initialActiveTab="chart">{children}</WorkbenchProvider>;
+  return (
+    <WorkbenchProvider initialActiveTab="chart">
+      <SelectRunOnMount runId={RUNS[0].run_id} />
+      {children}
+    </WorkbenchProvider>
+  );
 }
 
 describe("lazy dense lanes (5B)", () => {

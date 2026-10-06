@@ -3,8 +3,10 @@ import type { WorkbenchTab } from "@/api/types";
 
 const TABS: { id: WorkbenchTab; label: string }[] = [
   { id: "chart", label: "Chart" },
-  { id: "composer", label: "Strategy Composer" },
+  { id: "surface", label: "Surface" },
+  { id: "candidates", label: "Candidates" },
   { id: "reports", label: "Reports" },
+  { id: "composer", label: "Strategy Composer" },
 ];
 
 export function TabNav() {

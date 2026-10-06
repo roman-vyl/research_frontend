@@ -8,6 +8,8 @@ import {
 
   LineSeries,
 
+  LineType,
+
   type IChartApi,
 
   type IPriceLine,
@@ -65,6 +67,10 @@ import {
   buildManagedPolicyEventsForView,
   hasManagedPolicyEvents,
 } from "@/features/chart/tradeManagementChartEvents";
+import {
+  buildTradeManagementLevelSegments,
+  groupTradeManagementLevelCurves,
+} from "@/features/chart/tradeManagementLevelCurves";
 
 import { readChartViewportDebug, shouldSuppressPanShiftRequest } from "@/features/chart/chartViewport";
 import {
@@ -127,6 +133,8 @@ export function ChartPanel() {
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
 
   const tradePriceLinesRef = useRef<IPriceLine[]>([]);
+
+  const tradeManagementLevelSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
 
   const auxEmaSeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
 
@@ -579,6 +587,8 @@ export function ChartPanel() {
       // chart.remove() destroys all series; do not call removeSeries afterward.
       auxEmaSeriesRef.current.clear();
 
+      tradeManagementLevelSeriesRef.current = [];
+
       chart.remove();
 
       chartRef.current = null;
@@ -863,6 +873,56 @@ export function ChartPanel() {
 
   }, [selectedTrade]);
 
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    for (const lineSeries of tradeManagementLevelSeriesRef.current) {
+      chart.removeSeries(lineSeries);
+    }
+    tradeManagementLevelSeriesRef.current = [];
+
+    if (!selectedTrade || !runDetail) return;
+
+    const displayNumber = tradeDisplayNumber(runTrades, selectedTrade.trade_id);
+    const curves = groupTradeManagementLevelCurves(
+      buildTradeManagementLevelSegments({
+        trade: selectedTrade,
+        executionEvents: runDetail.result.execution_events,
+        managedPolicyEvents,
+        candles: chartCandles,
+        chartTimeframe,
+      }),
+    );
+
+    tradeManagementLevelSeriesRef.current = curves.map((curve) => {
+      const isStop = curve.kind === "stop";
+      const lineSeries = chart.addSeries(LineSeries, {
+        color: isStop ? "#f87171" : "#60a5fa",
+        lineWidth: 2,
+        lineStyle: isStop ? 2 : 3,
+        lineType: LineType.WithSteps,
+        title: `${isStop ? "Stop" : "Take"} #${displayNumber ?? selectedTrade.trade_id}`,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+      lineSeries.setData(
+        curve.points.map((point) => ({
+          time: point.timeSec as Time,
+          value: point.price,
+        })),
+      );
+      return lineSeries;
+    });
+  }, [
+    chartCandles,
+    chartTimeframe,
+    managedPolicyEvents,
+    runDetail,
+    runTrades,
+    selectedTrade,
+  ]);
+
 
 
   if (!runDetail) {
@@ -1061,5 +1121,3 @@ export function ChartPanel() {
   );
 
 }
-
-

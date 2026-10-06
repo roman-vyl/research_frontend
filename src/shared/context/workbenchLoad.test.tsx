@@ -28,6 +28,7 @@ import {
   useWorkbenchChart,
 } from "@/shared/context/WorkbenchContext";
 import { useWorkbenchRenderViewport } from "@/shared/context/WorkbenchRenderViewportContext";
+import { SelectRunOnMount } from "@/test/selectRun";
 
 const fetchRunDetail = vi.fn<typeof import("@/api/client").fetchRunDetail>();
 const fetchRunTrades = vi.fn<typeof import("@/api/client").fetchRunTrades>();
@@ -303,12 +304,20 @@ function ChartSliceCapture() {
 
 function Host({
   children,
-  initialActiveTab,
+  initialActiveTab = "chart",
+  selectRunId = RUNS[0].run_id,
 }: {
   children?: ReactNode;
   initialActiveTab?: WorkbenchTab;
+  /** The workbench starts without a selected run; pass `null` to keep it that way. */
+  selectRunId?: string | null;
 }) {
-  return <WorkbenchProvider initialActiveTab={initialActiveTab}>{children}</WorkbenchProvider>;
+  return (
+    <WorkbenchProvider initialActiveTab={initialActiveTab}>
+      {selectRunId !== null && <SelectRunOnMount runId={selectRunId} />}
+      {children}
+    </WorkbenchProvider>
+  );
 }
 
 describe("Workbench report-load invariant", () => {
@@ -392,14 +401,27 @@ describe("Workbench report-load invariant", () => {
     expect(chartSliceRef?.managedPolicyEvents).toEqual([]);
   });
 
-  it("selects the first entry from GET /runs as the default run (backend contract: newest created_at_utc first)", async () => {
+  it("starts without a selected run and does not load the run list or any run", async () => {
+    render(
+      <Host selectRunId={null}>
+        <WorkbenchCapture />
+      </Host>,
+    );
+
+    await Promise.resolve();
+    expect(workbenchRef?.selectedRunId).toBeNull();
+    expect(fetchRunSummaries).not.toHaveBeenCalled();
+    expect(fetchRunDetail).not.toHaveBeenCalled();
+  });
+
+  it("loads exactly the run that is selected explicitly", async () => {
     fetchRunSummaries.mockResolvedValue([
       makeRunSummary("run-newest", "2026-01-03T00:00:00Z"),
       makeRunSummary("run-oldest", "2026-01-01T00:00:00Z"),
     ]);
 
     render(
-      <Host>
+      <Host selectRunId="run-oldest">
         <WorkbenchCapture />
       </Host>,
     );
@@ -407,7 +429,8 @@ describe("Workbench report-load invariant", () => {
     await waitFor(() => {
       expect(fetchRunDetail).toHaveBeenCalledTimes(1);
     });
-    expect(fetchRunDetail).toHaveBeenCalledWith("run-newest");
+    expect(fetchRunDetail).toHaveBeenCalledWith("run-oldest");
+    expect(fetchRunSummaries).not.toHaveBeenCalled();
   });
 
   it("does not refetch report when trade is selected", async () => {

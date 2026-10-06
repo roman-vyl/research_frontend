@@ -22,6 +22,7 @@ import {
   useWorkbench,
   useWorkbenchChart,
 } from "@/shared/context/WorkbenchContext";
+import { SelectRunOnMount } from "@/test/selectRun";
 
 const fetchRunDetail = vi.fn<typeof import("@/api/client").fetchRunDetail>();
 const fetchRunTrades = vi.fn<typeof import("@/api/client").fetchRunTrades>();
@@ -175,7 +176,12 @@ function ChartSliceCapture() {
 }
 
 function Host({ children }: { children?: ReactNode }) {
-  return <WorkbenchProvider initialActiveTab="chart">{children}</WorkbenchProvider>;
+  return (
+    <WorkbenchProvider initialActiveTab="chart">
+      <SelectRunOnMount runId={RUNS[0].run_id} />
+      {children}
+    </WorkbenchProvider>
+  );
 }
 
 describe("chart-events distant trade display apply", () => {
