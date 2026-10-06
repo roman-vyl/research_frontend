@@ -223,11 +223,12 @@ describe("Candidates tab", () => {
     render(<CandidatesPanel />);
     const table = await screen.findByRole("table", { name: "Candidates" });
     const heads = within(table).getAllByRole("columnheader").map((h) => h.textContent);
-    expect(heads.slice(4, 6)).toEqual(["Net PnL USDT", "Return"]);
+    expect(heads.slice(2, 4)).toEqual(["Net PnL USDT", "Return"]);
     const row = await rowOf(/fixed SL/);
     expect(within(row).getByText("2,500")).toBeTruthy(); // 0.25 × 10000
     expect(within(row).getByText("25.0%")).toBeTruthy();
-    expect(row.textContent).toContain("EMA500 · Initial SL 5 ATR · TP / SL 5 R · fee 0.1% per side");
+    const chips = [...row.querySelectorAll(".sx-chip")].map((el) => el.textContent);
+    expect(chips).toEqual(["EMA500", "Initial SL 5 ATR", "TP / SL 5 R", "fee 0.1% per side"]);
     expect(fetchRunSummaries).not.toHaveBeenCalled();
   });
 

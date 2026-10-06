@@ -68,20 +68,19 @@ const errorText = (e: unknown): string =>
 
 const text = (v: unknown): string => (typeof v === "string" ? v : JSON.stringify(v));
 
-/** `<anchor> · <label> <value> <unit> · … · fee <entry fee> per side`; the stored coordinates when the row is gone. */
-function meaningLine(c: Candidate): string {
+/** `<anchor>`, `<label> <value> <unit>`, …, `fee <entry fee> per side`; the stored coordinates when the row is gone. */
+function meaningParts(c: Candidate): string[] {
   const m = c.current?.meaning;
-  if (!m) {
-    const coords = Object.entries(c.coords).filter(([, v]) => v !== null).map(([k, v]) => `${k} ${v}`);
-    return coords.join(" · ");
-  }
+  if (!m) return Object.entries(c.coords).filter(([, v]) => v !== null).map(([k, v]) => `${k} ${v}`);
   const parts = [m.anchor, ...m.coords.filter((x) => x.value !== null).map((x) => `${x.label} ${x.value}${x.unit ? ` ${x.unit}` : ""}`)];
   const fee = m.fixed_params?.entry_fee_rate;
   const rate = typeof fee === "number" || typeof fee === "string" ? Number(fee) : NaN;
   if (Number.isFinite(rate)) parts.push(`fee ${Number((rate * 100).toPrecision(6))}% per side`);
   else if (fee !== undefined && fee !== null) parts.push(`fee ${text(fee)} per side`);
-  return parts.join(" · ");
+  return parts.filter(Boolean);
 }
+
+const meaningLine = (c: Candidate): string => meaningParts(c).join(" · ");
 
 function originBadge(c: Candidate): string | null {
   const runId = c.current ? c.current.run_id : c.snapshot.run_id;
@@ -97,39 +96,61 @@ const STATE_HINT: Record<string, string> = {
   ambiguous: "several rows match this point",
 };
 
+/** Metrics whose sign is the verdict: a loss is drawn in the negative ink. */
+const SIGNED = new Set(["net_pnl", "return_pct"]);
+
+const valueText = (v: number | string | null, unit: string | null | undefined): string =>
+  v === null ? "—" : `${v}${unit ? ` ${unit}` : ""}`;
+
 function Details({ c, meaning }: { c: Candidate; meaning: CandidateMeaning | null }) {
   const spec = c.strategy_spec_snapshot;
+  const fixed = Object.entries(meaning?.fixed_params ?? {});
   return (
     <div className="sx-cand-details">
-      <h3>Meaning</h3>
-      {meaning ? (
-        <dl>
-          {meaning.coords.map((x) => (
-            <div key={x.id}>
-              <dt>{x.label}</dt>
-              <dd>{x.value === null ? "—" : `${x.value}${x.unit ? ` ${x.unit}` : ""}`}</dd>
-            </div>
-          ))}
-          {Object.entries(meaning.fixed_params ?? {}).map(([k, v]) => (
-            <div key={k}><dt>{k}</dt><dd>{text(v)}</dd></div>
-          ))}
-        </dl>
-      ) : (
-        <p className="sx-note">The row is not in the table now; stored coordinates: {meaningLine(c) || "—"}.</p>
+      <section className="sx-cd-block">
+        <h3 className="sx-cd-h">Point</h3>
+        {meaning ? (
+          <dl className="sx-cd-tiles">
+            {meaning.coords.map((x) => (
+              <div key={x.id} className="sx-cd-tile">
+                <dt>{x.label}</dt>
+                <dd className="sx-num">{valueText(x.value, x.unit)}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          <p className="sx-note">The row is not in the table now; stored coordinates: {meaningLine(c) || "—"}.</p>
+        )}
+      </section>
+      {fixed.length > 0 && (
+        <section className="sx-cd-block">
+          <h3 className="sx-cd-h">Fixed parameters</h3>
+          <dl className="sx-cd-kv">
+            {fixed.map(([k, v]) => (
+              <div key={k}>
+                <dt>{k}</dt>
+                <dd className="sx-num">{text(v)}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
       )}
       {spec && (
-        <>
-          <h3>Strategy spec of the picked run</h3>
+        <section className="sx-cd-block sx-cd-spec">
+          <h3 className="sx-cd-h">Strategy spec of the picked run</h3>
           <p className="sx-note">
             Historical: the spec of run {spec.run_id} as it was when this point was starred. It is not the current spec of
             this point and not a deployable specification.
           </p>
           {spec.source === "run_request" ? (
-            <pre aria-label="Historical strategy spec">{JSON.stringify(spec.spec, null, 2)}</pre>
+            <details className="sx-cd-pre">
+              <summary>Show JSON</summary>
+              <pre aria-label="Historical strategy spec">{JSON.stringify(spec.spec, null, 2)}</pre>
+            </details>
           ) : (
             <p className="sx-note">No spec was stored: {spec.reason}</p>
           )}
-        </>
+        </section>
       )}
     </div>
   );
@@ -189,7 +210,7 @@ export function CandidatesPanel() {
     return (
       <td
         key={id}
-        className={`sx-num${s.stale ? " sx-stale" : ""}`}
+        className={`sx-num${s.stale ? " sx-stale" : ""}${SIGNED.has(id) && typeof v === "number" && v < 0 ? " sx-loss" : ""}`}
         title={s.stale ? "row not found: value at the time of the star" : changed ? `at the time of the star: ${formatMetric(m, typeof was === "number" ? was : null)}` : undefined}
       >
         {formatMetric(m, typeof v === "number" ? v : null)}
@@ -199,7 +220,7 @@ export function CandidatesPanel() {
 
   return (
     <section className="sx" aria-label="Candidates">
-      <div className="sx-wrap">
+      <div className="sx-wrap sx-wrap-wide">
         <header>
           <div className="sx-eyebrow">Research · Shortlist</div>
           <h1>Candidates</h1>
@@ -227,16 +248,14 @@ export function CandidatesPanel() {
               <table className="sx-cand-table" aria-label="Candidates">
                 <thead>
                   <tr>
-                    <th aria-label="star" />
-                    <th>Experiment</th>
-                    <th>Meaning</th>
-                    <th>State</th>
+                    <th className="sx-cand-starcol" aria-label="star" />
+                    <th className="sx-cand-point">Point</th>
                     {ids.map((id) => {
                       const m = metricInfo(id, defs);
-                      return <th key={id}>{m.label}{m.unit ? ` ${m.unit}` : ""}</th>;
+                      return <th key={id} className="sx-num-h">{m.label}{m.unit ? ` ${m.unit}` : ""}</th>;
                     })}
                     <th>Picked</th>
-                    <th>Actions</th>
+                    <th className="sx-cand-actcol">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -246,57 +265,73 @@ export function CandidatesPanel() {
                     const origin = originBadge(c);
                     const hint = STATE_HINT[rowState];
                     const expanded = open.has(c.candidate_id);
+                    const [day, time] = c.picked_at.replace("T", " ").slice(0, 16).split(" ");
                     return (
                       <Fragment key={c.candidate_id}>
-                        <tr>
-                          <td>
-                            <button type="button" className="sx-fbtn sx-starbtn sx-starred" aria-label="Unstar candidate" onClick={() => unstar(c)}>★</button>
+                        <tr className={expanded ? "sx-cand-open" : undefined}>
+                          <td className="sx-cand-starcol">
+                            <button type="button" className="sx-cand-star" aria-label="Unstar candidate" title="Remove from candidates" onClick={() => unstar(c)}>★</button>
                           </td>
-                          <td>{c.current?.meaning?.title ?? c.experiment_id}</td>
-                          <td>{meaningLine(c)}</td>
-                          <td>
-                            {origin && <span className="sx-badge">{origin}</span>}
-                            {rowState !== "same" && <span className="sx-badge sx-badge-warn">{rowState}</span>}
+                          <td className="sx-cand-point">
+                            <div className="sx-cand-title">{c.current?.meaning?.title ?? c.experiment_id}</div>
+                            <div className="sx-cand-chips" title={meaningLine(c)}>
+                              {meaningParts(c).map((p, i) => <span key={i} className="sx-chip">{p}</span>)}
+                            </div>
+                            {(origin || rowState !== "same") && (
+                              <div className="sx-cand-badges">
+                                {origin && <span className="sx-badge">{origin}</span>}
+                                {rowState !== "same" && <span className="sx-badge sx-badge-warn">{rowState}</span>}
+                              </div>
+                            )}
                           </td>
                           {ids.map((id) => cell(id, s, rowState === "changed"))}
-                          <td>{c.picked_at.replace("T", " ").slice(0, 16)}</td>
-                          <td>
-                            <button type="button" className="sx-fbtn" onClick={() => toggle(c.candidate_id)} aria-expanded={expanded}>
-                              {expanded ? "Hide details" : "Details"}
-                            </button>{" "}
-                            <button
-                              type="button"
-                              className="sx-fbtn"
-                              disabled={!runId}
-                              title={runId ? undefined : "no full run"}
-                              onClick={() => {
-                                if (!runId) return;
-                                setSelectedRunId(runId);
-                                setActiveTab("chart");
-                              }}
-                            >
-                              Chart
-                            </button>{" "}
-                            <button
-                              type="button"
-                              className="sx-fbtn"
-                              disabled={hint !== undefined}
-                              title={hint}
-                              onClick={() => {
-                                if (hint !== undefined) return;
-                                emitFocus({ experimentId: c.experiment_id, coords: c.coords });
-                                setActiveTab("surface");
-                              }}
-                            >
-                              On Surface
-                            </button>
-                            {!runId && <div className="sx-note">no full run</div>}
+                          <td className="sx-num sx-cand-picked">
+                            <span>{day}</span>
+                            <span className="sx-cand-time">{time}</span>
+                          </td>
+                          <td className="sx-cand-actcol">
+                            <div className="sx-cand-actions">
+                              <button
+                                type="button"
+                                className="sx-act sx-act-toggle"
+                                onClick={() => toggle(c.candidate_id)}
+                                aria-expanded={expanded}
+                              >
+                                Details<span aria-hidden="true" className="sx-chev">›</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="sx-act"
+                                disabled={!runId}
+                                title={runId ? "Open the run on the Chart" : "no full run"}
+                                onClick={() => {
+                                  if (!runId) return;
+                                  setSelectedRunId(runId);
+                                  setActiveTab("chart");
+                                }}
+                              >
+                                Chart
+                              </button>
+                              <button
+                                type="button"
+                                className="sx-act"
+                                disabled={hint !== undefined}
+                                title={hint ?? "Show this point on the Surface"}
+                                onClick={() => {
+                                  if (hint !== undefined) return;
+                                  emitFocus({ experimentId: c.experiment_id, coords: c.coords });
+                                  setActiveTab("surface");
+                                }}
+                              >
+                                On Surface
+                              </button>
+                            </div>
                             {hint && <div className="sx-note">{hint}</div>}
                           </td>
                         </tr>
                         {expanded && (
-                          <tr>
-                            <td colSpan={ids.length + 6}>
+                          <tr className="sx-cand-detailrow">
+                            <td colSpan={ids.length + 4}>
                               <Details c={c} meaning={c.current?.meaning ?? null} />
                             </td>
                           </tr>
