@@ -17,6 +17,7 @@ const fetchExperimentResults = vi.fn();
 const fetchExperimentStorage = vi.fn();
 const planRunDeletion = vi.fn();
 const deleteRuns = vi.fn();
+const listCandidates = vi.fn().mockResolvedValue({ candidates: [] });
 
 vi.mock("@/api/client", async () => {
   const actual = await vi.importActual<typeof import("@/api/client")>("@/api/client");
@@ -28,6 +29,7 @@ vi.mock("@/api/client", async () => {
     fetchExperimentStorage: (...a: unknown[]) => fetchExperimentStorage(...a),
     planRunDeletion: (...a: unknown[]) => planRunDeletion(...a),
     deleteRuns: (...a: unknown[]) => deleteRuns(...a),
+    listCandidates: (...a: unknown[]) => listCandidates(...a),
   };
 });
 vi.mock("@/shared/context/WorkbenchContext", () => ({

@@ -3,6 +3,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { metricId } from "@/api/experiments";
 
 import "@/features/surface/surface.css";
+import { coordNumber, coordsMatch, focusControls, rowCoords } from "@/features/candidates/coords";
+import { subscribeFocus, type FocusRequest } from "@/features/candidates/focus";
+import { loadCandidates, useCandidates } from "@/features/candidates/store";
 import { useWorkbenchReport, useWorkbenchShell } from "@/shared/context/WorkbenchContext";
 import { readSession, writeSession } from "@/shared/session/storage";
 import { CellDetails } from "@/features/surface/CellDetails";
@@ -54,6 +57,7 @@ type StoredSurface = {
   selected?: { x: number; y: number } | null;
 };
 const SESSION_KEY = "surface";
+const EPS = 1e-9;
 
 const filtersKey = (experimentId: string): string => `surface.filters.${experimentId}`;
 
@@ -111,6 +115,44 @@ export function SurfaceView() {
   // Cells picked for "Delete runs": only cells of the visible slice and controls (keys from `cellKey`).
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [deleting, setDeleting] = useState<string[] | null>(null);
+  // A "show this point" request from the Candidates tab: the slice part is applied once the Experiment's
+  // options are known, the controls and the selection once the matching slice has arrived.
+  const focusRef = useRef<FocusRequest | null>(null);
+  const focusSliceRef = useRef<FocusRequest | null>(null);
+  const switchRef = useRef<string | null>(null);
+  const [focusTick, setFocusTick] = useState(0);
+  const { candidates } = useCandidates();
+
+  useEffect(() => {
+    void loadCandidates();
+  }, []);
+
+  useEffect(
+    () =>
+      subscribeFocus((req) => {
+        focusRef.current = req;
+        focusSliceRef.current = req;
+        restoreRef.current = null;
+        if (req.experimentId !== experimentId) {
+          // go through the Experiment list so that no data of the previous Experiment is mixed in
+          if (experimentId === null) setExperimentId(req.experimentId);
+          else {
+            switchRef.current = req.experimentId;
+            setExperimentId(null);
+          }
+        }
+        setFocusTick((t) => t + 1);
+      }),
+    [experimentId],
+  );
+
+  useEffect(() => {
+    if (experimentId === null && switchRef.current !== null) {
+      const next = switchRef.current;
+      switchRef.current = null;
+      setExperimentId(next);
+    }
+  }, [experimentId]);
 
   useEffect(() => {
     const restore = restoreRef.current;
@@ -124,15 +166,37 @@ export function SurfaceView() {
     if (outer && outerValue === null) setOuterValue(outer.options[0] ?? null);
   }, [outer, outerValue]);
 
+  // The same row objects feed the heat map, so that a selected point is the highlighted cell.
+  const rows = useMemo(() => addNetPnl(slice?.rows ?? [], equity), [slice, equity]);
+  const outerId = outer?.id ?? null;
+  const outerOptions = outer?.options ?? null;
+  useEffect(() => {
+    const f = focusSliceRef.current;
+    if (!f || f.experimentId !== experimentId || outerId === null || outerOptions === null) return;
+    focusSliceRef.current = null;
+    const v = coordNumber(f.coords[outerId]);
+    const option = v === null ? undefined : outerOptions.find((o) => Math.abs(o - v) <= EPS);
+    if (option !== undefined) setOuterValue(option);
+  }, [focusTick, outerId, outerOptions, experimentId]);
+
   // The cells view is the first one that is not an aggregate.
   const view = schema ? (schema.view.find((v) => !v.aggregate_over) ?? schema.view[0]) : null;
 
   // (Re)initialise the view state when a slice arrives (first time: from the remembered session, if any).
   useEffect(() => {
     if (!schema || !view || !slice || data.outerId === null || outerValue === null || experimentId === null) return;
-    const sliceRows0 = addNetPnl(slice.rows, equity);
+    const sliceRows0 = rows;
     const restore = restoreRef.current && restoreRef.current.experimentId === experimentId ? restoreRef.current : null;
     restoreRef.current = null;
+    let focus = focusRef.current;
+    if (focus) {
+      // only the slice of the requested SL (not a stale one) can answer the request
+      const want = coordNumber(focus.coords[data.outerId]);
+      const first = sliceRows0[0]?.[data.outerId];
+      const here = focus.experimentId === experimentId && want !== null && Math.abs(want - outerValue) <= EPS;
+      if (here && typeof first === "number" && Math.abs(first - want) <= EPS) focusRef.current = null;
+      else focus = null;
+    }
     setState((prev) => {
       let base = prev;
       if (!base) {
@@ -149,6 +213,7 @@ export function SurfaceView() {
           };
         }
       }
+      if (focus) base = { ...base, mode: "treatment", controls: focusControls(schema, view, data.outerId as string, focus.coords, base.controls) };
       const controls = reconcileControls(schema, view, sliceRows0, { ...base.controls, [data.outerId as string]: outerValue });
       return { ...base, controls: { ...controls, [data.outerId as string]: outerValue } };
     });
@@ -163,8 +228,12 @@ export function SurfaceView() {
             dimValue(schema, r, view.y, null) === pos.y,
         ) ?? null;
     }
+    if (focus) {
+      const want = focus.coords;
+      point = sliceRows0.find((r) => coordsMatch(want, rowCoords(schema, r))) ?? null;
+    }
     setSelected(point);
-  }, [schema, view, slice, outerValue, data.outerId, experimentId, equity]);
+  }, [schema, view, slice, outerValue, data.outerId, experimentId, rows, focusTick]);
 
   // Remember the session for the next page load.
   useEffect(() => {
@@ -183,11 +252,26 @@ export function SurfaceView() {
     });
   }, [experimentId, outerValue, state, selected, schema, view]);
 
-  const rows = useMemo(() => addNetPnl(slice?.rows ?? [], equity), [slice, equity]);
   const options = useMemo(
     () => (schema && view && state ? controlOptions(schema, view, rows, state.controls) : {}),
     [schema, view, rows, state],
   );
+
+  const isStarred = useMemo(() => {
+    const mine = candidates.filter((c) => c.experiment_id === experimentId);
+    if (!schema || mine.length === 0) return null;
+    return (row: Row): boolean => {
+      const coords = rowCoords(schema, row);
+      return mine.some((c) => coordsMatch(c.coords, coords));
+    };
+  }, [candidates, experimentId, schema]);
+
+  // A selected point (for example one opened from the Candidates tab) that the active filters grey out.
+  const hiddenByFilters = useMemo(() => {
+    if (!schema || !view || !state || !selected || activeConditions(state.filters).length === 0) return false;
+    const sliced = sliceRows(schema, view, rows, state.controls, treatmentArms(schema));
+    return !makePasses(schema, sliced, state.filters, makeIndexer(schema, rows, state.compare ?? schema.arms?.baseline ?? null))(selected);
+  }, [schema, view, state, rows, selected]);
 
   const summary = useMemo(() => {
     if (!schema || !view || !state) return "";
@@ -398,6 +482,7 @@ export function SurfaceView() {
               onPickFrame={(v) => view.filmstrip && setControl(view.filmstrip, v)}
               picked={picked}
               onPick={pick}
+              isStarred={isStarred}
             />
             <EquityPanel
               schema={schema}
@@ -408,9 +493,11 @@ export function SurfaceView() {
               initialEquity={equity}
               onSelect={setSelected}
             />
-            {selected && (
+            {selected && experimentId !== null && (
               <CellDetails
                 schema={schema}
+                experimentId={experimentId}
+                hiddenByFilters={hiddenByFilters}
                 row={selected}
                 allRows={rows}
                 state={state}

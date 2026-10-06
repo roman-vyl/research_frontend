@@ -30,6 +30,7 @@ import type {
   RunDeletionPlan,
   RunDeletionResult,
 } from "@/api/experiments";
+import type { Candidate, CandidateCoordsRequest, CandidateList } from "@/api/candidates";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
 
@@ -403,4 +404,24 @@ export async function fetchExperimentStorage(
   return requestJson<ExperimentStorage>(
     `/api/research/experiments/${encodeURIComponent(experimentId)}/storage?size=${size}`,
   );
+}
+
+/** The candidate shortlist with the current state of each record's row. */
+export async function listCandidates(): Promise<CandidateList> {
+  return requestJson<CandidateList>("/api/research/candidates");
+}
+
+/** Stars a point by its coordinates only: the service builds the `candidate_id` (404 / 409 / 400 are `ApiError`). */
+export async function starCandidate(experimentId: string, coords: CandidateCoordsRequest): Promise<Candidate> {
+  return requestJson<Candidate>("/api/research/candidates", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ experiment_id: experimentId, coords }),
+  });
+}
+
+export async function unstarCandidate(candidateId: string): Promise<{ removed: boolean }> {
+  return requestJson<{ removed: boolean }>(`/api/research/candidates/${encodeURIComponent(candidateId)}`, {
+    method: "DELETE",
+  });
 }

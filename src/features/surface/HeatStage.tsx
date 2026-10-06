@@ -13,6 +13,7 @@ import {
   cellKey,
   controlReadout,
   dimById,
+  dimColumn,
   dimValue,
   displayValue,
   formatCell,
@@ -41,6 +42,8 @@ type Props = {
   picked?: ReadonlySet<string>;
   /** Ctrl/Cmd+click toggles one cell; Shift+drag adds a rectangle. */
   onPick?: (keys: string[], how: "toggle" | "add") => void;
+  /** Whether a row of the slice is a starred candidate; a cell is marked when any row behind it is. */
+  isStarred?: ((row: Row) => boolean) | null;
 };
 
 type Drag = { x0: number; y0: number; x1: number; y1: number };
@@ -49,7 +52,7 @@ const inRect = (d: Drag, xi: number, yi: number): boolean =>
 
 type Tip = { x: number; y: number; row: Row };
 
-export function HeatStage({ schema, view, rows, state, tokens, selected, filmstripOptions, onSelect, onPickFrame, picked, onPick }: Props) {
+export function HeatStage({ schema, view, rows, state, tokens, selected, filmstripOptions, onSelect, onPickFrame, picked, onPick, isStarred }: Props) {
   const [tip, setTip] = useState<Tip | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const dragRef = useRef<Drag | null>(null);
@@ -62,6 +65,19 @@ export function HeatStage({ schema, view, rows, state, tokens, selected, filmstr
     [schema, view, rows, state.controls],
   );
   const matrix = useMemo(() => buildMatrix(schema, view, sliced, state.controls), [schema, view, sliced, state.controls]);
+  const starredKeys = useMemo(() => {
+    const out = new Set<string>();
+    const xd = dimById(schema, view.x);
+    const yd = dimById(schema, view.y);
+    if (!isStarred || !xd || !yd) return out;
+    const g = typeof state.controls[GRID_ID] === "string" ? (state.controls[GRID_ID] as string) : null;
+    for (const r of sliced) {
+      const x = r[dimColumn(xd, g)];
+      const y = r[dimColumn(yd, g)];
+      if (typeof x === "number" && typeof y === "number" && isStarred(r)) out.add(cellKey(x, y));
+    }
+    return out;
+  }, [schema, view, sliced, state.controls, isStarred]);
   const filtersOn = activeConditions(state.filters).length > 0;
   const passFrame = useMemo(() => makePasses(schema, sliced, state.filters, idx), [schema, sliced, state.filters, idx]);
   const delta = state.mode === "difference";
@@ -187,7 +203,7 @@ export function HeatStage({ schema, view, rows, state, tokens, selected, filmstr
                 return (
                   <td key={x}>
                     <div
-                      className={`sx-cell${off ? " sx-off" : ""}${r === selected ? " sx-sel" : ""}${typeof r.run_id === "string" && r.run_id !== "" ? " sx-run" : ""}${isPicked ? " sx-pick" : ""}`}
+                      className={`sx-cell${off ? " sx-off" : ""}${r === selected ? " sx-sel" : ""}${typeof r.run_id === "string" && r.run_id !== "" ? " sx-run" : ""}${isPicked ? " sx-pick" : ""}${starredKeys.has(cellKey(x, y)) ? " sx-star" : ""}`}
                       style={off ? undefined : { background: bg, color: textOn(bg, tokens) }}
                       onMouseMove={(e) => show(e, r)}
                       onMouseLeave={() => setTip(null)}
@@ -203,6 +219,7 @@ export function HeatStage({ schema, view, rows, state, tokens, selected, filmstr
                       }}
                     >
                       <span className="sx-v">{formatCell(metric, v, delta)}</span>
+                      {starredKeys.has(cellKey(x, y)) && <span className="sx-starmark" role="img" aria-label="starred">★</span>}
                     </div>
                   </td>
                 );

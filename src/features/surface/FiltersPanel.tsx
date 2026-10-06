@@ -8,18 +8,22 @@ type Props = {
   compare: string | null;
   summary: string;
   onChange: (next: Condition[]) => void;
+  /** Replaces the heading text where the filtered items are not heat map cells. */
+  label?: string;
 };
 
 let counter = 0;
 
-export function FiltersPanel({ schema, filters, compare, summary, onChange }: Props) {
+export function FiltersPanel({ schema, filters, compare, summary, onChange, label }: Props) {
   const metrics = schema.metrics;
   const cmp = armLabel(compare ?? schema.arms?.baseline ?? "");
   const set = (id: string, patch: Partial<Condition>) =>
     onChange(filters.map((f) => (f.id === id ? { ...f, ...patch } : f)));
   return (
     <div className="sx-panel sx-controls sx-filters" aria-label="Filters">
-      <span className="sx-control-label">Filters · all conditions must hold (AND) · cells that fail turn grey · top / bottom % = best / worst share of the cells shown</span>
+      <span className="sx-control-label">
+        {label ?? "Filters · all conditions must hold (AND) · cells that fail turn grey · top / bottom % = best / worst share of the cells shown"}
+      </span>
       <div className="sx-filters">
         {filters.map((f) => (
           <div className="sx-frow" key={f.id}>

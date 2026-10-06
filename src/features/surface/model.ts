@@ -508,11 +508,15 @@ export function formatCell(metric: ExperimentMetric, value: number | null, delta
   return delta ? `${sign(value)}${value.toFixed(2)}` : value.toFixed(2);
 }
 
-/** Starting equity the manifest declares for its runs (`fixed_params.initial_equity`), if any. */
-export function initialEquity(manifest: ExperimentManifest | null): number | null {
-  const fixed = manifest?.fixed_params;
+/** A starting equity declared in `fixed_params` (positive number), if any. */
+export function equityFromParams(fixed: unknown): number | null {
   const v = fixed && typeof fixed === "object" ? (fixed as Record<string, unknown>).initial_equity : undefined;
   return typeof v === "number" && v > 0 ? v : null;
+}
+
+/** Starting equity the manifest declares for its runs (`fixed_params.initial_equity`), if any. */
+export function initialEquity(manifest: ExperimentManifest | null): number | null {
+  return equityFromParams(manifest?.fixed_params);
 }
 
 /**

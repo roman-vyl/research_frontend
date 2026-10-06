@@ -1,4 +1,5 @@
 import { ChartPanel } from "@/features/chart/ChartPanel";
+import { CandidatesPanel } from "@/features/candidates/CandidatesPanel";
 import { ComposerPanel } from "@/features/composer/ComposerPanel";
 import { ReportsPanel } from "@/features/reports/ReportsPanel";
 import { SurfaceView } from "@/features/surface/SurfaceView";
@@ -33,7 +34,8 @@ function WorkbenchTabs() {
       <div className="workbench-tab-pane" hidden={activeTab !== "surface"}>
         <SurfaceView />
       </div>
-      <div className="workbench-tab-pane" hidden={activeTab === "surface"}>
+      {activeTab === "candidates" && <CandidatesPanel />}
+      <div className="workbench-tab-pane" hidden={activeTab === "surface" || activeTab === "candidates"}>
         <WorkbenchGate>
           <ReportBackedTabs />
         </WorkbenchGate>
