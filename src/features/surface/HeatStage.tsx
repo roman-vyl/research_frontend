@@ -42,6 +42,8 @@ type Props = {
   picked?: ReadonlySet<string>;
   /** Ctrl/Cmd+click toggles one cell; Shift+drag adds a rectangle. */
   onPick?: (keys: string[], how: "toggle" | "add") => void;
+  /** Select mode: a plain click toggles a cell and a plain drag adds a rectangle; details are not changed. */
+  pickMode?: boolean;
   /** Whether a row of the slice is a starred candidate; a cell is marked when any row behind it is. */
   isStarred?: ((row: Row) => boolean) | null;
 };
@@ -52,7 +54,7 @@ const inRect = (d: Drag, xi: number, yi: number): boolean =>
 
 type Tip = { x: number; y: number; row: Row };
 
-export function HeatStage({ schema, view, rows, state, tokens, selected, filmstripOptions, onSelect, onPickFrame, picked, onPick, isStarred }: Props) {
+export function HeatStage({ schema, view, rows, state, tokens, selected, filmstripOptions, onSelect, onPickFrame, picked, onPick, pickMode = false, isStarred }: Props) {
   const [tip, setTip] = useState<Tip | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const dragRef = useRef<Drag | null>(null);
@@ -118,13 +120,20 @@ export function HeatStage({ schema, view, rows, state, tokens, selected, filmstr
     return out;
   }, [schema, view, rows, state, filmstripOptions, idx, tokens, filtersOn, delta, metric]);
 
-  // A Shift+drag ends wherever the mouse is released.
+  // A drag ends wherever the mouse is released; in select mode a press and release
+  // on the same cell is a click and toggles that cell.
   useEffect(() => {
     if (!drag) return;
     const up = () => {
       const d = dragRef.current;
       setDrag(null);
       if (!d || !onPick) return;
+      if (pickMode && d.x0 === d.x1 && d.y0 === d.y1) {
+        const x = matrix.xs[d.x0];
+        const y = matrix.ys[d.y0];
+        if (matrix.cells[d.y0]?.[d.x0]) onPick([cellKey(x, y)], "toggle");
+        return;
+      }
       const keys: string[] = [];
       matrix.ys.forEach((y, yi) =>
         matrix.xs.forEach((x, xi) => {
@@ -135,7 +144,7 @@ export function HeatStage({ schema, view, rows, state, tokens, selected, filmstr
     };
     window.addEventListener("mouseup", up);
     return () => window.removeEventListener("mouseup", up);
-  }, [drag !== null, matrix, onPick]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [drag !== null, matrix, onPick, pickMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!metric || !frame) return null;
   const grid = typeof state.controls[GRID_ID] === "string" ? (state.controls[GRID_ID] as string) : null;
@@ -208,12 +217,13 @@ export function HeatStage({ schema, view, rows, state, tokens, selected, filmstr
                       onMouseMove={(e) => show(e, r)}
                       onMouseLeave={() => setTip(null)}
                       onMouseDown={(e) => {
-                        if (!onPick || !e.shiftKey) return;
+                        if (!onPick || !(e.shiftKey || pickMode) || e.button !== 0) return;
                         e.preventDefault();
                         setDrag({ x0: xi, y0: yi, x1: xi, y1: yi });
                       }}
                       onMouseEnter={() => drag && setDrag({ ...drag, x1: xi, y1: yi })}
                       onClick={(e) => {
+                        if (onPick && pickMode) return;
                         if (onPick && (e.ctrlKey || e.metaKey)) onPick([cellKey(x, y)], "toggle");
                         else if (!(onPick && e.shiftKey)) onSelect(r);
                       }}

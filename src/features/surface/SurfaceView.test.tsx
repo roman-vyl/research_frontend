@@ -291,6 +291,33 @@ describe("SurfaceView: run deletion", () => {
     await waitFor(() => expect(document.querySelectorAll(".sx-cell.sx-pick")).toHaveLength(4));
   });
 
+  it("select mode: a plain click toggles a cell, a plain drag adds a rectangle, Esc leaves", async () => {
+    render(<SurfaceView />);
+    await openExperiment(/fixed SL/);
+    await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("button", { name: "Select cells" }));
+    const cells = liveCells(); // 2 widths × 3 lookbacks
+    const click = (el: Element) => {
+      fireEvent.mouseDown(el, { button: 0 });
+      fireEvent.mouseUp(window);
+      fireEvent.click(el);
+    };
+    click(cells[0]);
+    await waitFor(() => expect(document.querySelectorAll(".sx-cell.sx-pick")).toHaveLength(1));
+    click(cells[0]);
+    await waitFor(() => expect(document.querySelectorAll(".sx-cell.sx-pick")).toHaveLength(0));
+    expect(screen.queryByLabelText("Point details")).toBeNull();
+    fireEvent.mouseDown(cells[0], { button: 0 });
+    fireEvent.mouseEnter(cells[4]);
+    fireEvent.mouseUp(window);
+    await waitFor(() => expect(document.querySelectorAll(".sx-cell.sx-pick")).toHaveLength(4));
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(await screen.findByRole("button", { name: "Select cells" })).toBeTruthy();
+    fireEvent.click(cells[0]);
+    expect(await screen.findByLabelText("Point details")).toBeTruthy();
+    expect(document.querySelectorAll(".sx-cell.sx-pick")).toHaveLength(4);
+  });
+
   it("only replay cells selected: Delete runs is disabled", async () => {
     render(<SurfaceView />);
     await openExperiment(/fixed SL/);

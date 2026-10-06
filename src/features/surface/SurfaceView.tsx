@@ -114,6 +114,7 @@ export function SurfaceView() {
   const { storage, drop: dropStorage } = useExperimentStorage(data.registry, experimentId);
   // Cells picked for "Delete runs": only cells of the visible slice and controls (keys from `cellKey`).
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  const [selectMode, setSelectMode] = useState(false);
   const [deleting, setDeleting] = useState<string[] | null>(null);
   // A "show this point" request from the Candidates tab: the slice part is applied once the Experiment's
   // options are known, the controls and the selection once the matching slice has arrived.
@@ -310,6 +311,14 @@ export function SurfaceView() {
     [schema, view, state, rows, picked],
   );
 
+  // Esc leaves select mode; the delete dialog handles its own keys.
+  useEffect(() => {
+    if (!selectMode || deleting) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setSelectMode(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectMode, deleting]);
+
   const pick = (keys: string[], how: "toggle" | "add") =>
     setPicked((prev) => {
       const next = new Set(prev);
@@ -465,6 +474,8 @@ export function SurfaceView() {
             <SurfaceSliders schema={schema} view={view} state={state} options={options} outer={outer} onControl={setControl} onToggle={toggleOptional} hints={optionalHints} />
             <SelectionBar
               selection={selection}
+              selectMode={selectMode}
+              onSelectMode={setSelectMode}
               onSelectPassing={() => setPicked(new Set(passSplit.passing))}
               onSelectNotPassing={() => setPicked(new Set(passSplit.notPassing))}
               onClear={() => setPicked(new Set())}
@@ -482,6 +493,7 @@ export function SurfaceView() {
               onPickFrame={(v) => view.filmstrip && setControl(view.filmstrip, v)}
               picked={picked}
               onPick={pick}
+              pickMode={selectMode}
               isStarred={isStarred}
             />
             <EquityPanel

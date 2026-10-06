@@ -152,6 +152,7 @@
 .sx .sx-btns .sx-ro{ min-width:0; text-align:left; }
 .sx .sx-selbar{ display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; padding:10px 12px; }
 .sx .sx-fbtn:disabled{ opacity:.45; cursor:default; }
+.sx .sx-fbtn.sx-on{ border-color:var(--accent); background:var(--accent); color:var(--accent-ink, #fff); }
 .sx .sx-danger{ border-color:var(--neg-500); color:var(--neg-700); }
 .sx .sx-cell.sx-pick{ outline:2px dashed var(--accent); outline-offset:1px; }
 .sx .sx-modal-back{ position:fixed; inset:0; background:rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; z-index:60; padding:16px; }
