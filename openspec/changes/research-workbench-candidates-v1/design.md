@@ -68,10 +68,7 @@ Experiment, the SL slice (`outerValue`) from the outer dimension's coordinate, t
 view controls (`grid`, `arm`, other controls) from the coordinates, and selects the
 cell whose row has these coordinates, as the session restore already does. If the
 active Surface filters hide the point, it is still selected and the details panel
-says it is hidden by filters. Missing candidates (`row_state` `missing`) have the
-action disabled.
+says it is hidden by filters. Candidates with `row_state` `missing` or
+`ambiguous` have the action disabled with a hint ("row not found" / "several rows
+match this point"): the client never picks one of several matching rows.
 
-## Risks
-
-- A candidate on a table with duplicate coordinates is reported `ambiguous`; the
-  tab shows it, and On Surface selects the first matching cell with a warning.

@@ -58,12 +58,20 @@ disabled with the hint "no full run".
 
 "On Surface" SHALL switch to the Surface tab with the candidate's Experiment, the
 slice and controls given by its coordinates, and its point selected. A point hidden
-by active Surface filters SHALL still be selected with a hint.
+by active Surface filters SHALL still be selected with a hint. For a candidate
+whose `row_state` is `missing` or `ambiguous`, "On Surface" SHALL be disabled with
+a hint and SHALL NOT select any cell.
 
 #### Scenario: Candidate in another slice
 
 - **WHEN** the Surface shows another Experiment or SL slice
 - **THEN** "On Surface" loads the candidate's Experiment and slice and selects its point.
+
+#### Scenario: Ambiguous candidate
+
+- **WHEN** a candidate is listed with `row_state` `ambiguous`
+- **THEN** "On Surface" is disabled with the hint that several rows match
+- **AND** no focus request is sent and the Surface selection is unchanged.
 
 ### Requirement: Spec snapshot is historical
 
