@@ -8,6 +8,9 @@
 - [x] 1.6 After deletion: result summary, selection cleared, slice cache dropped and slice reloaded; "no full run" hint in CellDetails.
 - [x] 1.7 Tests (mocked API): slice change clears selection, only-replay selection disables the action, aggregated cell sends all run ids, wrong typed count sends nothing, stale plan, reload after deletion keeps values, no request to `/api/research/runs`.
 
+- [ ] 1.8 Selection mode: "Select" / "Done" button and Esc; in the mode plain click toggles and drag selects a rectangle; outside the mode plain click shows the point; modifier shortcuts and filter buttons turn the mode on.
+- [ ] 1.9 Tests: manual mode toggle and drag, Done/Esc clears, plain click outside the mode still opens CellDetails, filter buttons turn the mode on.
+
 ## 2. Manual check (owner)
 
 - [ ] 2.1 On a real Surface delete a small selection; values unchanged, Open run gone for those points, freed GB matches the plan.

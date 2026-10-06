@@ -36,6 +36,16 @@ The run count R shown in the selection bar and on "Delete runs (R)" is the size 
 this distinct set, not the number of cells with a run; a cell counts as "without
 run" when none of its rows has a `run_id`.
 
+### D1a. Selection mode
+
+A "Select" button turns on a selection mode held in `SurfaceView`. In the mode a plain
+click toggles a cell, a drag selects a rectangle (no modifier key needed), and the
+selection bar with the counts and "Delete runs (R)" is shown. "Done" or Esc leaves
+the mode and clears the selection; a slice or control change clears the selection but
+keeps the mode. Outside the mode a plain click shows the point in CellDetails as
+before; Ctrl/Cmd+click and Shift+drag stay as shortcuts and turn the mode on. The
+filter buttons also turn the mode on.
+
 ### D2. Filters decide only the two bulk buttons
 
 "Select passing" and "Select not passing" use the same pass test that greys cells

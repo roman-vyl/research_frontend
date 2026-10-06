@@ -14,14 +14,32 @@ or `selectedRunId`.
 
 ### Requirement: Selection tools
 
-The user SHALL be able to toggle a cell with Ctrl/Cmd+click, select a rectangle with
-Shift+drag, and select all visible cells that pass or that do not pass the active
-filters. A plain click SHALL keep its current meaning (show the point in CellDetails).
+The user SHALL be able to select cells manually and by filters:
+
+- A "Select" button SHALL switch on a selection mode. In the mode a plain click SHALL
+  toggle a cell and a drag SHALL select a rectangle; the selection bar SHALL be
+  shown with the counts and "Delete runs (R)". "Done" or Esc SHALL leave the mode and
+  clear the selection.
+- Outside the mode a plain click SHALL keep its current meaning (show the point in
+  CellDetails); Ctrl/Cmd+click SHALL toggle a cell and Shift+drag SHALL select a
+  rectangle, as shortcuts.
+- "Select passing" and "Select not passing" SHALL select all visible cells that pass or
+  that do not pass the active filters, and SHALL switch the selection mode on.
+
+#### Scenario: Manual selection mode
+
+- **WHEN** the user presses "Select" and clicks three cells, then clicks one of them again
+- **THEN** two cells are selected and CellDetails did not change.
+
+#### Scenario: Leaving the mode
+
+- **WHEN** the user presses "Done" or Esc in the selection mode
+- **THEN** the selection is empty and a plain click shows the point in CellDetails again.
 
 #### Scenario: Bulk select by filters
 
 - **WHEN** filters grey out some cells and the user presses "Select not passing"
-- **THEN** exactly the greyed visible cells are selected.
+- **THEN** exactly the greyed visible cells are selected and the selection mode is on.
 
 ### Requirement: Run ids of a selection
 
