@@ -36,9 +36,16 @@ rows behind the selected cells in the current slice and controls. Rows without
 
 ### Requirement: Delete runs action
 
-The selection bar SHALL show the number of selected cells, how many have a run and
-how many do not, and a "Delete runs" action over the run ids of the selection. The
-action SHALL be disabled when the selection has no run id.
+The selection bar SHALL show the number of selected cells, the run count and the
+number of selected cells without a run, and a "Delete runs (R)" action over the run
+ids of the selection. The run count R in the bar and on the action SHALL be the number
+of distinct non-empty `run_id` behind the selected cells, not the number of cells with
+a run. The action SHALL be disabled when R is 0.
+
+#### Scenario: Run count is distinct run ids
+
+- **WHEN** two selected cells stand for five rows with three distinct non-empty `run_id`
+- **THEN** the bar and the action show 3 runs.
 
 #### Scenario: Only replay cells selected
 

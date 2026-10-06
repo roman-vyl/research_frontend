@@ -31,8 +31,10 @@ not touch `selected` (the point shown in CellDetails) or `selectedRunId`.
 
 The run ids sent to the backend are the distinct non-empty `run_id` of all rows
 behind the selected cells **in the current slice and current controls** (every row a
-cell aggregates, every arm the cell shows). Rows without `run_id` are counted as
-"without run" and not sent.
+cell aggregates, every arm the cell shows). Rows without `run_id` are not sent.
+The run count R shown in the selection bar and on "Delete runs (R)" is the size of
+this distinct set, not the number of cells with a run; a cell counts as "without
+run" when none of its rows has a `run_id`.
 
 ### D2. Filters decide only the two bulk buttons
 
@@ -41,7 +43,8 @@ today. Manual toggling ignores filters: a greyed cell can be selected by hand.
 
 ### D3. Plan, then typed confirmation
 
-"Delete runs (A)" opens a dialog that calls `delete-plan` at once. The dialog shows
+"Delete runs (R)", where R is the number of distinct non-empty `run_id` behind
+the selected cells (D1), opens a dialog that calls `delete-plan` at once. The dialog shows
 `run_count`, `file_count`, `bytes` as GB with two decimals, `already_absent` and the
 skipped list grouped by reason. The confirm button is enabled only when the typed
 number equals `run_count` and `run_count > 0`. Confirm sends `delete` with the same

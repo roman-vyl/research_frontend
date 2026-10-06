@@ -13,8 +13,9 @@ call it, so today deletion is only possible by hand.
   do not pass the active filters. Selection acts on the **visible slice only** (the
   loaded outer slice, for example SL, plus the current grid, arm and fixed
   controls), never on the whole Experiment.
-- A selection bar: "N cells selected · A with run · B without run" and one action
-  "Delete runs (A)", disabled when A is 0.
+- A selection bar: "N cells selected · R runs · B cells without run" and one action
+  "Delete runs (R)", disabled when R is 0. R is the number of distinct non-empty
+  `run_id` behind the selected cells, not the number of cells with a run.
 - A dialog that first calls `delete-plan` (dry run) and shows runs, files, size in
   GB and skipped runs with reasons, then sends `delete` only after the user types the
   planned run count. It says that the result table is rewritten and that no script
