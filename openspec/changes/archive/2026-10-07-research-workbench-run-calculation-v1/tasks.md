@@ -10,4 +10,5 @@
 
 ## 2. Manual check (owner)
 
-- [ ] 2.1 On `btcusdt_p.ema500.calc_smoke_width_band` or a ratio_4d slice with deleted runs, calculate a small selection; published points get "Open run", failed rows keep their values.
+- [x] 2.1 On `btcusdt_p.ema500.calc_smoke_width_band` or a ratio_4d slice with deleted runs, calculate a small selection; published points get "Open run", failed rows keep their values.
+  - 2026-10-07, real stack (research-service c155712 on 8095), built-in browser on the branch dev server (e03ed98): ratio_4d cell width 3, lookback 20, SL 4, TP/SL 4 (return −76.5%). Delete runs (1) → backup `runs.pre_delete_20261007T053108Z.csv`; Calculate (1): plan Selected 1 · Calculable 1 · Has run 0; job completed, Published 1, backup `runs.pre_calculate_20261007T053246Z.csv`; slice reloaded, "Open run" back with new run `run_96488420c4f149d5806f715ad6212d0f`; all metrics identical, only `run_id` changed in `runs.csv`. Plan-only checks: Surface without `materialize` shows Calculate disabled with the hint; ratio_4d 348 cells with runs → Calculable 0 · Has run 348. No request to `GET /api/research/runs`. A parity-failed row was not exercised in the UI (covered by tests).
