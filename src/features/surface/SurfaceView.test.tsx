@@ -642,3 +642,59 @@ describe("SurfaceView: storage block", () => {
     expect(await screen.findByRole("table")).toBeTruthy();
   });
 });
+
+describe("SurfaceView: filter scope", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    wireApi();
+  });
+  afterEach(cleanup);
+
+  const fullCalls = () =>
+    fetchExperimentResults.mock.calls
+      .map((c) => c[0] as { filters: Record<string, unknown>; columns?: string[] })
+      .filter((c) => Object.keys(c.filters).length === 0 && (c.columns?.length ?? 0) > 1);
+
+  it("shows the switch from the manifest, keeps the displayed grid by default and requests nothing before switching", async () => {
+    render(<SurfaceView />);
+    await openExperiment(/fixed SL/);
+    await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
+    const group = screen.getByRole("group", { name: "Filter scope" });
+    expect(within(group).getByRole("button", { name: "Displayed grid" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(group).getByRole("button", { name: "All settings (Initial SL × TP / SL)" })).toBeTruthy();
+    expect(fullCalls()).toHaveLength(0);
+  });
+
+  it("All settings loads one snapshot with only the needed columns; a new metric re-requests the whole set", async () => {
+    render(<SurfaceView />);
+    await openExperiment(/fixed SL/);
+    await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
+    fireEvent.click(screen.getByRole("button", { name: /^All settings/ }));
+    await screen.findByRole("table", { name: /^All settings:/ });
+    expect(fullCalls()).toHaveLength(1);
+    const first = fullCalls()[0].columns!;
+    expect(first).toEqual(["lookback", "realised_trade_count", "return_pct", "sl", "tp_ratio", "width"]);
+    expect(screen.getByText(/6 of 6 settings match · 6 of 6 cells have a match/)).toBeTruthy();
+
+    fireEvent.click(screen.getByText("+ add condition"));
+    fireEvent.change(screen.getByLabelText("metric"), { target: { value: "profit_factor" } });
+    fireEvent.change(screen.getByLabelText("threshold"), { target: { value: "1.3" } });
+    await waitFor(() => expect(fullCalls()).toHaveLength(2));
+    // the whole needed set again, never one extra column joined by row index
+    expect(fullCalls()[1].columns).toEqual([...first, "profit_factor"].sort());
+    expect(await screen.findByText(/4 of 6 settings match · 4 of 6 cells have a match/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Select cells/ })).toBeNull();
+  });
+
+  it("a cell opens its best setting on the displayed grid", async () => {
+    render(<SurfaceView />);
+    await openExperiment(/fixed SL/);
+    await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
+    fireEvent.click(screen.getByRole("button", { name: /^All settings/ }));
+    const table = await screen.findByRole("table", { name: /^All settings:/ });
+    fireEvent.click(within(table).getAllByRole("button")[0]);
+    await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
+    expect(screen.getByRole("button", { name: "Displayed grid" }).getAttribute("aria-pressed")).toBe("true");
+    await waitFor(() => expect(document.querySelectorAll(".sx-cell.sx-sel")).toHaveLength(1));
+  });
+});

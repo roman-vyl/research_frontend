@@ -1,6 +1,8 @@
 import type { ExperimentResultSchema } from "@/api/experiments";
 import { metricId } from "@/api/experiments";
+import type { FilterScope } from "@/features/surface/allSettings";
 import { armLabel, type Condition } from "@/features/surface/model";
+import { Segmented } from "@/features/surface/Segmented";
 
 type Props = {
   schema: ExperimentResultSchema;
@@ -10,11 +12,13 @@ type Props = {
   onChange: (next: Condition[]) => void;
   /** Replaces the heading text where the filtered items are not heat map cells. */
   label?: string;
+  /** Surface only: where the conditions apply, the displayed grid or every setting of the Experiment. */
+  scope?: { value: FilterScope; allLabel: string; note: string; onChange: (next: FilterScope) => void };
 };
 
 let counter = 0;
 
-export function FiltersPanel({ schema, filters, compare, summary, onChange, label }: Props) {
+export function FiltersPanel({ schema, filters, compare, summary, onChange, label, scope }: Props) {
   const metrics = schema.metrics;
   const cmp = armLabel(compare ?? schema.arms?.baseline ?? "");
   const set = (id: string, patch: Partial<Condition>) =>
@@ -22,8 +26,25 @@ export function FiltersPanel({ schema, filters, compare, summary, onChange, labe
   return (
     <div className="sx-panel sx-controls sx-filters" aria-label="Filters">
       <span className="sx-control-label">
-        {label ?? "Filters · all conditions must hold (AND) · cells that fail turn grey · top / bottom % = best / worst share of the cells shown"}
+        {label ??
+          (scope?.value === "all"
+            ? "Filters · all conditions must hold (AND) · checked on every setting · top / bottom % = best / worst share of all settings"
+            : "Filters · all conditions must hold (AND) · cells that fail turn grey · top / bottom % = best / worst share of the cells shown")}
       </span>
+      {scope && (
+        <>
+          <Segmented
+            label="Filter scope"
+            value={scope.value}
+            options={[
+              { id: "view", label: "Displayed grid" },
+              { id: "all", label: scope.allLabel },
+            ]}
+            onChange={scope.onChange}
+          />
+          <p className="sx-note">{scope.note}</p>
+        </>
+      )}
       <div className="sx-filters">
         {filters.map((f) => (
           <div className="sx-frow" key={f.id}>
