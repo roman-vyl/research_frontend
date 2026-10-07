@@ -34,6 +34,7 @@ import {
   makePasses,
   reconcileControls,
   selectionRuns,
+  EMPTY_SELECTION,
   sliceRows,
   treatmentArms,
   withNetPnl,
@@ -45,6 +46,8 @@ import {
 import { useExperimentData } from "@/features/surface/useExperimentData";
 import { useExperimentStorage } from "@/features/surface/useExperimentStorage";
 import { DeleteRunsDialog, SelectionBar } from "@/features/surface/RunDeletion";
+import { CalculateDialog, canCalculate } from "@/features/surface/RunCalculation";
+import type { CalculationCoords, CalculationJob } from "@/api/experiments";
 import { StorageBlock } from "@/features/surface/StorageBlock";
 
 type StoredSurface = {
@@ -116,6 +119,7 @@ export function SurfaceView() {
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [deleting, setDeleting] = useState<string[] | null>(null);
+  const [calculating, setCalculating] = useState<{ rows: CalculationCoords[]; notAddressable: number } | null>(null);
   // A "show this point" request from the Candidates tab: the slice part is applied once the Experiment's
   // options are known, the controls and the selection once the matching slice has arrived.
   const focusRef = useRef<FocusRequest | null>(null);
@@ -307,17 +311,17 @@ export function SurfaceView() {
   }, [schema, view, state, rows]);
 
   const selection = useMemo(
-    () => (schema && view && state ? selectionRuns(schema, view, rows, state, picked) : { cells: 0, withoutRun: 0, runIds: [] }),
+    () => (schema && view && state ? selectionRuns(schema, view, rows, state, picked) : EMPTY_SELECTION),
     [schema, view, state, rows, picked],
   );
 
   // Esc leaves select mode; the delete dialog handles its own keys.
   useEffect(() => {
-    if (!selectMode || deleting) return;
+    if (!selectMode || deleting || calculating) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setSelectMode(false);
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectMode, deleting]);
+  }, [selectMode, deleting, calculating]);
 
   const pick = (keys: string[], how: "toggle" | "add") =>
     setPicked((prev) => {
@@ -338,6 +342,12 @@ export function SurfaceView() {
     const y = schema && view && selected ? dimValue(schema, selected, view.y, null) : null;
     restoreRef.current = { experimentId, outerValue, selected: x !== null && y !== null ? { x, y } : null };
     data.reload();
+  };
+
+  // The job is over: clear the selection; reload the slice only when a row was published.
+  const afterCalculation = (job: CalculationJob) => {
+    setPicked(new Set());
+    if ((job.counts.published ?? 0) > 0) afterDeletion();
   };
 
   const update = (patch: Partial<ViewState>) => {
@@ -480,6 +490,8 @@ export function SurfaceView() {
               onSelectNotPassing={() => setPicked(new Set(passSplit.notPassing))}
               onClear={() => setPicked(new Set())}
               onDelete={() => setDeleting(selection.runIds)}
+              calculable={canCalculate(manifest)}
+              onCalculate={() => setCalculating({ rows: selection.calcCoords, notAddressable: selection.notAddressable })}
             />
             <HeatStage
               schema={schema}
@@ -526,6 +538,15 @@ export function SurfaceView() {
                 runIds={deleting}
                 onClose={() => setDeleting(null)}
                 onDeleted={afterDeletion}
+              />
+            )}
+            {calculating && experimentId !== null && (
+              <CalculateDialog
+                experimentId={experimentId}
+                rows={calculating.rows}
+                notAddressable={calculating.notAddressable}
+                onClose={() => setCalculating(null)}
+                onFinished={afterCalculation}
               />
             )}
             <footer>

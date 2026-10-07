@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ApiError, deleteRuns, planRunDeletion } from "@/api/client";
 import type { RunDeletionPlan, RunDeletionResult } from "@/api/experiments";
 import { formatGb, type SelectionRuns } from "@/features/surface/model";
+import { calculateBlocked } from "@/features/surface/RunCalculation";
 
 type BarProps = {
   selection: SelectionRuns;
@@ -13,11 +14,29 @@ type BarProps = {
   onSelectNotPassing: () => void;
   onClear: () => void;
   onDelete: () => void;
+  /** The manifest has a `materialize` block. */
+  calculable: boolean;
+  onCalculate: () => void;
 };
 
-/** Selection tools and the "Delete runs (R)" action; R is the number of distinct run ids. */
-export function SelectionBar({ selection, selectMode, onSelectMode, onSelectPassing, onSelectNotPassing, onClear, onDelete }: BarProps) {
+/**
+ * Selection tools, "Delete runs (R)" (R = distinct run ids) and "Calculate (N)" (N = addressable rows; the backend
+ * plan decides which of them can be calculated).
+ */
+export function SelectionBar({
+  selection,
+  selectMode,
+  onSelectMode,
+  onSelectPassing,
+  onSelectNotPassing,
+  onClear,
+  onDelete,
+  calculable,
+  onCalculate,
+}: BarProps) {
   const r = selection.runIds.length;
+  const n = selection.calcCoords.length;
+  const calcHint = selection.cells > 0 ? calculateBlocked(calculable, n) : null;
   return (
     <div className="sx-panel sx-selbar" role="group" aria-label="Selection">
       <span className="sx-fsum">
@@ -37,6 +56,17 @@ export function SelectionBar({ selection, selectMode, onSelectMode, onSelectPass
       <button type="button" className="sx-fbtn sx-danger" onClick={onDelete} disabled={r === 0}>
         Delete runs ({r})
       </button>
+      <button
+        type="button"
+        className="sx-fbtn"
+        onClick={onCalculate}
+        disabled={calculateBlocked(calculable, n) !== null}
+        title={calcHint ?? undefined}
+      >
+        Calculate ({n})
+      </button>
+      {calcHint && <span className="sx-note" role="note">{calcHint}</span>}
+      {selection.notAddressable > 0 && <span className="sx-note">{selection.notAddressable} rows not addressable</span>}
       <span className="sx-note">
         {selectMode
           ? "Click toggles a cell, drag selects a rectangle. Esc or Done selecting returns clicks to details."

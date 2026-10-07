@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -17,6 +17,10 @@ const fetchExperimentResults = vi.fn();
 const fetchExperimentStorage = vi.fn();
 const planRunDeletion = vi.fn();
 const deleteRuns = vi.fn();
+const planCalculation = vi.fn();
+const calculateRows = vi.fn();
+const getCalculation = vi.fn();
+const cancelCalculation = vi.fn();
 const listCandidates = vi.fn().mockResolvedValue({ candidates: [] });
 
 vi.mock("@/api/client", async () => {
@@ -29,6 +33,10 @@ vi.mock("@/api/client", async () => {
     fetchExperimentStorage: (...a: unknown[]) => fetchExperimentStorage(...a),
     planRunDeletion: (...a: unknown[]) => planRunDeletion(...a),
     deleteRuns: (...a: unknown[]) => deleteRuns(...a),
+    planCalculation: (...a: unknown[]) => planCalculation(...a),
+    calculateRows: (...a: unknown[]) => calculateRows(...a),
+    getCalculation: (...a: unknown[]) => getCalculation(...a),
+    cancelCalculation: (...a: unknown[]) => cancelCalculation(...a),
     listCandidates: (...a: unknown[]) => listCandidates(...a),
   };
 });
@@ -414,6 +422,144 @@ describe("SurfaceView: run deletion", () => {
     expect((await within(dialog).findByRole("alert")).textContent).toMatch(/changed since the plan. Nothing was deleted/);
     fireEvent.click(within(dialog).getByRole("button", { name: "New plan" }));
     await waitFor(() => expect(planRunDeletion).toHaveBeenCalledTimes(2));
+  });
+});
+
+const ID = "btcusdt_p.ema500.ratio_4d";
+const coordsOf = (width: number, lookback: number) => ({ width, lookback, sl: 5, tp_ratio: 5 });
+const CALC_PLAN = {
+  rows: [
+    { position: 0, coords: coordsOf(3, 20), status: "skipped", reason: "has_run" },
+    { position: 1, coords: coordsOf(4, 40), status: "calculable", config_hash: "sha256:c" },
+  ],
+  calculable_count: 1,
+  plan_token: "sha256:p",
+};
+const job = (state: string, outcome: string, extra: Record<string, unknown> = {}) => ({
+  job_id: "calc_1",
+  experiment_id: ID,
+  state,
+  counts: { [outcome]: 1 },
+  rows: [{ position: 1, coords: coordsOf(4, 40), row_index: 5, config_hash: "sha256:c", outcome, ...extra }],
+});
+
+describe("SurfaceView: run calculation", () => {
+  let fetchSpy: { mock: { calls: unknown[][] }; mockRestore: () => void };
+  beforeEach(() => {
+    vi.clearAllMocks();
+    wireApi();
+    fetchExperimentManifest.mockImplementation(async (id: string) =>
+      id.includes("trailing") ? TRAILING_MANIFEST : { ...RATIO_MANIFEST, materialize: { strategy_template: {} } });
+    fetchSpy = vi.spyOn(globalThis, "fetch");
+  });
+  afterEach(() => {
+    cleanup();
+    fetchSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  async function selectTwo(): Promise<void> {
+    render(<SurfaceView />);
+    await openExperiment(/fixed SL/);
+    await screen.findByRole("table");
+    const cells = liveCells(); // width 3: lb 20 (run 1) ... width 4: lb 40 (no run)
+    fireEvent.click(cells[0], { ctrlKey: true });
+    fireEvent.click(cells[5], { ctrlKey: true });
+    await screen.findByText(/2 cells selected/);
+  }
+
+  it("without materialize the action is disabled with the hint", async () => {
+    fetchExperimentManifest.mockImplementation(async () => RATIO_MANIFEST);
+    render(<SurfaceView />);
+    await openExperiment(/fixed SL/);
+    await screen.findByRole("table");
+    fireEvent.click(liveCells()[5], { ctrlKey: true });
+    expect((screen.getByRole("button", { name: "Calculate (1)" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("This Surface cannot be calculated: no materialize in the manifest")).toBeTruthy();
+  });
+
+  it("rows with a run are sent; the plan decides; publish reloads the slice; no run list request", async () => {
+    planCalculation.mockResolvedValue(CALC_PLAN);
+    calculateRows.mockResolvedValue({ job_id: "calc_1", row_count: 1 });
+    getCalculation
+      .mockResolvedValueOnce(job("running", "pending"))
+      .mockResolvedValueOnce(job("completed", "published", { run_id: RUN("n") }));
+    await selectTwo();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.click(await screen.findByRole("button", { name: "Calculate (2)" }));
+    const dialog = await screen.findByRole("dialog", { name: "Calculate runs" });
+    expect(planCalculation).toHaveBeenCalledWith(ID, [coordsOf(3, 20), coordsOf(4, 40)]);
+    const plan = await within(dialog).findByLabelText("Plan");
+    expect(plan.textContent).toBe("Selected2Calculable1Has run1Other skipped0");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Calculate 1 rows" }));
+    await waitFor(() => expect(calculateRows).toHaveBeenCalledWith(ID, [coordsOf(3, 20), coordsOf(4, 40)], "sha256:p"));
+    expect(await within(dialog).findByText(/Closing this window does not cancel the job/)).toBeTruthy();
+    const before = fetchExperimentResults.mock.calls.length;
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    await waitFor(() => expect(getCalculation).toHaveBeenCalledTimes(1));
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    expect(await within(dialog).findByText("Job completed.")).toBeTruthy();
+    expect(within(dialog).getByLabelText("Outcome").textContent).toContain("Published1");
+    await waitFor(() => expect(fetchExperimentResults.mock.calls.length).toBeGreaterThan(before));
+    expect(screen.getByText(/0 cells selected/)).toBeTruthy();
+    expect(fetchSpy.mock.calls.some((c) => String(c[0]).includes("/api/research/runs"))).toBe(false);
+  });
+
+  it("parity failure lists the differing metrics and does not reload", async () => {
+    planCalculation.mockResolvedValue(CALC_PLAN);
+    calculateRows.mockResolvedValue({ job_id: "calc_1", row_count: 1 });
+    getCalculation.mockResolvedValueOnce(
+      job("completed", "parity_failed", { parity: [{ column: "return_pct", expected: "0.12", actual: "0.13" }] }),
+    );
+    await selectTwo();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.click(await screen.findByRole("button", { name: "Calculate (2)" }));
+    const dialog = await screen.findByRole("dialog", { name: "Calculate runs" });
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Calculate 1 rows" }));
+    await waitFor(() => expect(calculateRows).toHaveBeenCalled());
+    const before = fetchExperimentResults.mock.calls.length;
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    const failed = await within(dialog).findByLabelText("Failed rows");
+    expect(failed.textContent).toContain("return_pct stored 0.12, Engine 0.13");
+    expect(fetchExperimentResults.mock.calls.length).toBe(before);
+  });
+
+  it("cancel calls the cancel route and the final counts show cancelled rows", async () => {
+    planCalculation.mockResolvedValue(CALC_PLAN);
+    calculateRows.mockResolvedValue({ job_id: "calc_1", row_count: 1 });
+    cancelCalculation.mockResolvedValue(job("running", "pending"));
+    getCalculation.mockResolvedValueOnce(job("cancelled", "cancelled"));
+    await selectTwo();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.click(await screen.findByRole("button", { name: "Calculate (2)" }));
+    const dialog = await screen.findByRole("dialog", { name: "Calculate runs" });
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Calculate 1 rows" }));
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Cancel job" }));
+    expect(cancelCalculation).toHaveBeenCalledWith(ID, "calc_1");
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    expect(await within(dialog).findByText("Job cancelled.")).toBeTruthy();
+    expect(within(dialog).getByLabelText("Outcome").textContent).toContain("Cancelled1");
+  });
+
+  it("a stale plan starts no job and offers a new plan; a running job is reported", async () => {
+    const { ApiError } = await vi.importActual<typeof import("@/api/client")>("@/api/client");
+    planCalculation.mockResolvedValue(CALC_PLAN);
+    calculateRows.mockRejectedValueOnce(new ApiError(409, "plan again", "plan_stale"));
+    await selectTwo();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.click(await screen.findByRole("button", { name: "Calculate (2)" }));
+    const dialog = await screen.findByRole("dialog", { name: "Calculate runs" });
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Calculate 1 rows" }));
+    expect((await within(dialog).findByRole("alert")).textContent).toMatch(/Nothing was calculated/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "New plan" }));
+    await waitFor(() => expect(planCalculation).toHaveBeenCalledTimes(2));
+
+    calculateRows.mockRejectedValueOnce(
+      new ApiError(409, "another calculation job is running", "job_running", { job_id: "calc_other" }),
+    );
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Calculate 1 rows" }));
+    expect((await within(dialog).findByRole("alert")).textContent).toMatch(/another calculation job is running \(job calc_other\)/);
+    expect(getCalculation).not.toHaveBeenCalled();
   });
 });
 
