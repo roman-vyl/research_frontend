@@ -33,9 +33,10 @@ have it on every Surface, past and future, without any per-Experiment code.
 Today the Surface loads only one outer slice. "All settings" needs every row, so on
 first switch it sends one `GET .../results` request **without filters** and with
 **only the columns it needs**: `arm`, grid, the view dimensions, the displayed
-metric and the condition metrics (`return_pct` when Net PnL is derived). A metric
-added later fetches only that column. Columns are cached per Experiment and dropped
-on reload or after run deletion. Rows are evaluated column-wise, without building
+metric and the condition metrics (`return_pct` when Net PnL is derived). Columns
+of separate responses are never joined by row index: a metric added later
+re-requests the whole needed set in one response. Data is dropped on reload or
+after run deletion. Rows are evaluated column-wise, without building
 one object per row. Nothing is requested until the user picks "All settings".
 
 Expected cost: about the size of a few slices. For the largest Surface (≈3M rows)

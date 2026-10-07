@@ -18,6 +18,13 @@ through `emitFocus({ experimentId, coords })` with `rowCoords(schema, row)`.
   heat map scale (drawdown is stored negative, so closer to zero wins).
 - **Cells key on the row's own grid**: x / y values are read with the row's grid,
   so multi-grid Experiments are covered without special cases.
+- **No join of separate responses by row index.** With no filters the backend
+  returns rows in file order (`_select` → `range(rows)`), and all columns of one
+  response share that index. Run deletion and Calculate rewrite the table in place
+  (same order and count, changed values) and the response carries no table
+  version, so two responses taken around such a rewrite would mix old and new
+  values without any way to detect it. Therefore every needed column comes in one
+  response.
 - **Jump** reuses the focus path (`rowCoords` → `emitFocus`), which already sets the
   outer slice, grid, controls and optional dimensions and selects the point.
 - **Scope** is stored with the filters under the per-Experiment session key.

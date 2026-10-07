@@ -22,6 +22,12 @@ optional dimensions. Δ conditions SHALL use the matched comparison row. Top / b
 - **WHEN** a row with SL different from the displayed SL passes all conditions
 - **THEN** it is counted in its x × y cell and in the summary
 
+#### Scenario: top / bottom % is global over all settings, not per cell
+- **GIVEN** 2 cells A and B with 5 settings each; Net PnL in A is 1, 2, 3, 4, 5 and in B is 6, 7, 8, 9, 10
+- **WHEN** the only condition is Net PnL top 20 %
+- **THEN** the cut-off is taken over all 10 rows (k = ceil(10 × 0.2) = 2, cut-off 9), 2 settings match (9 and 10), both in cell B
+- **AND** cell A has no match and is grey (a per-cell ranking would wrongly keep 5 in A and 10 in B)
+
 ### Requirement: All settings heat map
 
 Each x × y cell SHALL show the best displayed value among its matching rows and
@@ -46,8 +52,10 @@ slice, grid and controls, and select that point.
 
 Nothing SHALL be requested before "All settings" is chosen. Then one results
 request without filters SHALL fetch only the columns needed (arm, grid, view
-dimensions, displayed and condition metrics); a newly needed metric SHALL fetch
-only its column. Loaded columns SHALL be dropped on reload and after run deletion.
+dimensions, displayed and condition metrics). Columns from different responses
+SHALL NOT be joined by row index: when another metric becomes needed, the whole
+needed set SHALL be requested again in one response. Loaded data SHALL be dropped
+on reload and after run deletion.
 
 #### Scenario: column subset
 - **WHEN** "All settings" is chosen with one condition on win rate and Net PnL displayed
