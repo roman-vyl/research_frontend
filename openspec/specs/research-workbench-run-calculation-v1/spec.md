@@ -62,8 +62,12 @@ be sent only after the user presses "Calculate" in the dialog, with the plan's
 
 #### Scenario: Job already running
 
-- **WHEN** `calculate` answers 409 `job_running`
-- **THEN** the dialog shows the message and no new job is started.
+- **WHEN** `calculate-plan` or `calculate` answers 409 `job_running`
+- **THEN** no new job is started; the dialog says a calculation is already running and
+  follows the job named in `details.job_id` with the same progress, cancel and result
+  view, then offers a new plan
+- **AND** if that job belongs to another Experiment (status 404), the dialog says so
+  and offers a new plan.
 
 ### Requirement: Job progress and cancel
 
