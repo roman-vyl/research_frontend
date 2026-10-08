@@ -541,7 +541,7 @@ describe("SurfaceView: run calculation", () => {
     expect(within(dialog).getByLabelText("Outcome").textContent).toContain("Cancelled1");
   });
 
-  it("a stale plan starts no job and offers a new plan; a running job is reported", async () => {
+  it("a stale plan starts no job and offers a new plan; a running job is followed", async () => {
     const { ApiError } = await vi.importActual<typeof import("@/api/client")>("@/api/client");
     planCalculation.mockResolvedValue(CALC_PLAN);
     calculateRows.mockRejectedValueOnce(new ApiError(409, "plan again", "plan_stale"));
@@ -557,9 +557,45 @@ describe("SurfaceView: run calculation", () => {
     calculateRows.mockRejectedValueOnce(
       new ApiError(409, "another calculation job is running", "job_running", { job_id: "calc_other" }),
     );
+    getCalculation.mockResolvedValueOnce({ ...job("running", "pending"), job_id: "calc_other" });
     fireEvent.click(await within(dialog).findByRole("button", { name: "Calculate 1 rows" }));
-    expect((await within(dialog).findByRole("alert")).textContent).toMatch(/another calculation job is running \(job calc_other\)/);
-    expect(getCalculation).not.toHaveBeenCalled();
+    expect((await within(dialog).findByRole("status")).textContent).toMatch(/Another calculation is running \(job calc_other\)/);
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    await waitFor(() => expect(getCalculation).toHaveBeenCalledWith(ID, "calc_other"));
+    expect(within(dialog).getByLabelText("Outcome").textContent).toContain("Pending1");
+    expect(within(dialog).getByRole("button", { name: "Cancel job" })).toBeTruthy();
+  });
+
+  it("Calculate while a job runs: the plan's 409 opens that job's progress; its end offers a new plan", async () => {
+    const { ApiError } = await vi.importActual<typeof import("@/api/client")>("@/api/client");
+    planCalculation.mockRejectedValueOnce(
+      new ApiError(409, "another calculation job is running", "job_running", { experiment_id: "other.exp", job_id: "calc_9" }),
+    );
+    planCalculation.mockResolvedValue(CALC_PLAN);
+    getCalculation
+      .mockResolvedValueOnce({ ...job("running", "pending"), job_id: "calc_9", experiment_id: "other.exp" })
+      .mockResolvedValueOnce({ ...job("completed", "published"), job_id: "calc_9", experiment_id: "other.exp", backup: "runs.pre_calculate_x.csv" });
+    cancelCalculation.mockResolvedValue({ ...job("running", "pending"), job_id: "calc_9" });
+    await selectTwo();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.click(await screen.findByRole("button", { name: "Calculate (2)" }));
+    const dialog = await screen.findByRole("dialog", { name: "Calculate runs" });
+    expect((await within(dialog).findByRole("status")).textContent).toMatch(/Another calculation is running \(job calc_9, other\.exp\)/);
+    expect(within(dialog).getByText(/Closing this window does not cancel the job/)).toBeTruthy();
+    expect(calculateRows).not.toHaveBeenCalled();
+    const before = fetchExperimentResults.mock.calls.length;
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    await waitFor(() => expect(getCalculation).toHaveBeenCalledWith("other.exp", "calc_9"));
+    expect(within(dialog).getByLabelText("Outcome").textContent).toContain("Pending1");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel job" }));
+    expect(cancelCalculation).toHaveBeenCalledWith("other.exp", "calc_9");
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    expect(await within(dialog).findByText("Job completed.")).toBeTruthy();
+    expect(within(dialog).getByText("Backup: runs.pre_calculate_x.csv")).toBeTruthy();
+    expect(fetchExperimentResults.mock.calls.length).toBe(before);
+    fireEvent.click(within(dialog).getByRole("button", { name: "New plan" }));
+    expect(await within(dialog).findByRole("button", { name: "Calculate 1 rows" })).toBeTruthy();
+    expect(fetchSpy.mock.calls.some((c) => String(c[0]).includes("/api/research/runs"))).toBe(false);
   });
 });
 

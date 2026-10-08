@@ -62,8 +62,8 @@ be sent only after the user presses "Calculate" in the dialog, with the plan's
 
 #### Scenario: Job already running
 
-- **WHEN** `calculate` answers 409 `job_running`
-- **THEN** the dialog shows the message and no new job is started.
+- **WHEN** `calculate-plan` or `calculate` answers 409 `job_running` with the running job's `job_id` and `experiment_id` in `details`
+- **THEN** no new job is started, the dialog says another calculation is running and shows that job's progress (same polling, counts and "Cancel" on its Experiment), and when it ends offers a new plan for the selection; the slice is reloaded only when that job belongs to the open Experiment.
 
 ### Requirement: Job progress and cancel
 

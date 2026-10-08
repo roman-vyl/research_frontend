@@ -42,10 +42,10 @@ type Phase =
   | { kind: "planning" }
   | { kind: "plan"; plan: CalculationPlan }
   | { kind: "starting"; plan: CalculationPlan }
-  | { kind: "running"; jobId: string; job: CalculationJob | null; cancelling: boolean }
+  | { kind: "running"; jobId: string; jobExperimentId: string; other: boolean; job: CalculationJob | null; cancelling: boolean }
   | { kind: "stale" }
-  | { kind: "busy"; message: string; jobId: string | null }
-  | { kind: "done"; job: CalculationJob }
+  | { kind: "busy"; message: string }
+  | { kind: "done"; job: CalculationJob; other: boolean }
   | { kind: "error"; message: string; retry: boolean };
 
 /** Plan counts as the backend decided them: has run (`has_run`) apart from the other skip reasons. */
@@ -60,6 +60,19 @@ export function planCounts(plan: CalculationPlan): { selected: number; calculabl
   }
   return { selected: plan.rows.length, calculable: plan.calculable_count, hasRun, other };
 }
+
+/**
+ * 409 `job_running` from plan or calculate: follow the job that is already running (its id and
+ * Experiment come in `details`), so its progress can be watched again after the dialog was closed.
+ */
+function busyPhase(e: ApiError, experimentId: string): Phase {
+  const jobId = typeof e.details.job_id === "string" ? e.details.job_id : null;
+  if (jobId === null) return { kind: "busy", message: e.detail };
+  const jobExperimentId = typeof e.details.experiment_id === "string" ? e.details.experiment_id : experimentId;
+  return { kind: "running", jobId, jobExperimentId, other: true, job: null, cancelling: false };
+}
+
+const isJobRunning = (e: unknown): e is ApiError => e instanceof ApiError && e.code === "job_running";
 
 type DialogProps = {
   experimentId: string;
@@ -82,27 +95,33 @@ export function CalculateDialog({ experimentId, rows, notAddressable, onClose, o
     setPhase({ kind: "planning" });
     planCalculation(experimentId, rows)
       .then((plan) => !cancelled && setPhase({ kind: "plan", plan }))
-      .catch((e) => !cancelled && setPhase({ kind: "error", message: errorText(e), retry: true }));
+      .catch((e) => {
+        if (cancelled) return;
+        setPhase(isJobRunning(e) ? busyPhase(e, experimentId) : { kind: "error", message: errorText(e), retry: true });
+      });
     return () => {
       cancelled = true;
     };
   }, [experimentId, rows, attempt]);
 
   const jobId = phase.kind === "running" ? phase.jobId : null;
+  const jobExperimentId = phase.kind === "running" ? phase.jobExperimentId : experimentId;
+  const other = phase.kind === "running" && phase.other;
   useEffect(() => {
     if (jobId === null) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = () => {
-      getCalculation(experimentId, jobId)
+      getCalculation(jobExperimentId, jobId)
         .then((job) => {
           if (stopped) return;
           if (job.state === "running") {
             setPhase((p) => (p.kind === "running" ? { ...p, job } : p));
             timer = setTimeout(poll, POLL_MS);
           } else {
-            setPhase({ kind: "done", job });
-            finished.current(job);
+            setPhase({ kind: "done", job, other });
+            // A job of another Experiment changed nothing shown here.
+            if (jobExperimentId === experimentId) finished.current(job);
           }
         })
         .catch((e) => !stopped && setPhase({ kind: "error", message: errorText(e), retry: false }));
@@ -112,24 +131,24 @@ export function CalculateDialog({ experimentId, rows, notAddressable, onClose, o
       stopped = true;
       clearTimeout(timer);
     };
-  }, [experimentId, jobId]);
+  }, [experimentId, jobId, jobExperimentId, other]);
 
   const start = (plan: CalculationPlan) => {
     setPhase({ kind: "starting", plan });
     calculateRows(experimentId, rows, plan.plan_token)
-      .then((r) => setPhase({ kind: "running", jobId: r.job_id, job: null, cancelling: false }))
+      .then((r) =>
+        setPhase({ kind: "running", jobId: r.job_id, jobExperimentId: experimentId, other: false, job: null, cancelling: false }),
+      )
       .catch((e) => {
         if (e instanceof ApiError && e.code === "plan_stale") setPhase({ kind: "stale" });
-        else if (e instanceof ApiError && e.code === "job_running") {
-          const running = typeof e.details.job_id === "string" ? e.details.job_id : null;
-          setPhase({ kind: "busy", message: e.detail, jobId: running });
-        } else setPhase({ kind: "error", message: errorText(e), retry: true });
+        else if (isJobRunning(e)) setPhase(busyPhase(e, experimentId));
+        else setPhase({ kind: "error", message: errorText(e), retry: true });
       });
   };
 
-  const cancel = (id: string) => {
+  const cancel = (id: string, jobExperiment: string) => {
     setPhase((p) => (p.kind === "running" ? { ...p, cancelling: true } : p));
-    cancelCalculation(experimentId, id).catch((e) => setPhase({ kind: "error", message: errorText(e), retry: false }));
+    cancelCalculation(jobExperiment, id).catch((e) => setPhase({ kind: "error", message: errorText(e), retry: false }));
   };
 
   const plan = phase.kind === "plan" || phase.kind === "starting" ? phase.plan : null;
@@ -166,6 +185,13 @@ export function CalculateDialog({ experimentId, rows, notAddressable, onClose, o
         )}
         {phase.kind === "running" && (
           <>
+            {phase.other && (
+              <p role="status" className="sx-note">
+                Another calculation is running (job {phase.jobId}
+                {phase.jobExperimentId !== experimentId ? `, ${phase.jobExperimentId}` : ""}). Wait until it ends; nothing
+                new was started.
+              </p>
+            )}
             <p className="sx-note" aria-live="polite">
               {phase.cancelling ? "Cancelling…" : "Calculating…"} Closing this window does not cancel the job.
             </p>
@@ -176,10 +202,7 @@ export function CalculateDialog({ experimentId, rows, notAddressable, onClose, o
           <p role="alert" className="sx-error">The table or the selection changed since the plan. Nothing was calculated.</p>
         )}
         {phase.kind === "busy" && (
-          <p role="alert" className="sx-error">
-            {phase.message}
-            {phase.jobId ? ` (job ${phase.jobId})` : ""}. No new job was started.
-          </p>
+          <p role="alert" className="sx-error">{phase.message}. No new job was started.</p>
         )}
         {phase.kind === "error" && <p role="alert" className="sx-error">{phase.message}</p>}
         {phase.kind === "done" && (
@@ -202,7 +225,7 @@ export function CalculateDialog({ experimentId, rows, notAddressable, onClose, o
           </>
         )}
         <div className="sx-modal-actions">
-          {(phase.kind === "stale" || (phase.kind === "error" && phase.retry)) && (
+          {(phase.kind === "stale" || (phase.kind === "error" && phase.retry) || (phase.kind === "done" && phase.other)) && (
             <button type="button" className="sx-fbtn" onClick={() => setAttempt((a) => a + 1)}>New plan</button>
           )}
           {plan && (
@@ -216,7 +239,7 @@ export function CalculateDialog({ experimentId, rows, notAddressable, onClose, o
             </button>
           )}
           {phase.kind === "running" && (
-            <button type="button" className="sx-fbtn sx-danger" disabled={phase.cancelling} onClick={() => cancel(phase.jobId)}>
+            <button type="button" className="sx-fbtn sx-danger" disabled={phase.cancelling} onClick={() => cancel(phase.jobId, phase.jobExperimentId)}>
               Cancel job
             </button>
           )}
