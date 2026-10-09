@@ -1,14 +1,6 @@
 import type { EpisodeSide } from "@/api/episodes";
 import type { EpisodeHistory } from "@/features/episodes/episodeHistory";
-import {
-  allEpisodes,
-  episodeAt,
-  falseBreakAt,
-  knownBy,
-  lastZoneOpenedBy,
-  waveAt,
-  zoneAt,
-} from "@/features/episodes/episodeLookup";
+import { allEpisodes, episodeAt, episodeStateAt } from "@/features/episodes/episodeLookup";
 
 const PHASE: Record<string, string> = {
   away: "away",
@@ -34,9 +26,9 @@ type Props = {
 };
 
 /**
- * "Episode on this bar": the Engine entities that contain the selected bar, showing only what is
- * known at its close (`known_at` not after the bar). Later facts (zone end, false-break outcome and
- * depth, final wave prices, stack break) are not shown as known on an earlier bar.
+ * "Episode on this bar" as it was known at the bar's close (`episodeStateAt`): open entities are shown
+ * without their final values, and nothing that is decided later (zone end, whether a run below the
+ * anchor becomes a false break, outcome, depth, wave prices, stack break) shows through.
  */
 export function EpisodeBarSection({ barTimeSec, sides, histories }: Props) {
   const t = barTimeSec * 1000;
@@ -61,47 +53,49 @@ export function EpisodeBarSection({ barTimeSec, sides, histories }: Props) {
             </p>
           );
         }
-        const zone = zoneAt(episode, t);
-        const fb = falseBreakAt(episode, t);
-        const wave = waveAt(episode, t);
-        const lastTouch = lastZoneOpenedBy(episode, t);
-        const brokenHere = knownBy(episode.stack_break_ms, t);
-        const isCurrent = episode.stack_break_ms === null;
+        const state = episodeStateAt(episode, t);
+        const closed = state.lastClosedZone;
+        const resolved = state.lastResolvedFalseBreak;
+        const wave = state.lastFinishedWave;
         return (
           <dl key={side} className="bar-inspector__dl">
             <dt>{side.toUpperCase()} episode</dt>
             <dd>
               S0 {utc(episode.start_ms)}
-              {brokenHere ? ` · stack break on this bar` : " · stack intact"}
+              {state.brokenHere ? " · stack break on this bar" : " · stack intact"}
               {episode.censored ? " · censored" : ""}
             </dd>
+            <dt>Phase</dt>
+            <dd>
+              {state.brokenHere ? "stack break" : PHASE[state.phase]}
+              {state.openZone ? ` · zone № ${state.openZone.number} open since ${utc(state.openZone.start)}` : ""}
+              {state.openFalseBreak
+                ? ` · false break № ${state.openFalseBreak.number} since ${utc(state.openFalseBreak.start)}`
+                : ""}
+            </dd>
             <dt>Last touch opened</dt>
-            <dd>{lastTouch === null ? "none yet" : `№ ${lastTouch}`}</dd>
-            <dt>Zone</dt>
+            <dd>{state.lastTouch === null ? "none yet" : `№ ${state.lastTouch}`}</dd>
+            <dt>Last closed zone</dt>
             <dd>
-              {zone
-                ? knownBy(zone.known_at, t)
-                  ? `№ ${zone.number} · ${utc(zone.start)} – ${utc(zone.end)} · low ${price(zone.low)}`
-                  : `№ ${zone.number} · open since ${utc(zone.start)}`
+              {closed
+                ? `№ ${closed.number} · ${utc(closed.start)} – ${utc(closed.end)} · low ${price(closed.low)} · high ${price(closed.high)}`
                 : "—"}
             </dd>
-            <dt>False break</dt>
+            <dt>Last resolved false break</dt>
             <dd>
-              {fb
-                ? knownBy(fb.known_at, t)
-                  ? `№ ${fb.number} · ${fb.outcome === null ? "open" : (OUTCOME[fb.outcome] ?? fb.outcome)} · depth ${price(fb.depth)}`
-                  : `№ ${fb.number} · in progress since ${utc(fb.start)}`
+              {resolved
+                ? `№ ${resolved.number} · ${resolved.outcome === null ? "open" : (OUTCOME[resolved.outcome] ?? resolved.outcome)} · depth ${price(resolved.depth)}`
                 : "—"}
             </dd>
-            <dt>Wave</dt>
+            <dt>Last finished wave</dt>
             <dd>
               {wave
-                ? wave.final && knownBy(wave.known_at, t)
-                  ? `${wave.number} · S* ${price(wave.origin_price)} · P ${price(wave.peak_price)} · touch ${price(wave.touch_price)}`
-                  : `${wave.number} forming`
+                ? `${wave.number} · S* ${price(wave.origin_price)} · P ${price(wave.peak_price)} · touch ${price(wave.touch_price)}`
                 : "—"}
             </dd>
-            {isCurrent ? (
+            <dt>Forming</dt>
+            <dd>{state.brokenHere ? "—" : `wave ${state.formingNumber}`}</dd>
+            {episode.stack_break_ms === null ? (
               <>
                 <dt>At the last closed candle</dt>
                 <dd>

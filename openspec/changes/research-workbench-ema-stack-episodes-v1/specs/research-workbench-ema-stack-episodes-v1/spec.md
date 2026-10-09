@@ -102,3 +102,9 @@ a row click SHALL highlight its zone, false break and wave.
 
 - **WHEN** the selected bar lies inside a false break whose `known_at` is later
 - **THEN** the inspector SHALL show it as in progress, without outcome and depth.
+
+#### Scenario: Run below the anchor before detection
+
+- **WHEN** the selected bar lies in a run below the anchor that Engine later reports as a false break,
+  before its zone's `known_at`
+- **THEN** the inspector SHALL show the zone as open and SHALL NOT mention a false break.

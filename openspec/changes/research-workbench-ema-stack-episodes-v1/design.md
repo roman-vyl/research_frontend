@@ -55,11 +55,14 @@ false break (red).
 ### Inspector and table
 
 Both are lookups over the loaded entities by time (`start <= t <= end`); no derived values. The
-inspector shows only what is known at the selected bar's close: a zone's number from its start, its end
-and prices from its `known_at`; a false break as in progress until its `known_at`, then outcome and
-depth; a wave as forming until its touch (`known_at`), then S*, P and touch prices; the stack break only
-on its own bar. The current episode's `touch_number` and phase are labelled as of the last closed
-candle. The table shows the episode's final structure and is not a per-bar view. The table
+inspector shows the episode as known at the selected bar's close (`episodeStateAt`), from `known_at`
+only, so that neither the hidden values nor the shown state reveal the future: the last zone opened by
+the bar is open until its `known_at`, also through a run below the anchor that later becomes a false
+break; a false break exists from its zone's `known_at` (detection) and has an outcome and depth only
+from its own `known_at`; the last closed zone, last resolved false break and last finished wave (touch
+at or before the bar) are shown with final values; the forming wave only by number; the stack break
+only on its own bar. The current episode's `touch_number` and phase are labelled as of the last closed
+candle. The table and the lanes show the episode's final structure and are not a per-bar view. The table
 shows the episode containing the selected bar on the shown side (long when both), else the current
 one.
 
