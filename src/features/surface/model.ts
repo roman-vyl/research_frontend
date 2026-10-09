@@ -249,7 +249,7 @@ export function sliceRows(
 /** Comparison-arm lookup for a metric (default: the baseline arm), keyed by the manifest's `match_on` dimensions. */
 export function baselineIndex(
   schema: ExperimentResultSchema,
-  rows: Row[],
+  rows: Iterable<Row>,
   metric: string,
   arm?: string | null,
 ): Map<string, number> {
@@ -310,7 +310,7 @@ function conditionValue(
  */
 export function percentileThresholds(
   schema: ExperimentResultSchema,
-  rows: Row[],
+  rows: Iterable<Row>,
   filters: Condition[],
   indexByMetric: (metric: string) => Map<string, number>,
 ): Map<string, number> {
@@ -359,7 +359,7 @@ export function passes(
 /** `passes` bound to one frame: the percentile cut-offs are computed once over `rows`. */
 export function makePasses(
   schema: ExperimentResultSchema,
-  rows: Row[],
+  rows: Iterable<Row>,
   filters: Condition[],
   indexByMetric: (metric: string) => Map<string, number>,
 ): (row: Row) => boolean {
@@ -448,7 +448,7 @@ export function armLabel(arm: string): string {
 /** Comparison-arm lookups by metric for one set of rows (memoised per metric). */
 export function makeIndexer(
   schema: ExperimentResultSchema,
-  rows: Row[],
+  rows: Iterable<Row>,
   arm: string | null,
 ): (metric: string) => Map<string, number> {
   const cache = new Map<string, Map<string, number>>();

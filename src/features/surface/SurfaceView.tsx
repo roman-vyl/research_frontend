@@ -1,13 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import { metricId } from "@/api/experiments";
+import { metricId, type ExperimentResultSchema, type ExperimentView } from "@/api/experiments";
 
 import "@/features/surface/surface.css";
 import { coordNumber, coordsMatch, focusControls, rowCoords } from "@/features/candidates/coords";
-import { subscribeFocus, type FocusRequest } from "@/features/candidates/focus";
+import { emitFocus, subscribeFocus, type FocusRequest } from "@/features/candidates/focus";
 import { loadCandidates, useCandidates } from "@/features/candidates/store";
 import { useWorkbenchReport, useWorkbenchShell } from "@/shared/context/WorkbenchContext";
 import { readSession, writeSession } from "@/shared/session/storage";
+import { AllSettingsStage } from "@/features/surface/AllSettingsStage";
+import { evaluateAllSettings, neededMetrics, snapshotColumns, type FilterScope } from "@/features/surface/allSettings";
 import { CellDetails } from "@/features/surface/CellDetails";
 import { EquityPanel } from "@/features/surface/EquityPanel";
 import { FiltersPanel } from "@/features/surface/FiltersPanel";
@@ -45,6 +47,7 @@ import {
 } from "@/features/surface/model";
 import { useExperimentData } from "@/features/surface/useExperimentData";
 import { useExperimentStorage } from "@/features/surface/useExperimentStorage";
+import { useAllSettingsSnapshot } from "@/features/surface/useAllSettingsSnapshot";
 import { DeleteRunsDialog, SelectionBar } from "@/features/surface/RunDeletion";
 import { CalculateDialog, canCalculate } from "@/features/surface/RunCalculation";
 import type { CalculationCoords, CalculationJob } from "@/api/experiments";
@@ -79,6 +82,12 @@ function loadFilters(experimentId: string): Condition[] {
 
 function saveFilters(experimentId: string, filters: Condition[]): void {
   writeSession(filtersKey(experimentId), filters);
+}
+
+const scopeKey = (experimentId: string): string => `surface.scope.${experimentId}`;
+
+function loadScope(experimentId: string | null): FilterScope {
+  return experimentId !== null && readSession<unknown>(scopeKey(experimentId)) === "all" ? "all" : "view";
 }
 
 function useTokens(ref: React.RefObject<HTMLElement | null>): Tokens {
@@ -119,6 +128,9 @@ export function SurfaceView() {
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [deleting, setDeleting] = useState<string[] | null>(null);
+  // Where the filters apply: the displayed grid, or every setting of the Experiment (one snapshot, loaded on demand).
+  const [scope, setScopeState] = useState<FilterScope>(() => loadScope(restoreRef.current?.experimentId ?? null));
+  const [allVersion, setAllVersion] = useState(0);
   const [calculating, setCalculating] = useState<{ rows: CalculationCoords[]; notAddressable: number } | null>(null);
   // A "show this point" request from the Candidates tab: the slice part is applied once the Experiment's
   // options are known, the controls and the selection once the matching slice has arrived.
@@ -137,6 +149,9 @@ export function SurfaceView() {
       subscribeFocus((req) => {
         focusRef.current = req;
         focusSliceRef.current = req;
+        // a point is shown on the displayed grid
+        setScopeState("view");
+        writeSession(scopeKey(req.experimentId), "view");
         restoreRef.current = null;
         if (req.experimentId !== experimentId) {
           // go through the Experiment list so that no data of the previous Experiment is mixed in
@@ -164,6 +179,7 @@ export function SurfaceView() {
     setOuterValue(restore && restore.experimentId === experimentId ? restore.outerValue : null);
     setState(null);
     setSelected(null);
+    setScopeState(loadScope(experimentId));
     if (restore && restore.experimentId !== experimentId) restoreRef.current = null;
   }, [experimentId]);
 
@@ -278,7 +294,45 @@ export function SurfaceView() {
     return !makePasses(schema, sliced, state.filters, makeIndexer(schema, rows, state.compare ?? schema.arms?.baseline ?? null))(selected);
   }, [schema, view, state, rows, selected]);
 
+  const allColumns = useMemo(
+    () => (scope === "all" && manifest && schema && state ? snapshotColumns(manifest.result_schema, neededMetrics(schema, state.metric, state.filters)) : null),
+    [scope, manifest, schema, state],
+  );
+  const all = useAllSettingsSnapshot(experimentId, allColumns, allVersion);
+  const allResult = useMemo(() => {
+    if (scope !== "all" || !all.snap || !schema || !view || !state) return null;
+    return evaluateAllSettings(schema, view, all.snap, {
+      filters: state.filters,
+      metric: state.metric,
+      mode: state.mode,
+      compare: state.compare,
+      equity,
+    });
+  }, [scope, all.snap, schema, view, state, equity]);
+
+  const setScope = (next: FilterScope) => {
+    setScopeState(next);
+    if (experimentId !== null) writeSession(scopeKey(experimentId), next);
+    if (next === "all") {
+      setSelectMode(false);
+      setPicked(new Set());
+    }
+  };
+
+  // Open a setting found under "All settings" on the displayed grid (same path as "On Surface" of a candidate).
+  const openSetting = (row: Row) => {
+    if (!schema || experimentId === null) return;
+    setScope("view");
+    // stored coordinates are text, as the candidate API keeps them
+    const coords = Object.fromEntries(Object.entries(rowCoords(schema, row)).map(([k, v]) => [k, v === null ? null : String(v)]));
+    emitFocus({ experimentId, coords });
+  };
+
   const summary = useMemo(() => {
+    if (scope === "all") {
+      if (!allResult) return "";
+      return `${allResult.matched.toLocaleString("en-US")} of ${allResult.total.toLocaleString("en-US")} settings match · ${allResult.cells.size} of ${allResult.cellTotal} cells have a match`;
+    }
     if (!schema || !view || !state) return "";
     const active = activeConditions(state.filters);
     if (active.length === 0) return "no active conditions";
@@ -287,7 +341,7 @@ export function SurfaceView() {
     const pass = sliced.filter(makePasses(schema, sliced, state.filters, idx)).length;
     const cmp = schema.arms ? `, vs ${armLabel(state.compare ?? schema.arms.baseline)}` : "";
     return `${pass} / ${sliced.length} cells pass (${active.length} condition${active.length > 1 ? "s" : ""}${cmp})`;
-  }, [schema, view, state, rows]);
+  }, [schema, view, state, rows, scope, allResult]);
 
   // Any change of what is visible clears the picked cells.
   const visibleKey = JSON.stringify([experimentId, outerValue, state?.controls ?? null, state?.mode ?? null, state?.compare ?? null]);
@@ -342,6 +396,7 @@ export function SurfaceView() {
     const y = schema && view && selected ? dimValue(schema, selected, view.y, null) : null;
     restoreRef.current = { experimentId, outerValue, selected: x !== null && y !== null ? { x, y } : null };
     data.reload();
+    setAllVersion((v) => v + 1);
   };
 
   // The job is over: clear the selection; reload the slice only when a row was published.
@@ -480,43 +535,66 @@ export function SurfaceView() {
               compare={state.compare}
               summary={summary}
               onChange={(filters) => update({ filters })}
+              scope={{ value: scope, allLabel: allSettingsLabel(schema, view), note: scopeNote(scope, allResult?.total ?? null), onChange: setScope }}
             />
             <SurfaceSliders schema={schema} view={view} state={state} options={options} outer={outer} onControl={setControl} onToggle={toggleOptional} hints={optionalHints} />
-            <SelectionBar
-              selection={selection}
-              selectMode={selectMode}
-              onSelectMode={setSelectMode}
-              onSelectPassing={() => setPicked(new Set(passSplit.passing))}
-              onSelectNotPassing={() => setPicked(new Set(passSplit.notPassing))}
-              onClear={() => setPicked(new Set())}
-              onDelete={() => setDeleting(selection.runIds)}
-              calculable={canCalculate(manifest)}
-              onCalculate={() => setCalculating({ rows: selection.calcCoords, notAddressable: selection.notAddressable })}
-            />
-            <HeatStage
-              schema={schema}
-              view={view}
-              rows={rows}
-              state={state}
-              tokens={tokens}
-              selected={selected}
-              filmstripOptions={cellsFilmstrip}
-              onSelect={setSelected}
-              onPickFrame={(v) => view.filmstrip && setControl(view.filmstrip, v)}
-              picked={picked}
-              onPick={pick}
-              pickMode={selectMode}
-              isStarred={isStarred}
-            />
-            <EquityPanel
-              schema={schema}
-              view={view}
-              rows={rows}
-              state={state}
-              selected={selected}
-              initialEquity={equity}
-              onSelect={setSelected}
-            />
+            {scope === "all" ? (
+              <>
+                {all.error && <p role="alert" className="sx-error">{all.error}</p>}
+                {all.loading && <p className="sx-note">Loading all settings… one request, {allColumns?.length ?? 0} columns.</p>}
+                {allResult && all.snap && !all.loading && (
+                  <AllSettingsStage
+                    schema={schema}
+                    view={view}
+                    snap={all.snap}
+                    result={allResult}
+                    metric={state.metric}
+                    mode={state.mode}
+                    equity={equity}
+                    tokens={tokens}
+                    onOpen={openSetting}
+                  />
+                )}
+              </>
+            ) : (
+              <>
+              <SelectionBar
+                selection={selection}
+                selectMode={selectMode}
+                onSelectMode={setSelectMode}
+                onSelectPassing={() => setPicked(new Set(passSplit.passing))}
+                onSelectNotPassing={() => setPicked(new Set(passSplit.notPassing))}
+                onClear={() => setPicked(new Set())}
+                onDelete={() => setDeleting(selection.runIds)}
+                calculable={canCalculate(manifest)}
+                onCalculate={() => setCalculating({ rows: selection.calcCoords, notAddressable: selection.notAddressable })}
+              />
+              <HeatStage
+                schema={schema}
+                view={view}
+                rows={rows}
+                state={state}
+                tokens={tokens}
+                selected={selected}
+                filmstripOptions={cellsFilmstrip}
+                onSelect={setSelected}
+                onPickFrame={(v) => view.filmstrip && setControl(view.filmstrip, v)}
+                picked={picked}
+                onPick={pick}
+                pickMode={selectMode}
+                isStarred={isStarred}
+              />
+              <EquityPanel
+                schema={schema}
+                view={view}
+                rows={rows}
+                state={state}
+                selected={selected}
+                initialEquity={equity}
+                onSelect={setSelected}
+              />
+              </>
+            )}
             {selected && experimentId !== null && (
               <CellDetails
                 schema={schema}
@@ -560,4 +638,18 @@ export function SurfaceView() {
       </div>
     </section>
   );
+}
+
+/** "All settings (SL × ADX timeframe × …)": the cells view controls other than its axes, from the manifest. */
+function allSettingsLabel(schema: ExperimentResultSchema, view: ExperimentView): string {
+  const names = view.controls
+    .filter((id) => id !== view.x && id !== view.y)
+    .map((id) => (id === GRID_ID ? "grid" : (dimById(schema, id)?.label ?? id)));
+  return names.length > 0 ? `All settings (${names.join(" × ")})` : "All settings";
+}
+
+function scopeNote(scope: FilterScope, total: number | null): string {
+  if (scope === "view") return "Conditions check only the settings shown on the surface; top / bottom % rank the cells shown. Failing cells turn grey.";
+  const n = total === null ? "all" : `all ${total.toLocaleString("en-US")}`;
+  return `Conditions check every setting of each cell; top / bottom % rank ${n} settings. A cell shows its best matching setting and how many settings match; click it to open it on the displayed grid.`;
 }
