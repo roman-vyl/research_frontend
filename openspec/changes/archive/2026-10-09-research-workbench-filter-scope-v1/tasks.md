@@ -10,5 +10,5 @@
 
 ## 2. Manual check (owner)
 
-- [ ] 2.1 On the EMA1000 ADX-since-entry Surface the result matches the HTML page for the same conditions.
-- [ ] 2.2 On an older Surface (for example EMA500 ratio_4d) the switch appears and works without any change to its manifest.
+- [x] 2.1 On the EMA1000 ADX-since-entry Surface the result matches the HTML page for the same conditions.
+- [x] 2.2 On an older Surface (for example EMA500 ratio_4d) the switch appears and works without any change to its manifest.
