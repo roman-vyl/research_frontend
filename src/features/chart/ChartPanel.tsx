@@ -22,7 +22,7 @@ import {
 
 } from "lightweight-charts";
 
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import {
   dbgMark,
@@ -81,6 +81,21 @@ import { executeViewportCommand } from "@/features/chart/runtime/executeViewport
 import { CHART_RENDER_WINDOW_SIZE } from "@/features/chart/chartDataWindowManager";
 import { findTradeById, tradeDisplayNumber } from "@/features/chart/tradeLookup";
 
+import type { EpisodeSide } from "@/api/episodes";
+import { EpisodeBarSection } from "@/features/episodes/EpisodeBarSection";
+import {
+  EMPTY_EPISODE_LAYERS_STATE,
+  EpisodeLayersPrimitive,
+  type EpisodeHighlight,
+  type EpisodeLayerToggles,
+} from "@/features/episodes/EpisodeLayersPrimitive";
+import { EpisodeToolbar, type EpisodeSideChoice } from "@/features/episodes/EpisodeToolbar";
+import { EpisodeTouchesTable } from "@/features/episodes/EpisodeTouchesTable";
+import { allEpisodes, episodeAt } from "@/features/episodes/episodeLookup";
+import { episodeParamsFromStrategySpec } from "@/features/episodes/episodeParams";
+import { useEpisodeHistories } from "@/features/episodes/useEpisodeHistories";
+import { resolveChartTimeframeMs } from "@/features/chart/chartTimeframeMs";
+
 import { useWorkbenchChart, useWorkbenchShell } from "@/shared/context/WorkbenchContext";
 import { useWorkbenchRenderViewport } from "@/shared/context/WorkbenchRenderViewportContext";
 
@@ -131,6 +146,8 @@ export function ChartPanel() {
   );
 
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+
+  const episodeLayersRef = useRef<EpisodeLayersPrimitive | null>(null);
 
   const tradePriceLinesRef = useRef<IPriceLine[]>([]);
 
@@ -250,6 +267,46 @@ export function ChartPanel() {
   const showAsideStack = selectedTradeId !== null;
   const { diagnosticsHeight, maxDiagnosticsHeight, stackSplitHandleProps } =
     useChartAsideStackResize(asideRef, showAsideStack);
+
+  const [episodeLayers, setEpisodeLayers] = useState<EpisodeLayerToggles>(
+    EMPTY_EPISODE_LAYERS_STATE.layers,
+  );
+  const [episodeSide, setEpisodeSide] = useState<EpisodeSideChoice>("both");
+  const [episodeHighlight, setEpisodeHighlight] = useState<EpisodeHighlight>(null);
+  const episodeParams = useMemo(
+    () => (runDetail ? episodeParamsFromStrategySpec(runDetail.strategy_spec) : null),
+    [runDetail],
+  );
+  const episodeTicker = runDetail?.result.strategy_evaluation.market.ticker ?? null;
+  const episodeHistories = useEpisodeHistories(episodeTicker, chartTimeframe, episodeParams);
+  const episodeSides = useMemo<EpisodeSide[]>(
+    () => (episodeSide === "both" ? ["long", "short"] : [episodeSide]),
+    [episodeSide],
+  );
+  const episodeTable = useMemo(() => {
+    for (const side of episodeSides) {
+      const history = episodeHistories.histories[side];
+      if (!history) continue;
+      const atBar =
+        selectedBarTimeSec === null
+          ? null
+          : episodeAt(allEpisodes(history), selectedBarTimeSec * 1000);
+      if (atBar) return { side, episode: atBar };
+    }
+    for (const side of episodeSides) {
+      const current = episodeHistories.histories[side]?.current;
+      if (current) return { side, episode: current };
+    }
+    return null;
+  }, [episodeHistories.histories, episodeSides, selectedBarTimeSec]);
+  const episodeStatus =
+    episodeParams === null
+      ? "no anchor_stack or ema_stack_episode in strategy_spec"
+      : episodeHistories.status === "loading"
+        ? "loading episode history…"
+        : episodeHistories.status === "error"
+          ? `episode history unavailable: ${episodeHistories.error ?? "error"}`
+          : null;
 
   const rangeWarning =
 
@@ -505,6 +562,10 @@ export function ChartPanel() {
 
     markersRef.current = createSeriesMarkers(series);
 
+    const episodeLayersPrimitive = new EpisodeLayersPrimitive();
+    series.attachPrimitive(episodeLayersPrimitive);
+    episodeLayersRef.current = episodeLayersPrimitive;
+
 
 
     chart.subscribeClick((param) => {
@@ -598,6 +659,8 @@ export function ChartPanel() {
       emaSeriesByRoleRef.current = {};
 
       markersRef.current = null;
+
+      episodeLayersRef.current = null;
 
     };
 
@@ -925,6 +988,37 @@ export function ChartPanel() {
 
 
 
+  useEffect(() => {
+    const primitive = episodeLayersRef.current;
+    const series = seriesRef.current;
+    if (!primitive || !series) return;
+    let stepSec = 300;
+    try {
+      stepSec = resolveChartTimeframeMs(chartTimeframe) / 1000;
+    } catch {
+      // keep the 5m default for placement outside the render window
+    }
+    const hasEpisodes = Object.keys(episodeHistories.histories).length > 0;
+    series.priceScale().applyOptions({
+      scaleMargins: hasEpisodes ? { top: 0.1, bottom: 0.16 } : { top: 0.2, bottom: 0.1 },
+    });
+    primitive.setState({
+      histories: episodeHistories.histories,
+      sides: episodeSides,
+      layers: episodeLayers,
+      times: chartCandles.map((candle) => candle.time),
+      stepSec,
+      highlight: episodeHighlight,
+    });
+  }, [
+    chartCandles,
+    chartTimeframe,
+    episodeHistories.histories,
+    episodeSides,
+    episodeLayers,
+    episodeHighlight,
+  ]);
+
   if (!runDetail) {
 
     return null;
@@ -1010,6 +1104,14 @@ export function ChartPanel() {
         onShowTradeManagementPhaseMarkersChange={setChartShowTradeManagementPhaseMarkers}
         showTradeManagementExitMarkers={chartShowTradeManagementExitMarkers}
         onShowTradeManagementExitMarkersChange={setChartShowTradeManagementExitMarkers}
+      />
+
+      <EpisodeToolbar
+        layers={episodeLayers}
+        onLayersChange={setEpisodeLayers}
+        side={episodeSide}
+        onSideChange={setEpisodeSide}
+        status={episodeStatus}
       />
 
       {chartTradeFocusWarning && (
@@ -1110,11 +1212,26 @@ export function ChartPanel() {
               candles={chartCandles}
               emaOverlays={chartEmaOverlays}
               onClear={() => selectBar(null)}
-            />
+            >
+              {selectedBarTimeSec !== null ? (
+                <EpisodeBarSection
+                  barTimeSec={selectedBarTimeSec}
+                  sides={episodeSides}
+                  histories={episodeHistories.histories}
+                />
+              ) : null}
+            </ChartBarInspector>
           </div>
         </div>
 
       </div>
+
+      <EpisodeTouchesTable
+        side={episodeTable?.side ?? "long"}
+        episode={episodeTable?.episode ?? null}
+        highlight={episodeHighlight}
+        onHighlight={setEpisodeHighlight}
+      />
 
     </section>
 

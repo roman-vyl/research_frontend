@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import type { ChartBar, ChartEmaOverlay } from "@/api/types";
 import {
   candleAtTime,
@@ -11,6 +13,8 @@ type ChartBarInspectorProps = {
   candles: ChartBar[];
   emaOverlays: ChartEmaOverlay[];
   onClear: () => void;
+  /** Extra per-bar sections (EMA stack episode on this bar). */
+  children?: ReactNode;
 };
 
 export function ChartBarInspector({
@@ -18,6 +22,7 @@ export function ChartBarInspector({
   candles,
   emaOverlays,
   onClear,
+  children,
 }: ChartBarInspectorProps) {
   if (selectedBarTimeSec === null) {
     return (
@@ -60,6 +65,7 @@ export function ChartBarInspector({
           </dd>
         </dl>
       )}
+      {children}
     </aside>
   );
 }

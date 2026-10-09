@@ -35,6 +35,7 @@ import type {
   RunDeletionResult,
 } from "@/api/experiments";
 import type { Candidate, CandidateCoordsRequest, CandidateList } from "@/api/candidates";
+import type { EpisodeHistoryPage, EpisodeHistoryRequest } from "@/api/episodes";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
 
@@ -227,6 +228,13 @@ export async function fetchCandlesWindow(params: {
       signal: params.signal,
     }),
   );
+}
+
+/** EMA stack episode history page, Strategy Engine's response unchanged (`research-workbench-ema-stack-episodes-v1`). */
+export async function fetchEmaStackEpisodeHistory(
+  body: EpisodeHistoryRequest,
+): Promise<EpisodeHistoryPage> {
+  return postJson<EpisodeHistoryPage>("/api/market/ema-stack-episodes/history", body);
 }
 
 /** Windowed canonical chart overlay EMA for one period (split cold-load path). */
