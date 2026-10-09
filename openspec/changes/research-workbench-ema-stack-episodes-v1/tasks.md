@@ -11,6 +11,7 @@
 - [x] 2.2 Toggles (band, zones, false breaks, waves, forming) and side LONG / SHORT / both.
 - [x] 2.3 Bar Inspector "Episode on this bar", only facts known at the bar's close (`known_at`).
 - [x] 2.4 Touches table with row highlight.
+- [x] 2.5 Toolbar fields `window_bars` / `break_bars` over the strategy values, applied on Enter or blur, reset per run and ref (owner 2026-10-09 after the smoke).
 
 ## 3. Verification
 

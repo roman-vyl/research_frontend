@@ -46,7 +46,8 @@ market layer drawn the same way for any strategy, under the strategy's trades.
 - Computing or reshaping any episode object in the frontend; every value shown is a field of Engine's
   response (times are only converted from ms to the chart's seconds for placement).
 - Reading the episode from run diagnostics or the signal trace.
-- Episode parameters editable in the UI.
+- Editing the strategy spec from the episode toolbar (typed `window_bars` / `break_bars` only change
+  what the chart asks Engine for; owner 2026-10-09).
 - Changes to strategy layers, markers or the signal timeline.
 
 ## Impact

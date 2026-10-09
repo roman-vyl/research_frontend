@@ -1,4 +1,7 @@
-import type { EpisodeSide } from "@/api/episodes";
+import { useEffect, useState } from "react";
+
+import type { EpisodeParams, EpisodeSide } from "@/api/episodes";
+import type { EpisodeWindowOverride } from "@/features/episodes/episodeParams";
 import type { EpisodeLayerToggles } from "@/features/episodes/EpisodeLayersPrimitive";
 import { EPISODE_COLORS } from "@/features/episodes/EpisodeLayersPrimitive";
 
@@ -33,7 +36,66 @@ type Props = {
   refs: string[];
   chosenRef: string | null;
   onRefChange: (ref: string) => void;
+  /** Parameters sent to Engine (strategy values plus the user's override); null hides the inputs. */
+  params: EpisodeParams | null;
+  override: EpisodeWindowOverride;
+  onOverrideChange: (override: EpisodeWindowOverride) => void;
 };
+
+const WINDOW_FIELDS: { key: keyof EpisodeWindowOverride; label: string; title: string }[] = [
+  {
+    key: "window_bars",
+    label: "Window",
+    title: "window_bars: bars without contact that close a zone, and bars wholly beyond the anchor that make a false break",
+  },
+  {
+    key: "break_bars",
+    label: "Break",
+    title: "break_bars: bars of violated EMA order before the stack break",
+  },
+];
+
+/** A positive integer field applied on Enter or blur, so Engine is not asked on every keystroke. */
+function EpisodeBarsInput({
+  label,
+  title,
+  value,
+  overridden,
+  onCommit,
+}: {
+  label: string;
+  title: string;
+  value: number | undefined;
+  overridden: boolean;
+  onCommit: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(value === undefined ? "" : String(value));
+  useEffect(() => setDraft(value === undefined ? "" : String(value)), [value]);
+  const commit = () => {
+    const parsed = Number(draft);
+    if (Number.isInteger(parsed) && parsed > 0 && parsed !== value) onCommit(parsed);
+    else setDraft(value === undefined ? "" : String(value));
+  };
+  return (
+    <label className="episode-toolbar__field" title={title}>
+      {label}
+      <input
+        type="number"
+        min={1}
+        step={1}
+        inputMode="numeric"
+        value={draft}
+        placeholder="default"
+        data-overridden={overridden || undefined}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") commit();
+        }}
+      />
+    </label>
+  );
+}
 
 /** Episode layer toggles and side choice (mock "Эпизод на графике", 2026-10-08). */
 export function EpisodeToolbar({
@@ -45,7 +107,11 @@ export function EpisodeToolbar({
   refs,
   chosenRef,
   onRefChange,
+  params,
+  override,
+  onOverrideChange,
 }: Props) {
+  const overridden = Object.keys(override).length > 0;
   return (
     <div className="episode-toolbar" aria-label="EMA stack episode layers">
       <div className="episode-toolbar__group" role="group" aria-label="Episode layers">
@@ -102,6 +168,25 @@ export function EpisodeToolbar({
               </button>
             ))}
           </div>
+        </div>
+      ) : null}
+      {params ? (
+        <div className="episode-toolbar__group" role="group" aria-label="Episode window">
+          {WINDOW_FIELDS.map((field) => (
+            <EpisodeBarsInput
+              key={field.key}
+              label={field.label}
+              title={field.title}
+              value={params[field.key]}
+              overridden={override[field.key] !== undefined}
+              onCommit={(value) => onOverrideChange({ ...override, [field.key]: value })}
+            />
+          ))}
+          {overridden ? (
+            <button type="button" className="episode-toolbar__toggle" onClick={() => onOverrideChange({})}>
+              Strategy values
+            </button>
+          ) : null}
         </div>
       ) : null}
       {status ? <span className="episode-toolbar__status">{status}</span> : null}

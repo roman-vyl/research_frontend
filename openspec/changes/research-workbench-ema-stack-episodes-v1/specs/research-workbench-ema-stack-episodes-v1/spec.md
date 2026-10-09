@@ -48,7 +48,10 @@ pin, replace `current` and add finished episodes it does not have, keeping the o
 For a strategy with `ema_stack_episode` the parameters SHALL be Engine's effective
 `episode_params_by_ref` from `POST /api/research/strategies/{strategy_id}/feature-plan`, not resolved in
 the frontend. With several refs the Workbench SHALL load nothing until the user chooses one. Without the
-section the parameters SHALL be the `anchor_stack` periods without window keys.
+section the parameters SHALL be the `anchor_stack` periods without window keys. The toolbar SHALL show
+`window_bars` and `break_bars` of those parameters and let the user type positive integers for them; a
+typed value SHALL be sent to Engine instead of the strategy's one, applied on Enter or blur, and SHALL
+hold only for the run and ref it was typed for. The strategy spec SHALL not change.
 
 #### Scenario: Strategy without the section
 
@@ -65,6 +68,12 @@ section the parameters SHALL be the `anchor_stack` periods without window keys.
 
 - **WHEN** the strategy declares two episode refs
 - **THEN** no history SHALL be requested until the user chooses one.
+
+#### Scenario: Window typed in the toolbar
+
+- **WHEN** the chosen ref has window 12, break 12 and the user types window 48
+- **THEN** the history request SHALL carry `window_bars` 48 and `break_bars` 12, and "Strategy values"
+  SHALL return to 12 / 12.
 
 ### Requirement: Chart layers
 

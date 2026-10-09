@@ -40,6 +40,12 @@ The plan is kept per `(strategy_id, raw_spec)` for the session.
 
 Without the section: the `anchor_stack` periods and no window keys (Engine default 24, break = window).
 
+The toolbar shows `window_bars` and `break_bars` of the parameters being sent (empty = Engine default)
+and takes typed positive integers on Enter or blur, so Engine is not asked per keystroke. A typed value
+overrides only that key; it is kept against the strategy parameters it was typed for, so another run
+or ref starts from its own values. "Strategy values" drops the override. Each typed set is its own
+cache key and a cold Engine request.
+
 ### Drawing
 
 One lightweight-charts series primitive on the candle series draws all layers in the pane: band, zones

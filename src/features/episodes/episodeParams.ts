@@ -51,3 +51,17 @@ export function episodeParamsKey(params: EpisodeParams): string {
     params.break_bars ?? "",
   ].join("/");
 }
+
+export type EpisodeWindowOverride = { window_bars?: number; break_bars?: number };
+
+/**
+ * The strategy's episode parameters with the window values the user typed in the episode toolbar.
+ * Only what the user set is replaced; Engine applies its own defaults to anything still missing.
+ */
+export function withEpisodeOverride(
+  params: EpisodeParams | null,
+  override: EpisodeWindowOverride,
+): EpisodeParams | null {
+  if (!params) return null;
+  return { ...params, ...override };
+}

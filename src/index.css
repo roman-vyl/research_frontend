@@ -1962,3 +1962,27 @@ select {
   color: #8794a3;
   cursor: default;
 }
+
+.episode-toolbar__field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.episode-toolbar__field input {
+  width: 4.2rem;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid #253041;
+  border-radius: 6px;
+  background: #1b2330;
+  color: #d9e0e8;
+  font: inherit;
+  text-transform: none;
+}
+
+.episode-toolbar__field input[data-overridden] {
+  border-color: #fbbf24;
+}
