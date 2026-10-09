@@ -30,12 +30,15 @@ pin; finished episodes of that page are added by start (existing ones are kept),
 
 ### Parameters
 
-`strategy_spec.ema_stack_episode` maps an `episode_ref` to parameters (`ema-stack-episode-v1`). The
-first ref is used: its `fast_period`, `anchor_period`, `slow_period`, `window_bars` and `break_bars`
-when present, a missing period taken from `anchor_stack` (the strategy section's own default).
-`history_bars` is not sent: the history route always covers the whole history and rejects it.
-Without the section: the `anchor_stack` periods and no window keys (Engine default 24, break = window). The
-parameters are never validated in the frontend: Engine's 422 is shown.
+For a strategy with `ema_stack_episode` the Workbench never resolves the section itself: it posts
+`{strategy_id, raw_spec}` to `POST /api/research/strategies/{strategy_id}/feature-plan` (Engine's feature
+plan, passed through) and takes `episode_params_by_ref`, the effective parameters after defaults. The
+history request gets `fast_period`, `anchor_period`, `slow_period`, `window_bars`, `break_bars` of the
+chosen ref; `history_bars` is not sent (the history route covers the whole history and rejects it).
+One ref is used as is; with several refs nothing is loaded until the user picks one in the toolbar.
+The plan is kept per `(strategy_id, raw_spec)` for the session.
+
+Without the section: the `anchor_stack` periods and no window keys (Engine default 24, break = window).
 
 ### Drawing
 
@@ -51,7 +54,12 @@ false break (red).
 
 ### Inspector and table
 
-Both are lookups over the loaded entities by time (`start <= t <= end`); no derived values. The table
+Both are lookups over the loaded entities by time (`start <= t <= end`); no derived values. The
+inspector shows only what is known at the selected bar's close: a zone's number from its start, its end
+and prices from its `known_at`; a false break as in progress until its `known_at`, then outcome and
+depth; a wave as forming until its touch (`known_at`), then S*, P and touch prices; the stack break only
+on its own bar. The current episode's `touch_number` and phase are labelled as of the last closed
+candle. The table shows the episode's final structure and is not a per-bar view. The table
 shows the episode containing the selected bar on the shown side (long when both), else the current
 one.
 

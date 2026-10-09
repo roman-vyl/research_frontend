@@ -77,3 +77,17 @@ export function touchRows(episode: Episode): TouchRow[] {
 export function formingWave(episode: Episode): EpisodeWave | null {
   return episode.waves.find((wave) => !wave.final) ?? null;
 }
+
+/** Known at `t`: an entity whose `known_at` is set and not after `t`. */
+export function knownBy(knownAt: number | null | undefined, t: number): boolean {
+  return knownAt !== null && knownAt !== undefined && knownAt <= t;
+}
+
+/** The highest zone number opened at or before `t` (a zone is known from its first contact). */
+export function lastZoneOpenedBy(episode: Episode, t: number): number | null {
+  let last: number | null = null;
+  for (const zone of episode.zones) {
+    if (zone.start <= t && (last === null || zone.number > last)) last = zone.number;
+  }
+  return last;
+}

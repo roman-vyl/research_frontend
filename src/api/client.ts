@@ -35,7 +35,12 @@ import type {
   RunDeletionResult,
 } from "@/api/experiments";
 import type { Candidate, CandidateCoordsRequest, CandidateList } from "@/api/candidates";
-import type { EpisodeHistoryPage, EpisodeHistoryRequest } from "@/api/episodes";
+import type {
+  EpisodeHistoryPage,
+  EpisodeHistoryRequest,
+  StrategyFeaturePlan,
+} from "@/api/episodes";
+import type { JsonObject } from "@/api/types";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
 
@@ -235,6 +240,17 @@ export async function fetchEmaStackEpisodeHistory(
   body: EpisodeHistoryRequest,
 ): Promise<EpisodeHistoryPage> {
   return postJson<EpisodeHistoryPage>("/api/market/ema-stack-episodes/history", body);
+}
+
+/** Engine's strategy feature plan, unchanged; the Workbench reads `episode_params_by_ref`. */
+export async function fetchStrategyFeaturePlan(
+  strategyId: string,
+  rawSpec: JsonObject,
+): Promise<StrategyFeaturePlan> {
+  return postJson<StrategyFeaturePlan>(
+    `/api/research/strategies/${encodeURIComponent(strategyId)}/feature-plan`,
+    { strategy_id: strategyId, raw_spec: rawSpec },
+  );
 }
 
 /** Windowed canonical chart overlay EMA for one period (split cold-load path). */

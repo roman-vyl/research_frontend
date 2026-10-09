@@ -17,16 +17,19 @@ market layer drawn the same way for any strategy, under the strategy's trades.
   side)` for the session; finished episodes are kept by their start.
 - After each new candle of the chart timeframe the first page is requested again in the background: the
   current episode is replaced and new finished episodes are added by start.
-- Episode parameters: the strategy's `ema_stack_episode` section when present, otherwise the run's
-  `anchor_stack` periods with Engine's defaults for the window.
+- Episode parameters: for a strategy with `ema_stack_episode`, Engine's effective
+  `episode_params_by_ref` from the strategy feature plan (Research Service
+  `POST /api/research/strategies/{strategy_id}/feature-plan`); with several refs the user chooses one
+  explicitly. Without the section, the run's `anchor_stack` periods with Engine's defaults for the window.
 - Chart layers, each with its own toggle, under the candles and trades:
   episode band from S0 to the stack break with a header; touch zones with their number;
   false breaks with zone low and break low, depth and outcome; waves S* → P (solid) and P → touch
   (dashed) with labels; the forming wave (dotted).
 - Episode lanes LONG and SHORT at the bottom of the chart: phase per bar (away, in zone, false break)
   from Engine's zone and false-break intervals, touch numbers above.
-- Bar Inspector: "Episode on this bar" for each side: episode start and break, the zone, false break and
-  wave that contain the bar, and the current episode's touch number and phase.
+- Bar Inspector: "Episode on this bar" for each side, as known at the bar's close: episode start, last
+  touch opened, the zone, false break and wave that contain the bar; a zone's end, a false break's
+  outcome and depth, a wave's prices and the stack break only from their `known_at`.
 - Touches table of the episode under the selected bar (or the current one): zone, S* → P, prices of
   origin, peak and touch, up and down leg high/low, false break, depth and outcome. A row click
   highlights its zone, false break and wave on the chart.

@@ -105,3 +105,14 @@ describe("episode lookups", () => {
     expect(formingWave(finished)?.number).toBe(3);
   });
 });
+
+describe("known at a bar", () => {
+  it("treats a fact as known only from its known_at", async () => {
+    const { knownBy, lastZoneOpenedBy } = await import("@/features/episodes/episodeLookup");
+    expect(knownBy(1301, 1250)).toBe(false);
+    expect(knownBy(1301, 1301)).toBe(true);
+    expect(knownBy(null, 9999)).toBe(false);
+    expect(lastZoneOpenedBy(finished, 1199)).toBeNull();
+    expect(lastZoneOpenedBy(finished, 1550)).toBe(2);
+  });
+});

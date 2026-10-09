@@ -92,7 +92,7 @@ import {
 import { EpisodeToolbar, type EpisodeSideChoice } from "@/features/episodes/EpisodeToolbar";
 import { EpisodeTouchesTable } from "@/features/episodes/EpisodeTouchesTable";
 import { allEpisodes, episodeAt } from "@/features/episodes/episodeLookup";
-import { episodeParamsFromStrategySpec } from "@/features/episodes/episodeParams";
+import { selectEpisodeParams, useEpisodeParams } from "@/features/episodes/useEpisodeParams";
 import { useEpisodeHistories } from "@/features/episodes/useEpisodeHistories";
 import { resolveChartTimeframeMs } from "@/features/chart/chartTimeframeMs";
 
@@ -273,10 +273,12 @@ export function ChartPanel() {
   );
   const [episodeSide, setEpisodeSide] = useState<EpisodeSideChoice>("both");
   const [episodeHighlight, setEpisodeHighlight] = useState<EpisodeHighlight>(null);
-  const episodeParams = useMemo(
-    () => (runDetail ? episodeParamsFromStrategySpec(runDetail.strategy_spec) : null),
-    [runDetail],
+  const [episodeRef, setEpisodeRef] = useState<string | null>(null);
+  const episodeParamsState = useEpisodeParams(
+    runDetail?.result.strategy_evaluation.strategy_id ?? null,
+    runDetail?.strategy_spec ?? null,
   );
+  const episodeParams = selectEpisodeParams(episodeParamsState, episodeRef);
   const episodeTicker = runDetail?.result.strategy_evaluation.market.ticker ?? null;
   const episodeHistories = useEpisodeHistories(episodeTicker, chartTimeframe, episodeParams);
   const episodeSides = useMemo<EpisodeSide[]>(
@@ -300,9 +302,15 @@ export function ChartPanel() {
     return null;
   }, [episodeHistories.histories, episodeSides, selectedBarTimeSec]);
   const episodeStatus =
-    episodeParams === null
-      ? "no anchor_stack or ema_stack_episode in strategy_spec"
-      : episodeHistories.status === "loading"
+    episodeParamsState.status === "loading"
+      ? "loading episode parameters from Engine…"
+      : episodeParamsState.status === "error"
+        ? `episode parameters unavailable: ${episodeParamsState.error ?? "error"}`
+        : episodeParams === null
+          ? episodeParamsState.refs.length > 1
+            ? "choose an ema_stack_episode ref"
+            : "no anchor_stack or ema_stack_episode in strategy_spec"
+          : episodeHistories.status === "loading"
         ? "loading episode history…"
         : episodeHistories.status === "error"
           ? `episode history unavailable: ${episodeHistories.error ?? "error"}`
@@ -1112,6 +1120,9 @@ export function ChartPanel() {
         side={episodeSide}
         onSideChange={setEpisodeSide}
         status={episodeStatus}
+        refs={episodeParamsState.refs}
+        chosenRef={episodeRef}
+        onRefChange={setEpisodeRef}
       />
 
       {chartTradeFocusWarning && (

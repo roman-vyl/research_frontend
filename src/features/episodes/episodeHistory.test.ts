@@ -10,7 +10,12 @@ import {
   refreshCurrent,
   type EpisodeHistoryKey,
 } from "@/features/episodes/episodeHistory";
-import { episodeParamsFromStrategySpec } from "@/features/episodes/episodeParams";
+import {
+  anchorStackEpisodeParams,
+  hasEpisodeSection,
+  historyParamsFromEffective,
+} from "@/features/episodes/episodeParams";
+import { selectEpisodeParams, type EpisodeParamsState } from "@/features/episodes/useEpisodeParams";
 
 const KEY: EpisodeHistoryKey = {
   ticker: "BTCUSDT.P",
@@ -134,24 +139,38 @@ describe("episode history loader", () => {
 describe("episode parameters", () => {
   const stack = { anchor_stack: { fast: { period: 200 }, anchor: { period: 500 }, slow: { period: 1000 } } };
 
-  it("uses anchor_stack without window keys when the strategy has no section", () => {
-    expect(episodeParamsFromStrategySpec(stack)).toEqual({
+  it("falls back to anchor_stack without window keys when the strategy has no section", () => {
+    expect(hasEpisodeSection(stack)).toBe(false);
+    expect(anchorStackEpisodeParams(stack)).toEqual({
       fast_period: 200,
       anchor_period: 500,
       slow_period: 1000,
     });
+    expect(anchorStackEpisodeParams({})).toBeNull();
   });
 
-  it("uses the first ema_stack_episode ref, periods defaulted from anchor_stack, no history_bars", () => {
+  it("takes Engine's effective parameters of a ref, without history_bars", () => {
+    expect(hasEpisodeSection({ ...stack, ema_stack_episode: { trend: {} } })).toBe(true);
     expect(
-      episodeParamsFromStrategySpec({
-        ...stack,
-        ema_stack_episode: { trend: { anchor_period: 1000, slow_period: 2000, window_bars: 12, history_bars: 15000 } },
+      historyParamsFromEffective({
+        fast_period: 500,
+        anchor_period: 1000,
+        slow_period: 2000,
+        window_bars: 24,
+        break_bars: 24,
+        history_bars: 15000,
       }),
-    ).toEqual({ fast_period: 200, anchor_period: 1000, slow_period: 2000, window_bars: 12 });
+    ).toEqual({ fast_period: 500, anchor_period: 1000, slow_period: 2000, window_bars: 24, break_bars: 24 });
   });
 
-  it("gives nothing without anchor_stack or section", () => {
-    expect(episodeParamsFromStrategySpec({})).toBeNull();
+  it("needs an explicit choice when there are several refs", () => {
+    const a = { fast_period: 1, anchor_period: 2, slow_period: 3 };
+    const b = { fast_period: 4, anchor_period: 5, slow_period: 6 };
+    const base: EpisodeParamsState = { refs: [], paramsByRef: {}, fallback: null, status: "ready", error: null };
+    expect(selectEpisodeParams({ ...base, fallback: a }, null)).toBe(a);
+    expect(selectEpisodeParams({ ...base, refs: ["x"], paramsByRef: { x: a } }, null)).toBe(a);
+    const two = { ...base, refs: ["x", "y"], paramsByRef: { x: a, y: b } };
+    expect(selectEpisodeParams(two, null)).toBeNull();
+    expect(selectEpisodeParams(two, "y")).toBe(b);
   });
 });

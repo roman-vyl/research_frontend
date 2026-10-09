@@ -29,10 +29,23 @@ type Props = {
   side: EpisodeSideChoice;
   onSideChange: (side: EpisodeSideChoice) => void;
   status: string | null;
+  /** `ema_stack_episode` refs of the strategy; a choice is shown when there are several. */
+  refs: string[];
+  chosenRef: string | null;
+  onRefChange: (ref: string) => void;
 };
 
 /** Episode layer toggles and side choice (mock "Эпизод на графике", 2026-10-08). */
-export function EpisodeToolbar({ layers, onLayersChange, side, onSideChange, status }: Props) {
+export function EpisodeToolbar({
+  layers,
+  onLayersChange,
+  side,
+  onSideChange,
+  status,
+  refs,
+  chosenRef,
+  onRefChange,
+}: Props) {
   return (
     <div className="episode-toolbar" aria-label="EMA stack episode layers">
       <div className="episode-toolbar__group" role="group" aria-label="Episode layers">
@@ -71,6 +84,26 @@ export function EpisodeToolbar({ layers, onLayersChange, side, onSideChange, sta
           ))}
         </div>
       </div>
+      {refs.length === 1 ? (
+        <span className="episode-toolbar__label">ref {refs[0]}</span>
+      ) : null}
+      {refs.length > 1 ? (
+        <div className="episode-toolbar__group" role="group" aria-label="Episode ref">
+          <span className="episode-toolbar__label">Ref</span>
+          <div className="episode-toolbar__segmented">
+            {refs.map((ref) => (
+              <button
+                key={ref}
+                type="button"
+                aria-pressed={ref === chosenRef}
+                onClick={() => onRefChange(ref)}
+              >
+                {ref}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {status ? <span className="episode-toolbar__status">{status}</span> : null}
     </div>
   );

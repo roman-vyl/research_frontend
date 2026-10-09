@@ -4,6 +4,8 @@ import {
   allEpisodes,
   episodeAt,
   falseBreakAt,
+  knownBy,
+  lastZoneOpenedBy,
   waveAt,
   zoneAt,
 } from "@/features/episodes/episodeLookup";
@@ -31,12 +33,17 @@ type Props = {
   histories: Partial<Record<EpisodeSide, EpisodeHistory>>;
 };
 
-/** "Episode on this bar": the Engine entities that contain the selected bar, per side. */
+/**
+ * "Episode on this bar": the Engine entities that contain the selected bar, showing only what is
+ * known at its close (`known_at` not after the bar). Later facts (zone end, false-break outcome and
+ * depth, final wave prices, stack break) are not shown as known on an earlier bar.
+ */
 export function EpisodeBarSection({ barTimeSec, sides, histories }: Props) {
   const t = barTimeSec * 1000;
   return (
     <div className="bar-inspector__episode">
       <h4>Episode on this bar</h4>
+      <p className="bar-inspector__hint">As known at this bar's close.</p>
       {sides.map((side) => {
         const history = histories[side];
         if (!history) {
@@ -57,39 +64,49 @@ export function EpisodeBarSection({ barTimeSec, sides, histories }: Props) {
         const zone = zoneAt(episode, t);
         const fb = falseBreakAt(episode, t);
         const wave = waveAt(episode, t);
+        const lastTouch = lastZoneOpenedBy(episode, t);
+        const brokenHere = knownBy(episode.stack_break_ms, t);
         const isCurrent = episode.stack_break_ms === null;
         return (
           <dl key={side} className="bar-inspector__dl">
             <dt>{side.toUpperCase()} episode</dt>
             <dd>
-              S0 {utc(episode.start_ms)} →{" "}
-              {isCurrent ? "running" : `stack break ${utc(episode.stack_break_ms)}`}
+              S0 {utc(episode.start_ms)}
+              {brokenHere ? ` · stack break on this bar` : " · stack intact"}
               {episode.censored ? " · censored" : ""}
             </dd>
+            <dt>Last touch opened</dt>
+            <dd>{lastTouch === null ? "none yet" : `№ ${lastTouch}`}</dd>
             <dt>Zone</dt>
             <dd>
               {zone
-                ? `№ ${zone.number} · ${utc(zone.start)} – ${utc(zone.end)} · low ${price(zone.low)}`
+                ? knownBy(zone.known_at, t)
+                  ? `№ ${zone.number} · ${utc(zone.start)} – ${utc(zone.end)} · low ${price(zone.low)}`
+                  : `№ ${zone.number} · open since ${utc(zone.start)}`
                 : "—"}
             </dd>
             <dt>False break</dt>
             <dd>
               {fb
-                ? `№ ${fb.number} · ${fb.outcome === null ? "open" : OUTCOME[fb.outcome] ?? fb.outcome} · depth ${price(fb.depth)}`
+                ? knownBy(fb.known_at, t)
+                  ? `№ ${fb.number} · ${fb.outcome === null ? "open" : (OUTCOME[fb.outcome] ?? fb.outcome)} · depth ${price(fb.depth)}`
+                  : `№ ${fb.number} · in progress since ${utc(fb.start)}`
                 : "—"}
             </dd>
             <dt>Wave</dt>
             <dd>
               {wave
-                ? `${wave.number}${wave.final ? "" : " (forming)"} · S* ${price(wave.origin_price)} · P ${price(wave.peak_price)}`
+                ? wave.final && knownBy(wave.known_at, t)
+                  ? `${wave.number} · S* ${price(wave.origin_price)} · P ${price(wave.peak_price)} · touch ${price(wave.touch_price)}`
+                  : `${wave.number} forming`
                 : "—"}
             </dd>
             {isCurrent ? (
               <>
-                <dt>Now (last closed candle)</dt>
+                <dt>At the last closed candle</dt>
                 <dd>
                   touch № {episode.touch_number ?? "—"} ·{" "}
-                  {episode.phase ? PHASE[episode.phase] ?? episode.phase : "—"}
+                  {episode.phase ? (PHASE[episode.phase] ?? episode.phase) : "—"}
                 </dd>
               </>
             ) : null}

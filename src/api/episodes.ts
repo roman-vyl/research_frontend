@@ -88,3 +88,8 @@ export type EpisodeHistoryPage = {
   episodes: Episode[];
   next_before_start_ms: number | null;
 };
+
+/** The part of Engine's strategy feature plan the Workbench reads: effective episode parameters per ref. */
+export type StrategyFeaturePlan = {
+  episode_params_by_ref?: Record<string, Record<string, number>>;
+};
