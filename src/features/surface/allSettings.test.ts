@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import type { ExperimentResultSchema, ExperimentResults } from "@/api/experiments";
-import { evaluateAllSettings, neededMetrics, snapshotColumns } from "@/features/surface/allSettings";
+import {
+  allSettingsEquityFrame,
+  allSettingsSelection,
+  evaluateAllSettings,
+  neededMetrics,
+  snapshotColumns,
+} from "@/features/surface/allSettings";
 import { RATIO_MANIFEST, TRAILING_MANIFEST, TRAILING_RESULTS } from "@/features/surface/fixtures/experiments";
 import { cellKey, makeIndexer, makePasses, toRows, treatmentArms, withNetPnl, type Condition } from "@/features/surface/model";
 
@@ -111,6 +117,7 @@ describe("All settings snapshot columns", () => {
       "max_drawdown_pct",
       "realised_trade_count",
       "return_pct",
+      "run_id",
       "sl",
       "tp_ratio",
       "width",
@@ -118,5 +125,32 @@ describe("All settings snapshot columns", () => {
     const trailing = snapshotColumns(TRAILING_MANIFEST.result_schema, ["net_pnl"]);
     expect(trailing).toEqual(expect.arrayContaining(["arm", "grid", "trigger.R", "trigger.ATR", "distance.R", "be_trigger"]));
     expect(trailing).not.toContain("profit_factor");
+  });
+});
+
+describe("All settings selection and equity frame", () => {
+  // TWO_CELLS with a run on settings 2, 4, 7 and 9
+  const WITH_RUNS: ExperimentResults = {
+    columns: [...TWO_CELLS.columns, "run_id"],
+    rows: TWO_CELLS.rows,
+    data: [...TWO_CELLS.data, Array.from({ length: TWO_CELLS.rows }, (_, i) => ([1, 3, 6, 8].includes(i) ? `r${i + 1}` : ""))],
+  };
+  const res = evaluateAllSettings(SCHEMA, VIEW, WITH_RUNS, { filters: [cond(">=", 4)], metric: "net_pnl", mode: "treatment", compare: null, equity: null });
+
+  it("a picked cell takes its matching settings of every slice, or the rest", () => {
+    const m = allSettingsSelection(SCHEMA, WITH_RUNS, res, { picked: new Set([A]), side: "matching", mode: "treatment", compare: null });
+    // cell A matches Net PnL 4 and 5 (SL 4, 5); run on SL 4 only
+    expect(m).toMatchObject({ cells: 1, settings: 2, runIds: ["r4"], withoutRun: 0, notAddressable: 0 });
+    expect(m.calcCoords).toEqual([{ width: 3, lookback: 20, sl: 4 }, { width: 3, lookback: 20, sl: 5 }]);
+    const o = allSettingsSelection(SCHEMA, WITH_RUNS, res, { picked: new Set([A, B]), side: "other", mode: "treatment", compare: null });
+    // B has no failing setting, so only A counts
+    expect(o).toMatchObject({ cells: 1, settings: 3, runIds: ["r2"] });
+  });
+
+  it("the equity frame lists matching settings with a run, best first", () => {
+    const f = allSettingsEquityFrame(WITH_RUNS, res, "net_pnl", null, 60);
+    expect(f.rows.map((r) => r.run_id)).toEqual(["r9", "r7", "r4"]);
+    expect(f).toMatchObject({ withRun: 3, pass: 7, total: 10 });
+    expect(allSettingsEquityFrame(WITH_RUNS, res, "net_pnl", null, 1).rows).toHaveLength(1);
   });
 });

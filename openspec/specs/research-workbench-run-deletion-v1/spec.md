@@ -7,7 +7,8 @@ bundles behind them through the Research Service, keeping the Surface rows and m
 ## Requirements
 ### Requirement: Selection acts on the visible slice
 
-Selection SHALL include only cells of the currently displayed slice and controls.
+Under "Displayed grid" selection SHALL include only cells of the currently displayed slice
+and controls (under "All settings" see research-workbench-filter-scope-v1).
 Changing the Experiment, the outer slice, the grid, the arm view or any fixed control
 SHALL clear the selection. Selection SHALL NOT change the point shown in CellDetails
 or `selectedRunId`.

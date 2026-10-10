@@ -66,9 +66,28 @@ on reload and after run deletion.
 
 ### Requirement: Selection outside the displayed grid
 
-Under "All settings" the cell selection bar and run deletion SHALL NOT be offered.
+Under "All settings" the selection bar, Delete runs and Calculate SHALL be offered on the
+All settings map. A picked cell SHALL stand for its settings of every outer slice, grid
+and control value on one side of the active conditions: "Select matching" picks every
+cell with a match and takes the matching settings, "Select not matching" picks every
+cell with a failing setting and takes the failing ones; a click in select mode (or
+Ctrl/Cmd+click) toggles a cell on the current side. When the comparison arm is shown,
+the matched comparison rows SHALL be included, as on the displayed grid. Run ids and
+Calculate addresses SHALL come from the same snapshot (the snapshot includes `run_id`);
+the existing plan dialogs (dry-run counts and size, plan confirm) SHALL be used unchanged.
+A new evaluation, a scope change, deletion or Calculate SHALL clear the picked cells.
 
-#### Scenario: hidden selection
-- **WHEN** "All settings" is selected
-- **THEN** the selection bar is not shown
+#### Scenario: delete runs of the failing settings of every slice
+- **WHEN** "All settings" is selected, a condition fails settings in SL 5 and SL 7 and the user presses "Select not matching" and "Delete runs"
+- **THEN** the deletion plan is requested for the run ids of the failing settings of both SL values
+
+### Requirement: Equity curves under All settings
+
+Under "All settings" the equity panel (by year / by trade) SHALL draw the matching
+settings of every slice that have an Engine run, the best 60 by the displayed metric;
+clicking a curve SHALL open its setting on the displayed grid.
+
+#### Scenario: curves of matches
+- **WHEN** 4 settings match and 2 of them have a run
+- **THEN** the panel draws those 2 runs and reports 4 matching settings
 

@@ -135,13 +135,18 @@ export function controlOptions(
       const v = r[col];
       if (typeof v === "number") vals.add(v);
     }
+    // an optional dimension also offers its declared values, so cells without a row can be addressed
+    if (dim.optional) for (const v of dim.values ?? []) if (![...vals].some((o) => close(o, v))) vals.add(v);
     out[id] = [...vals].sort((a, b) => a - b);
     const want = controls[id];
     if (typeof want === "number") {
-      pool = sub.filter((r) => {
-        const v = r[col];
-        return typeof v === "number" && close(v, want);
-      });
+      // a declared value without rows leaves the pool as is: later controls keep the options of the geometry
+      if (!dim.optional || pool.some((r) => typeof r[col] === "number" && close(r[col] as number, want))) {
+        pool = sub.filter((r) => {
+          const v = r[col];
+          return typeof v === "number" && close(v, want);
+        });
+      }
     }
   }
   return out;
@@ -219,9 +224,11 @@ export function sliceRows(
   rows: Row[],
   controls: ControlState,
   arms: string[] | null,
+  /** Controls not applied at all (neither their value nor their "off" rows). */
+  ignore?: ReadonlySet<string>,
 ): Row[] {
   const grid = activeGrid(schema, controls);
-  const free = new Set([view.x, view.y, ...(view.aggregate_over ?? [])]);
+  const free = new Set([view.x, view.y, ...(view.aggregate_over ?? []), ...(ignore ?? [])]);
   return rows.filter((r) => {
     if (arms && !arms.includes(String(r.arm))) return false;
     for (const id of view.controls) {
@@ -265,7 +272,7 @@ export function baselineIndex(
   return out;
 }
 
-function matchKey(schema: ExperimentResultSchema, row: Row): string {
+export function matchKey(schema: ExperimentResultSchema, row: Row): string {
   const dims = schema.arms?.match_on ?? [];
   return dims.map((d) => String(dimValue(schema, row, d, null))).join("|");
 }
@@ -374,7 +381,60 @@ export type Matrix = {
   cells: (Row | null)[][];
 };
 
-export function buildMatrix(schema: ExperimentResultSchema, view: ExperimentView, rows: Row[], controls: ControlState): Matrix {
+/** Optional controls that are switched on. */
+export function optionalOn(schema: ExperimentResultSchema, view: ExperimentView, controls: ControlState): string[] {
+  return view.controls.filter((id) => dimById(schema, id)?.optional && typeof controls[id] === "number");
+}
+
+/**
+ * While an optional control is on, the cells of the geometry whatever the option (the x / y values of the slice
+ * without that control): a cell with no row for the option value is shown empty ("—") and can still be picked
+ * and calculated. `null` when no optional control is on.
+ */
+export function geometryRows(
+  schema: ExperimentResultSchema,
+  view: ExperimentView,
+  rows: Row[],
+  controls: ControlState,
+): Row[] | null {
+  const on = optionalOn(schema, view, controls);
+  if (on.length === 0) return null;
+  return sliceRows(schema, view, rows, controls, treatmentArms(schema), new Set(on));
+}
+
+/**
+ * Calculate address of a cell that has no row: x / y of the cell, every other dimension from the controls (in the
+ * active grid), the treatment arm when there is exactly one. `null` when a dimension has no value.
+ */
+export function emptyCellCoords(
+  schema: ExperimentResultSchema,
+  view: ExperimentView,
+  controls: ControlState,
+  x: number,
+  y: number,
+): CalculationCoords | null {
+  const grid = activeGrid(schema, controls);
+  const row: Row = {};
+  for (const dim of schema.dimensions) {
+    const v = dim.id === view.x ? x : dim.id === view.y ? y : controls[dim.id];
+    row[dimColumn(dim, grid)] = typeof v === "number" ? v : null;
+  }
+  const treat = treatmentArms(schema);
+  if (treat) {
+    if (treat.length !== 1) return null;
+    row.arm = treat[0];
+  }
+  return calculationCoords(schema, row, grid);
+}
+
+export function buildMatrix(
+  schema: ExperimentResultSchema,
+  view: ExperimentView,
+  rows: Row[],
+  controls: ControlState,
+  /** Extra rows whose x / y values only widen the axes (see `geometryRows`). */
+  axes?: Row[] | null,
+): Matrix {
   const grid = activeGrid(schema, controls);
   const xd = dimById(schema, view.x);
   const yd = dimById(schema, view.y);
@@ -389,6 +449,13 @@ export function buildMatrix(schema: ExperimentResultSchema, view: ExperimentView
       xs.add(x);
       ys.add(y);
       keyed.set(`${x}|${y}`, r);
+    }
+    for (const r of axes ?? []) {
+      const x = r[dimColumn(xd, grid)];
+      const y = r[dimColumn(yd, grid)];
+      if (typeof x !== "number" || typeof y !== "number") continue;
+      xs.add(x);
+      ys.add(y);
     }
   }
   const xa = [...xs].sort((a, b) => a - b);
@@ -564,7 +631,11 @@ export function calculationCoords(schema: ExperimentResultSchema, row: Row, grid
   const out: CalculationCoords = {};
   for (const dim of schema.dimensions) {
     const v = row[dimColumn(dim, grid)];
-    if (typeof v !== "number") return null;
+    if (typeof v !== "number") {
+      // an empty optional cell is that option switched off: the address leaves it out
+      if (dim.optional && (v === null || v === undefined || v === "")) continue;
+      return null;
+    }
     out[dim.id] = v;
   }
   if (gridsOf(schema).length > 0) {
@@ -641,7 +712,20 @@ export function selectionRuns(
     if (c) calcCoords.push(c);
     else notAddressable += 1;
   }
-  return { cells: perCell.size, withoutRun, runIds: [...all].sort(), calcCoords, notAddressable };
+  // picked cells without a row (an optional control on, no row for its value): addressed from the controls
+  let empty = 0;
+  if (optionalOn(schema, view, state.controls).length > 0) {
+    for (const key of selection) {
+      if (perCell.has(key)) continue;
+      const [x, y] = key.split("|").map(Number);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      empty += 1;
+      const c = emptyCellCoords(schema, view, state.controls, x, y);
+      if (c) calcCoords.push(c);
+      else notAddressable += 1;
+    }
+  }
+  return { cells: perCell.size + empty, withoutRun: withoutRun + empty, runIds: [...all].sort(), calcCoords, notAddressable };
 }
 
 /** GB (10^9 bytes) with two decimals. */

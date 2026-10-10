@@ -141,7 +141,18 @@ export function SurfaceSliders({
                 {dim.label ?? id}
                 {unit && <span className="sx-unit-tag">{unit}</span>}
               </label>
-              {on ? (
+              {on && opts.length <= BUTTONS_MAX ? (
+                <div className="sx-sl-row">
+                  <div className="sx-segmented" role="group" aria-label={dim.label ?? id}>
+                    {opts.map((o) => (
+                      <button key={o} type="button" aria-pressed={o === cur} onClick={() => onControl(id, o)}>
+                        {controlReadout(schema, id, o, grid, sl).main}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="sx-ro">{ro?.alt && <small>{ro.alt}</small>}</span>
+                </div>
+              ) : on ? (
                 <div className="sx-sl-row">
                   <input
                     type="range"

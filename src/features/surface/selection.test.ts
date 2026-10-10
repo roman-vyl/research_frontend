@@ -59,13 +59,21 @@ describe("Calculate rows of a selection", () => {
     expect(out.calcCoords[0]).toEqual({ width: 3, lookback: 20, sl: 5, trigger: 6, distance: 0.5, be_trigger: 0, grid: "R", arm: "trailing_no_tp" });
   });
 
-  it("a row without a value for a dimension is not addressable and not sent", () => {
+  it("an empty optional cell is that option off: the address leaves it out", () => {
     const view = tschema.view.find((v) => !v.aggregate_over)!;
     const rows = toRows(TRAILING_RESULTS); // be_trigger is empty: the optional dimension is off
     const state = defaultState(tschema, view.id, rows);
     const out = selectionRuns(tschema, view, rows, { ...state, mode: "treatment" }, new Set([cellKey(20, 3)]));
+    expect(out.calcCoords).toEqual([{ width: 3, lookback: 20, sl: 5, trigger: 6, distance: 0.5, grid: "R", arm: "trailing_no_tp" }]);
+    expect(out.notAddressable).toBe(0);
+  });
+
+  it("a row without a value for a required dimension is not addressable and not sent", () => {
+    const view = tschema.view.find((v) => !v.aggregate_over)!;
+    const rows = toRows(TRAILING_RESULTS).map((r) => ({ ...r, "distance.R": null }));
+    const state = defaultState(tschema, view.id, toRows(TRAILING_RESULTS));
+    const out = selectionRuns(tschema, view, rows, { ...state, mode: "treatment" }, new Set([cellKey(20, 3)]));
     expect(out.calcCoords).toEqual([]);
-    expect(out.notAddressable).toBe(1);
   });
 
   it("availability: materialize present, N between 1 and the request limit", () => {

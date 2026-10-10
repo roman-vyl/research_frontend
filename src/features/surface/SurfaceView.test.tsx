@@ -202,22 +202,53 @@ describe("SurfaceView", () => {
     }
   });
 
-  it("Breakeven is an optional axis: a checkbox shows its slider and the Engine-run rows", async () => {
+  it("Breakeven is an optional axis: a checkbox shows its value buttons and the Engine-run rows", async () => {
     render(<SurfaceView />);
     await openExperiment(/trailing geometry/);
     await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
-    expect(screen.queryByRole("slider", { name: "Breakeven" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Breakeven" })).toBeNull();
     const box = () => screen.getByRole("checkbox", { name: /Breakeven/ }) as HTMLInputElement;
     expect(box().disabled).toBe(true); // the default geometry has no breakeven rows
     expect(screen.getByText(/none for this geometry/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Go to/ })); // jumps to the geometry that has them
     await waitFor(() => expect(box().disabled).toBe(false));
     fireEvent.click(box());
-    expect(await screen.findByRole("slider", { name: "Breakeven" })).toBeTruthy();
+    expect(await screen.findByRole("group", { name: "Breakeven" })).toBeTruthy();
     expect(screen.getAllByText(/6R/).length).toBeGreaterThan(0);
     expect(document.querySelectorAll(".sx-cell.sx-run").length).toBeGreaterThan(0);
     fireEvent.click(box());
-    await waitFor(() => expect(screen.queryByRole("slider", { name: "Breakeven" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Breakeven" })).toBeNull());
+  });
+
+  it("Breakeven values from the manifest: cells without a row show — and are calculated from their coordinates", async () => {
+    const schema = TRAILING_MANIFEST.result_schema;
+    const withValues = {
+      ...TRAILING_MANIFEST,
+      materialize: { strategy_template: {} },
+      result_schema: {
+        ...schema,
+        dimensions: schema.dimensions.map((d) => (d.id === "be_trigger" ? { ...d, values: [2, 3] } : d)),
+      },
+    };
+    fetchExperimentManifest.mockImplementation(async () => withValues);
+    planCalculation.mockResolvedValue(CALC_PLAN);
+    render(<SurfaceView />);
+    await openExperiment(/trailing geometry/);
+    await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
+    const box = screen.getByRole("checkbox", { name: /Breakeven/ }) as HTMLInputElement;
+    expect(box.disabled).toBe(false); // the declared values make it available on any geometry
+    fireEvent.click(box);
+    const group = await screen.findByRole("group", { name: "Breakeven" });
+    expect(within(group).getAllByRole("button").map((b) => b.textContent)).toEqual(["2R", "3R"]); // this geometry has no breakeven rows, only the declared values
+    // no row has breakeven 2R here: every cell of the geometry is "—"
+    await waitFor(() => expect(document.querySelectorAll(".sx-cell.sx-nodata")).toHaveLength(4));
+    fireEvent.click(screen.getByRole("button", { name: "Select empty" }));
+    expect(screen.getByText(/4 cells selected · 0 runs · 4 cells without run/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Calculate (4)" }));
+    await screen.findByRole("dialog", { name: "Calculate runs" });
+    const sent = planCalculation.mock.calls[0][1] as Record<string, unknown>[];
+    expect(sent).toHaveLength(4);
+    expect(sent[0]).toEqual({ width: 3, lookback: 20, sl: 5, trigger: 6, distance: 0.5, be_trigger: 2, grid: "R", arm: "trailing_no_tp" });
   });
 
   it("starts with experiment cards (ticker, anchor, title) and selects nothing automatically", async () => {
@@ -673,7 +704,7 @@ describe("SurfaceView: filter scope", () => {
     await screen.findByRole("table", { name: /^All settings:/ });
     expect(fullCalls()).toHaveLength(1);
     const first = fullCalls()[0].columns!;
-    expect(first).toEqual(["lookback", "realised_trade_count", "return_pct", "sl", "tp_ratio", "width"]);
+    expect(first).toEqual(["lookback", "realised_trade_count", "return_pct", "run_id", "sl", "tp_ratio", "width"]);
     expect(screen.getByText(/6 of 6 settings match · 6 of 6 cells have a match/)).toBeTruthy();
 
     fireEvent.click(screen.getByText("+ add condition"));
@@ -683,7 +714,42 @@ describe("SurfaceView: filter scope", () => {
     // the whole needed set again, never one extra column joined by row index
     expect(fullCalls()[1].columns).toEqual([...first, "profit_factor"].sort());
     expect(await screen.findByText(/4 of 6 settings match · 4 of 6 cells have a match/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /Select cells/ })).toBeNull();
+  });
+
+  it("filters pick cells for Delete runs and Calculate across all settings; equity curves of the matches are shown", async () => {
+    planRunDeletion.mockResolvedValue(PLAN);
+    render(<SurfaceView />);
+    await openExperiment(/fixed SL/);
+    await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
+    fireEvent.click(screen.getByRole("button", { name: /^All settings/ }));
+    await screen.findByRole("table", { name: /^All settings:/ });
+    fireEvent.click(screen.getByText("+ add condition"));
+    fireEvent.change(screen.getByLabelText("metric"), { target: { value: "profit_factor" } });
+    fireEvent.change(screen.getByLabelText("threshold"), { target: { value: "1.3" } });
+    expect(await screen.findByText(/4 of 6 settings match · 4 of 6 cells/)).toBeTruthy();
+    // settings 3..6 match; 3 and 4 have runs
+    expect(await screen.findByText(/Equity curves · \d+ of 2 runs drawn · 4 of 6 settings match/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Select matching" }));
+    expect(screen.getByText(/4 cells selected · 4 matching settings of all settings/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Calculate (4)" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Select not matching" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete runs (2)" }));
+    await screen.findByRole("dialog", { name: "Delete runs" });
+    expect(planRunDeletion).toHaveBeenCalledWith("btcusdt_p.ema500.ratio_4d", [RUN("1"), RUN("2")]);
+  });
+
+  it("select mode on the All settings map toggles cells instead of opening them", async () => {
+    render(<SurfaceView />);
+    await openExperiment(/fixed SL/);
+    await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
+    fireEvent.click(screen.getByRole("button", { name: /^All settings/ }));
+    const table = await screen.findByRole("table", { name: /^All settings:/ });
+    fireEvent.click(screen.getByRole("button", { name: "Select cells" }));
+    fireEvent.click(within(table).getAllByRole("button")[0]);
+    expect(screen.getByRole("button", { name: /^All settings/ }).getAttribute("aria-pressed")).toBe("true");
+    expect(document.querySelectorAll(".sx-cell.sx-pick")).toHaveLength(1);
+    expect(screen.getByText(/1 cells selected · 1 matching settings of all settings · 1 runs/)).toBeTruthy();
   });
 
   it("a cell opens its best setting on the displayed grid", async () => {

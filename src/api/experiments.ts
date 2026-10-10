@@ -27,6 +27,8 @@ export type ExperimentDimension = {
   grids?: Record<string, GridColumn>;
   /** Off by default: a checkbox enables it, then it is a slider; rows without a value are the "off" rows. */
   optional?: boolean;
+  /** Values an optional dimension can take, offered even when no row carries one yet (its cells can then be calculated). */
+  values?: number[];
   /** Readable names of discrete values, keyed by the value as text (for example {"60": "1h"}). */
   labels?: Record<string, string>;
 };

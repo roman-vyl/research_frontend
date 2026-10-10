@@ -197,21 +197,31 @@ unavailable SHALL NOT break the application.
 ### Requirement: Optional dimensions are switched on by a checkbox
 
 A manifest dimension marked `optional` (for example "Breakeven") SHALL be off by default and, while off,
-the view SHALL show only the rows that have no value for it. A checkbox SHALL switch it on; only then a
-slider over its values for the current geometry SHALL appear and the rows with that value SHALL be shown.
-The checkbox SHALL be unavailable while the current geometry has no row with a value for the dimension, and
-a switched-on dimension SHALL switch itself off when a geometry without values is selected.
+the view SHALL show only the rows that have no value for it. A checkbox SHALL switch it on; only then its
+values SHALL appear (buttons for up to six values, otherwise a slider): the values of the current geometry's
+rows plus the dimension's declared `values`. The checkbox SHALL be unavailable while the current geometry has
+no row with a value and the dimension declares no `values`, and a switched-on dimension SHALL switch itself
+off when a geometry without values is selected. While it is on, the heatmap SHALL keep every cell of the
+geometry: a cell with no row for the selected value SHALL show "—", SHALL be selectable (click in select
+mode, Ctrl/Cmd+click, drag, "Select empty") and SHALL be sent to Calculate with its coordinates (x / y of the
+cell, the other dimensions from the controls, the selected optional value, `grid`, and `arm` when the schema
+has exactly one treatment arm). An address SHALL leave out an optional dimension that is off.
 
 #### Scenario: Breakeven runs
 
 - **WHEN** the user selects a geometry that has breakeven rows and ticks the Breakeven checkbox
-- **THEN** a slider over the breakeven triggers appears and the heatmap shows the rows of the selected
-  trigger, each with its Engine run.
+- **THEN** the breakeven triggers appear and the heatmap shows the rows of the selected trigger, each with
+  its Engine run.
 
 #### Scenario: Geometry without breakeven rows
 
-- **WHEN** the selected geometry has no breakeven rows
+- **WHEN** the selected geometry has no breakeven rows and the dimension declares no `values`
 - **THEN** the checkbox is disabled with an explanatory note and the plain rows are shown.
+
+#### Scenario: Calculate breakeven cells that have no row
+
+- **WHEN** the dimension declares `values` [2, 3], no row has breakeven 2R, the user ticks Breakeven, keeps 2R, presses "Select empty" and Calculate
+- **THEN** every cell shows "—" and the plan is requested with one address per cell carrying `be_trigger` 2
 
 ### Requirement: Percentile filters
 

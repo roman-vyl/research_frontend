@@ -28,6 +28,11 @@ type Props = {
   tokens: Tokens;
   /** Open this row on the displayed grid. */
   onOpen: (row: Row) => void;
+  /** Cells picked for Delete runs / Calculate (keys from `cellKey`). */
+  picked?: ReadonlySet<string>;
+  /** In select mode a click toggles a cell instead of opening its best setting. */
+  pickMode?: boolean;
+  onPick?: (key: string) => void;
 };
 
 /** The setting of a row beyond its cell: every view control except x / y, its grid and its arm. */
@@ -50,24 +55,27 @@ export function settingText(schema: ExperimentResultSchema, view: ExperimentView
 }
 
 /** "All settings" heat map: per cell the best matching setting and how many settings match; and the top matches. */
-export function AllSettingsStage({ schema, view, snap, result, metric, mode, equity, tokens, onOpen }: Props) {
+export function AllSettingsStage({ schema, view, snap, result, metric, mode, equity, tokens, onOpen, picked, pickMode = false, onPick }: Props) {
   const m = metricById(schema, metric);
   const delta = mode === "difference";
   const domain = useMemo(() => {
     const vals = [...result.cells.values()].map((c) => c.value).filter((v): v is number => v !== null);
     return makeDomain(vals, metricStyle(metric), delta);
   }, [result, metric, delta]);
+  const present = useMemo(() => new Set(result.cellKeys), [result]);
   const extra = tableMetrics(schema).filter((id) => id !== metric);
   if (!m) return null;
   const xd = dimById(schema, view.x);
   const yd = dimById(schema, view.y);
   const rowOf = (i: number): Row => snapshotRow(snap, i, equity);
+  // select mode, or Ctrl/Cmd+click: toggle the cell
+  const toggles = (e: { ctrlKey: boolean; metaKey: boolean }): boolean => onPick !== undefined && (pickMode || e.ctrlKey || e.metaKey);
 
   return (
     <>
       <div className="sx-panel sx-stage">
         <div className="sx-axis-caption">
-          rows: {yd?.label ?? view.y} · columns: {xd?.label ?? view.x} · All settings · best {m.label} per cell among matching settings · small number = matching settings · click a cell to open its best setting
+          rows: {yd?.label ?? view.y} · columns: {xd?.label ?? view.x} · All settings · best {m.label} per cell among matching settings · small number = matching settings · {pickMode ? "click a cell to toggle it" : "click a cell to open its best setting"}
         </div>
         <table className="sx-heat" aria-label={`All settings: ${yd?.label ?? view.y} by ${xd?.label ?? view.x}`}>
           <thead>
@@ -81,11 +89,20 @@ export function AllSettingsStage({ schema, view, snap, result, metric, mode, equ
               <tr key={y}>
                 <th>{view.y === "width" ? `w=${y}` : y}</th>
                 {result.xs.map((x) => {
-                  const c = result.cells.get(cellKey(x, y));
+                  const key = cellKey(x, y);
+                  const c = result.cells.get(key);
+                  const isPicked = picked?.has(key) ?? false;
                   if (!c) {
+                    const pickable = onPick !== undefined && present.has(key);
                     return (
                       <td key={x}>
-                        <div className="sx-cell sx-off" title="no matching setting"><span className="sx-v">·</span></div>
+                        <div
+                          className={`sx-cell sx-off${isPicked ? " sx-pick" : ""}`}
+                          title="no matching setting"
+                          onClick={(e) => pickable && toggles(e) && onPick(key)}
+                        >
+                          <span className="sx-v">·</span>
+                        </div>
                       </td>
                     );
                   }
@@ -93,17 +110,18 @@ export function AllSettingsStage({ schema, view, snap, result, metric, mode, equ
                   return (
                     <td key={x}>
                       <div
-                        className="sx-cell"
+                        className={`sx-cell${isPicked ? " sx-pick" : ""}`}
                         role="button"
                         tabIndex={0}
                         data-count={c.count}
                         style={{ background: bg, color: textOn(bg, tokens) }}
                         title={`${view.y}=${y} · ${view.x}=${x} · ${c.count} matching · best: ${settingText(schema, view, rowOf(c.best))}`}
-                        onClick={() => onOpen(rowOf(c.best))}
+                        onClick={(e) => (toggles(e) ? onPick?.(key) : onOpen(rowOf(c.best)))}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
-                            onOpen(rowOf(c.best));
+                            if (pickMode && onPick) onPick(key);
+                            else onOpen(rowOf(c.best));
                           }
                         }}
                       >
