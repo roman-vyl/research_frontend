@@ -31,6 +31,7 @@ import {
   addNetPnl,
   armLabel,
   buildMatrix,
+  geometryRows,
   cellKey,
   controlOptions,
   controlReadout,
@@ -394,16 +395,20 @@ export function SurfaceView() {
   useEffect(() => setPicked(new Set()), [visibleKey]);
 
   const passSplit = useMemo(() => {
-    const out = { passing: [] as string[], notPassing: [] as string[] };
+    const out = { passing: [] as string[], notPassing: [] as string[], empty: [] as string[] };
     if (!schema || !view || !state) return out;
     const sliced = sliceRows(schema, view, rows, state.controls, treatmentArms(schema));
-    const matrix = buildMatrix(schema, view, sliced, state.controls);
+    const matrix = buildMatrix(schema, view, sliced, state.controls, geometryRows(schema, view, rows, state.controls));
     const filtersOn = activeConditions(state.filters).length > 0;
     const pass = makePasses(schema, sliced, state.filters, makeIndexer(schema, rows, state.compare ?? schema.arms?.baseline ?? null));
     matrix.ys.forEach((y, yi) =>
       matrix.xs.forEach((x, xi) => {
         const r = matrix.cells[yi][xi];
-        if (!r) return;
+        if (!r) {
+          // only with an optional control on does the matrix hold cells without a row
+          out.empty.push(cellKey(x, y));
+          return;
+        }
         (!filtersOn || pass(r) ? out.passing : out.notPassing).push(cellKey(x, y));
       }),
     );
@@ -641,6 +646,7 @@ export function SurfaceView() {
                 onSelectMode={setSelectMode}
                 onSelectPassing={() => setPicked(new Set(passSplit.passing))}
                 onSelectNotPassing={() => setPicked(new Set(passSplit.notPassing))}
+                onSelectEmpty={passSplit.empty.length > 0 ? () => setPicked(new Set(passSplit.empty)) : undefined}
                 onClear={() => setPicked(new Set())}
                 onDelete={() => setDeleting(selection.runIds)}
                 calculable={canCalculate(manifest)}

@@ -10,6 +10,7 @@ import {
   armLabel,
   baselineOf,
   buildMatrix,
+  geometryRows,
   cellKey,
   controlReadout,
   dimById,
@@ -66,7 +67,10 @@ export function HeatStage({ schema, view, rows, state, tokens, selected, filmstr
     () => sliceRows(schema, view, rows, state.controls, treatmentArms(schema)),
     [schema, view, rows, state.controls],
   );
-  const matrix = useMemo(() => buildMatrix(schema, view, sliced, state.controls), [schema, view, sliced, state.controls]);
+  // with an optional control on, the geometry's cells stay on the map: a cell without a row for the option shows "—"
+  const geometry = useMemo(() => geometryRows(schema, view, rows, state.controls), [schema, view, rows, state.controls]);
+  const matrix = useMemo(() => buildMatrix(schema, view, sliced, state.controls, geometry), [schema, view, sliced, state.controls, geometry]);
+  const pickable = (yi: number, xi: number): boolean => matrix.cells[yi]?.[xi] !== null || geometry !== null;
   const starredKeys = useMemo(() => {
     const out = new Set<string>();
     const xd = dimById(schema, view.x);
@@ -131,13 +135,13 @@ export function HeatStage({ schema, view, rows, state, tokens, selected, filmstr
       if (pickMode && d.x0 === d.x1 && d.y0 === d.y1) {
         const x = matrix.xs[d.x0];
         const y = matrix.ys[d.y0];
-        if (matrix.cells[d.y0]?.[d.x0]) onPick([cellKey(x, y)], "toggle");
+        if (pickable(d.y0, d.x0)) onPick([cellKey(x, y)], "toggle");
         return;
       }
       const keys: string[] = [];
       matrix.ys.forEach((y, yi) =>
         matrix.xs.forEach((x, xi) => {
-          if (matrix.cells[yi][xi] && inRect(d, xi, yi)) keys.push(cellKey(x, y));
+          if (pickable(yi, xi) && inRect(d, xi, yi)) keys.push(cellKey(x, y));
         }),
       );
       onPick(keys, "add");
@@ -204,7 +208,29 @@ export function HeatStage({ schema, view, rows, state, tokens, selected, filmstr
               <th>{view.y === "width" ? `w=${y}` : y}</th>
               {matrix.xs.map((x, xi) => {
                 const r = matrix.cells[yi][xi];
-                if (!r) return <td key={x}><div className="sx-cell sx-empty" /></td>;
+                if (!r) {
+                  if (!geometry) return <td key={x}><div className="sx-cell sx-empty" /></td>;
+                  const isPickedEmpty = (picked?.has(cellKey(x, y)) ?? false) || (drag !== null && inRect(drag, xi, yi));
+                  return (
+                    <td key={x}>
+                      <div
+                        className={`sx-cell sx-nodata${isPickedEmpty ? " sx-pick" : ""}`}
+                        title="no data for this setting yet: select it and Calculate"
+                        onMouseDown={(e) => {
+                          if (!onPick || !(e.shiftKey || pickMode) || e.button !== 0) return;
+                          e.preventDefault();
+                          setDrag({ x0: xi, y0: yi, x1: xi, y1: yi });
+                        }}
+                        onMouseEnter={() => drag && setDrag({ ...drag, x1: xi, y1: yi })}
+                        onClick={(e) => {
+                          if (onPick && !pickMode && (e.ctrlKey || e.metaKey)) onPick([cellKey(x, y)], "toggle");
+                        }}
+                      >
+                        <span className="sx-v">—</span>
+                      </div>
+                    </td>
+                  );
+                }
                 const v = displayValue(schema, r, state.metric, state.mode, idx(state.metric));
                 const off = filtersOn && !passFrame(r);
                 const bg = colorOf(v, frame, tokens);

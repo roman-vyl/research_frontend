@@ -27,8 +27,11 @@ slice and controls, regardless of `run_id`. For each such row the request SHALL 
 `coords` with every dimension id of `result_schema` and the row's value in the active
 grid, plus `grid` when a dimension has grids and `arm` when the schema has arms. The
 frontend SHALL NOT decide calculability from `run_id`; it SHALL be taken only from the
-`calculate-plan` response. Rows without a value for a dimension SHALL NOT be sent and
-SHALL be counted as "not addressable". The 2 000 limit SHALL apply to the number of
+`calculate-plan` response. An empty optional dimension SHALL be left out of `coords`
+(the option is off); rows without a value for another dimension SHALL NOT be sent and
+SHALL be counted as "not addressable". Selected cells without a row (an optional
+dimension on, see research-workbench-surface-view-v1) SHALL be sent with coordinates
+built from the cell and the controls; the plan marks them `new_row`. The 2 000 limit SHALL apply to the number of
 `coords` sent.
 
 #### Scenario: Aggregated cell

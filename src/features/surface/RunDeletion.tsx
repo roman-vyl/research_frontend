@@ -12,6 +12,8 @@ type BarProps = {
   onSelectMode: (on: boolean) => void;
   onSelectPassing: () => void;
   onSelectNotPassing: () => void;
+  /** Cells without a row while an optional control is on (shown "—"); absent when there are none. */
+  onSelectEmpty?: () => void;
   onClear: () => void;
   onDelete: () => void;
   /** The manifest has a `materialize` block. */
@@ -34,6 +36,7 @@ export function SelectionBar({
   onSelectMode,
   onSelectPassing,
   onSelectNotPassing,
+  onSelectEmpty,
   onClear,
   onDelete,
   calculable,
@@ -60,6 +63,7 @@ export function SelectionBar({
       </button>
       <button type="button" className="sx-fbtn" onClick={onSelectPassing}>{allSettings ? "Select matching" : "Select passing"}</button>
       <button type="button" className="sx-fbtn" onClick={onSelectNotPassing}>{allSettings ? "Select not matching" : "Select not passing"}</button>
+      {onSelectEmpty && <button type="button" className="sx-fbtn" onClick={onSelectEmpty}>Select empty</button>}
       <button type="button" className="sx-fbtn" onClick={onClear} disabled={selection.cells === 0}>Clear</button>
       <button type="button" className="sx-fbtn sx-danger" onClick={onDelete} disabled={r === 0}>
         Delete runs ({r})
