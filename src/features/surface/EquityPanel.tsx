@@ -4,6 +4,7 @@ import type { ExperimentResultSchema, ExperimentView } from "@/api/experiments";
 import { fetchRunTrades } from "@/api/client";
 import type { TradeRecord } from "@/api/types";
 import {
+  GRID_ID,
   dimById,
   dimValue,
   makeIndexer,
@@ -57,19 +58,28 @@ type Props = {
   selected: Row | null;
   initialEquity: number | null;
   onSelect: (row: Row) => void;
+  /**
+   * "All settings": the matching settings of every slice instead of the current frame — the best rows to draw
+   * (with a run, best first), how many matching settings have a run, how many match and how many were evaluated.
+   */
+  allSettings?: { rows: Row[]; withRun: number; pass: number; total: number };
 };
 
 /**
  * Equity curves of every point of the current frame (fixed controls, treatment arm) that passes the
  * filters and has an Engine run, by exit time or by trade number. Points without a run have no trades.
  */
-export function EquityPanel({ schema, view, rows, state, selected, initialEquity, onSelect }: Props) {
+export function EquityPanel({ schema, view, rows, state, selected, initialEquity, onSelect, allSettings }: Props) {
   const [xMode, setXMode] = useState<"time" | "n">("time");
   const [curves, setCurves] = useState<Record<string, CurvePoint[]>>({});
   const [failed, setFailed] = useState(0);
   const [hover, setHover] = useState<{ x: number; label: string } | null>(null);
 
   const frame = useMemo(() => {
+    if (allSettings) {
+      const drawn = allSettings.rows.slice(0, MAX_CURVES);
+      return { sliced: allSettings.total, pass: allSettings.pass, withRun: allSettings.withRun, drawn };
+    }
     const sliced = sliceRows(schema, view, rows, state.controls, treatmentArms(schema));
     const idx = makeIndexer(schema, rows, state.compare);
     const pass = sliced.filter(makePasses(schema, sliced, state.filters, idx));
@@ -82,7 +92,7 @@ export function EquityPanel({ schema, view, rows, state, selected, initialEquity
     const sel = selId ? withRun.find((r) => runIdOf(r) === selId) : undefined;
     if (sel && !drawn.includes(sel)) drawn = [...drawn.slice(0, MAX_CURVES - 1), sel];
     return { sliced: sliced.length, pass: pass.length, withRun: withRun.length, drawn };
-  }, [schema, view, rows, state, selected]);
+  }, [schema, view, rows, state, selected, allSettings]);
 
   const runIds = useMemo(() => frame.drawn.map((r) => runIdOf(r) as string), [frame]);
 
@@ -142,7 +152,8 @@ export function EquityPanel({ schema, view, rows, state, selected, initialEquity
     view.controls
       .concat([view.x, view.y])
       .map((d) => {
-        const v = dimValue(schema, r, d, null);
+        // an "All settings" row is read in its own grid
+        const v = dimValue(schema, r, d, allSettings && typeof r[GRID_ID] === "string" ? (r[GRID_ID] as string) : null);
         return v === null ? null : `${dimById(schema, d)?.label ?? d} ${v}`;
       })
       .filter(Boolean)
@@ -171,7 +182,7 @@ export function EquityPanel({ schema, view, rows, state, selected, initialEquity
     <section className="sx-panel sx-equity" aria-label="Equity curves">
       <div className="sx-equity-head">
         <span className="sx-axis-caption">
-          Equity curves · {loaded.length} of {frame.withRun} runs drawn · {frame.pass} of {frame.sliced} points pass filters
+          Equity curves · {loaded.length} of {frame.withRun} runs drawn · {frame.pass.toLocaleString("en-US")} of {frame.sliced.toLocaleString("en-US")} {allSettings ? "settings match" : "points pass filters"}
         </span>
         <div className="sx-segmented" role="group" aria-label="Equity x axis">
           <button type="button" aria-pressed={xMode === "time"} onClick={() => setXMode("time")}>By year</button>
@@ -180,7 +191,7 @@ export function EquityPanel({ schema, view, rows, state, selected, initialEquity
       </div>
       {frame.withRun === 0 ? (
         <p className="sx-note">
-          No point in this frame has an Engine run, so there are no trades to draw. Replay-only points carry metrics but no trade list.
+          {allSettings ? "No matching setting has an Engine run" : "No point in this frame has an Engine run"}, so there are no trades to draw. Replay-only points carry metrics but no trade list.
         </p>
       ) : (
         <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="Cumulative net PnL of the runs in the frame">
@@ -224,9 +235,12 @@ export function EquityPanel({ schema, view, rows, state, selected, initialEquity
         </svg>
       )}
       <p className="sx-note">
-        Every point of the current frame that passes the filters and has an Engine run; the best {MAX_CURVES} by the cell metric are drawn
-        {frame.withRun > MAX_CURVES ? ` (${frame.withRun - MAX_CURVES} more not drawn)` : ""}. The selected point is highlighted; click a line to select its point.
-        {frame.pass > frame.withRun ? ` ${frame.pass - frame.withRun} replay-only points have no trades.` : ""}
+        {allSettings
+          ? `Every matching setting of all settings that has an Engine run; the best ${MAX_CURVES} by the cell metric are drawn`
+          : `Every point of the current frame that passes the filters and has an Engine run; the best ${MAX_CURVES} by the cell metric are drawn`}
+        {frame.withRun > MAX_CURVES ? ` (${frame.withRun - MAX_CURVES} more not drawn)` : ""}.
+        {allSettings ? " Click a line to open its setting on the displayed grid." : " The selected point is highlighted; click a line to select its point."}
+        {frame.pass > frame.withRun ? ` ${(frame.pass - frame.withRun).toLocaleString("en-US")} replay-only ${allSettings ? "settings" : "points"} have no trades.` : ""}
         {failed ? ` ${failed} runs could not be loaded.` : ""}
       </p>
     </section>

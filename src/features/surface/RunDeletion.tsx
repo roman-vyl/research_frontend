@@ -17,6 +17,11 @@ type BarProps = {
   /** The manifest has a `materialize` block. */
   calculable: boolean;
   onCalculate: () => void;
+  /**
+   * "All settings": a picked cell stands for its matching settings ("matching" side) or the rest ("other"),
+   * across every slice; no drag rectangle.
+   */
+  allSettings?: { side: "matching" | "other"; settings: number };
 };
 
 /**
@@ -33,6 +38,7 @@ export function SelectionBar({
   onDelete,
   calculable,
   onCalculate,
+  allSettings,
 }: BarProps) {
   const r = selection.runIds.length;
   const n = selection.calcCoords.length;
@@ -40,7 +46,9 @@ export function SelectionBar({
   return (
     <div className="sx-panel sx-selbar" role="group" aria-label="Selection">
       <span className="sx-fsum">
-        {selection.cells} cells selected · {r} runs · {selection.withoutRun} cells without run
+        {selection.cells} cells selected
+        {allSettings ? ` · ${allSettings.settings.toLocaleString("en-US")} ${allSettings.side === "matching" ? "matching" : "not matching"} settings of all settings` : ""} · {r} runs ·{" "}
+        {selection.withoutRun} cells without run
       </span>
       <button
         type="button"
@@ -50,8 +58,8 @@ export function SelectionBar({
       >
         {selectMode ? "Done selecting" : "Select cells"}
       </button>
-      <button type="button" className="sx-fbtn" onClick={onSelectPassing}>Select passing</button>
-      <button type="button" className="sx-fbtn" onClick={onSelectNotPassing}>Select not passing</button>
+      <button type="button" className="sx-fbtn" onClick={onSelectPassing}>{allSettings ? "Select matching" : "Select passing"}</button>
+      <button type="button" className="sx-fbtn" onClick={onSelectNotPassing}>{allSettings ? "Select not matching" : "Select not passing"}</button>
       <button type="button" className="sx-fbtn" onClick={onClear} disabled={selection.cells === 0}>Clear</button>
       <button type="button" className="sx-fbtn sx-danger" onClick={onDelete} disabled={r === 0}>
         Delete runs ({r})
@@ -68,9 +76,13 @@ export function SelectionBar({
       {calcHint && <span className="sx-note" role="note">{calcHint}</span>}
       {selection.notAddressable > 0 && <span className="sx-note">{selection.notAddressable} rows not addressable</span>}
       <span className="sx-note">
-        {selectMode
-          ? "Click toggles a cell, drag selects a rectangle. Esc or Done selecting returns clicks to details."
-          : "Select cells to pick by click; Ctrl/Cmd+click toggles a cell, Shift+drag selects a rectangle."}
+        {allSettings
+          ? selectMode
+            ? "Click toggles a cell: its settings of every slice on the chosen side of the conditions. Esc or Done selecting returns clicks to opening settings."
+            : "Select cells to pick by click; Ctrl/Cmd+click toggles a cell. A picked cell takes its settings of every slice, not only the displayed one."
+          : selectMode
+            ? "Click toggles a cell, drag selects a rectangle. Esc or Done selecting returns clicks to details."
+            : "Select cells to pick by click; Ctrl/Cmd+click toggles a cell, Shift+drag selects a rectangle."}
       </span>
     </div>
   );

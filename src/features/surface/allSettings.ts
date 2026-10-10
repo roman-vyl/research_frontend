@@ -7,20 +7,24 @@
  * no table version, and run deletion / Calculate rewrite the table in place. Rows are visited through one
  * reused object only where a comparison-row lookup needs one; plain conditions read the columns directly.
  */
-import { metricId, type ExperimentResultSchema, type ExperimentResults, type ExperimentView } from "@/api/experiments";
+import { metricId, type CalculationCoords, type ExperimentResultSchema, type ExperimentResults, type ExperimentView } from "@/api/experiments";
 import {
+  EMPTY_SELECTION,
   GRID_ID,
   activeConditions,
+  calculationCoords,
   cellKey,
   dimColumn,
   baselineOf,
   displayValue,
   gridsOf,
   makeIndexer,
+  matchKey,
   metricById,
   treatmentArms,
   type Condition,
   type Row,
+  type SelectionRuns,
   type ViewMode,
 } from "@/features/surface/model";
 
@@ -31,13 +35,14 @@ export const TOP_MATCHES = 50;
 
 /**
  * The column ids of one snapshot: arm, grid, every dimension (all grids of multi-grid ones, so that a
- * matching row can be reopened on the displayed grid) and the given metrics. `schema` is the manifest
+ * matching row can be reopened on the displayed grid), `run_id` (equity curves, Delete runs) and the given metrics. `schema` is the manifest
  * schema as stored: a metric it lacks (the derived Net PnL) is read from `return_pct`.
  */
 export function snapshotColumns(schema: ExperimentResultSchema, metrics: string[]): string[] {
   const out = new Set<string>();
   if (schema.arms) out.add("arm");
   if (gridsOf(schema).length > 0) out.add(GRID_ID);
+  out.add("run_id");
   for (const dim of schema.dimensions) {
     if (dim.grids) for (const g of Object.keys(dim.grids)) out.add(`${dim.id}.${g}`);
     else out.add(dim.id);
@@ -97,6 +102,12 @@ export type AllSettingsResult = {
   matched: number;
   /** Best matches by the displayed value, at most `TOP_MATCHES`, best first. */
   top: { index: number; value: number | null }[];
+  /** Per snapshot row: position in `cellKeys` of its x × y cell, -1 for a row not evaluated (comparison arm, no axis value). */
+  cellOf: Int32Array;
+  /** Per snapshot row: 1 when the row is evaluated and matches every condition. */
+  pass: Uint8Array;
+  /** `cellKey` of every cell that has a treatment row (the cells of `cellTotal`). */
+  cellKeys: string[];
 };
 
 /**
@@ -118,7 +129,9 @@ export function evaluateAllSettings(
   const gridCol = col(GRID_ID);
   const xd = schema.dimensions.find((d) => d.id === view.x);
   const yd = schema.dimensions.find((d) => d.id === view.y);
-  const empty: AllSettingsResult = { xs: [], ys: [], cells: new Map(), cellTotal: 0, total: 0, matched: 0, top: [] };
+  const cellOf = new Int32Array(snap.rows).fill(-1);
+  const pass = new Uint8Array(snap.rows);
+  const empty: AllSettingsResult = { xs: [], ys: [], cells: new Map(), cellTotal: 0, total: 0, matched: 0, top: [], cellOf, pass, cellKeys: [] };
   if (!xd || !yd) return empty;
   // a multi-grid axis is read in the row's own grid
   const axis = (dim: typeof xd, i: number): number | null => {
@@ -195,7 +208,9 @@ export function evaluateAllSettings(
     return p;
   };
   const byPos = new Map<number, AllCell & { x: number; y: number }>();
-  const present = new Set<number>();
+  // cell position key -> its index in `cellKeys`
+  const present = new Map<number, number>();
+  const cellKeys: string[] = [];
   const top: { index: number; value: number | null }[] = [];
   const rank = (v: number | null): number => (v === null ? -Infinity : v);
   let total = 0;
@@ -207,8 +222,14 @@ export function evaluateAllSettings(
     if (x === null || y === null) continue;
     total += 1;
     const key = pos(xPos, x) * 1_000_000 + pos(yPos, y);
-    present.add(key);
+    let ord = present.get(key);
+    if (ord === undefined) {
+      present.set(key, (ord = cellKeys.length));
+      cellKeys.push(cellKey(x, y));
+    }
+    cellOf[i] = ord;
     for (const t of tests) if (!t(i)) continue rows;
+    pass[i] = 1;
     matched += 1;
     const value = shown(i);
     const cell = byPos.get(key);
@@ -237,6 +258,117 @@ export function evaluateAllSettings(
     total,
     matched,
     top,
+    cellOf,
+    pass,
+    cellKeys,
+  };
+}
+
+/** Which settings of the picked cells a selection takes: the matching ones or the rest. */
+export type AllSide = "matching" | "other";
+
+/** A selection of "All settings"; `settings` = treatment rows behind the picked cells on the chosen side. */
+export type AllSelection = SelectionRuns & { settings: number };
+
+/**
+ * Run ids and Calculate addresses behind picked cells of the "All settings" map: the settings of those cells
+ * on the given side of the conditions, in every outer slice, grid and control value, and, when the comparison
+ * arm is shown (baseline or difference), their matched comparison rows too (as `selectionRuns`).
+ */
+export function allSettingsSelection(
+  schema: ExperimentResultSchema,
+  snap: ExperimentResults,
+  result: AllSettingsResult,
+  opts: { picked: ReadonlySet<string>; side: AllSide; mode: ViewMode; compare: string | null },
+): AllSelection {
+  if (opts.picked.size === 0) return { ...EMPTY_SELECTION, settings: 0 };
+  const wanted = result.cellKeys.map((k) => opts.picked.has(k));
+  const compareArm = schema.arms && opts.mode !== "treatment" ? (opts.compare ?? schema.arms.baseline) : null;
+  const armCol = snap.columns.indexOf("arm");
+  const byMatch = new Map<string, number[]>();
+  if (compareArm !== null && armCol >= 0) {
+    for (let i = 0; i < snap.rows; i += 1) {
+      if (snap.data[armCol][i] !== compareArm) continue;
+      const k = matchKey(schema, snapshotRow(snap, i, null));
+      const list = byMatch.get(k);
+      if (list) list.push(i);
+      else byMatch.set(k, [i]);
+    }
+  }
+  const runCol = snap.columns.indexOf("run_id");
+  const runOf = (i: number): string | null => {
+    const v = runCol >= 0 ? snap.data[runCol][i] : null;
+    return typeof v === "string" && v !== "" ? v : null;
+  };
+  const perCell = new Map<number, Set<string>>();
+  const behind = new Set<number>();
+  const want = opts.side === "matching" ? 1 : 0;
+  let settings = 0;
+  for (let i = 0; i < snap.rows; i += 1) {
+    const c = result.cellOf[i];
+    if (c < 0 || !wanted[c] || result.pass[i] !== want) continue;
+    settings += 1;
+    let ids = perCell.get(c);
+    if (!ids) perCell.set(c, (ids = new Set()));
+    behind.add(i);
+    const own = runOf(i);
+    if (own) ids.add(own);
+    if (compareArm !== null) {
+      for (const b of byMatch.get(matchKey(schema, snapshotRow(snap, i, null))) ?? []) {
+        behind.add(b);
+        const id = runOf(b);
+        if (id) ids.add(id);
+      }
+    }
+  }
+  const all = new Set<string>();
+  let withoutRun = 0;
+  for (const ids of perCell.values()) {
+    if (ids.size === 0) withoutRun += 1;
+    for (const id of ids) all.add(id);
+  }
+  const calcCoords: CalculationCoords[] = [];
+  let notAddressable = 0;
+  for (const i of behind) {
+    const r = snapshotRow(snap, i, null);
+    const c = calculationCoords(schema, r, typeof r[GRID_ID] === "string" ? (r[GRID_ID] as string) : null);
+    if (c) calcCoords.push(c);
+    else notAddressable += 1;
+  }
+  return { cells: perCell.size, withoutRun, runIds: [...all].sort(), calcCoords, notAddressable, settings };
+}
+
+/** Equity frame of "All settings": matching settings that have an Engine run, best `limit` by `metric` first. */
+export type AllEquityFrame = { rows: Row[]; withRun: number; pass: number; total: number };
+
+export function allSettingsEquityFrame(
+  snap: ExperimentResults,
+  result: AllSettingsResult,
+  metric: string,
+  equity: number | null,
+  limit: number,
+): AllEquityFrame {
+  const runCol = snap.columns.indexOf("run_id");
+  const withRun: { i: number; v: number }[] = [];
+  if (runCol >= 0) {
+    const metricCol = snap.columns.indexOf(metric);
+    const retCol = snap.columns.indexOf("return_pct");
+    const val = (i: number): number => {
+      const v = metricCol >= 0 ? snap.data[metricCol][i] : metric === "net_pnl" && retCol >= 0 && equity !== null ? (snap.data[retCol][i] as number) * equity : null;
+      return typeof v === "number" && Number.isFinite(v) ? v : -Infinity;
+    };
+    for (let i = 0; i < snap.rows; i += 1) {
+      if (result.pass[i] !== 1) continue;
+      const id = snap.data[runCol][i];
+      if (typeof id === "string" && id !== "") withRun.push({ i, v: val(i) });
+    }
+  }
+  withRun.sort((a, b) => b.v - a.v);
+  return {
+    rows: withRun.slice(0, limit).map((w) => snapshotRow(snap, w.i, equity)),
+    withRun: withRun.length,
+    pass: result.matched,
+    total: result.total,
   };
 }
 

@@ -9,9 +9,17 @@ import { loadCandidates, useCandidates } from "@/features/candidates/store";
 import { useWorkbenchReport, useWorkbenchShell } from "@/shared/context/WorkbenchContext";
 import { readSession, writeSession } from "@/shared/session/storage";
 import { AllSettingsStage } from "@/features/surface/AllSettingsStage";
-import { evaluateAllSettings, neededMetrics, snapshotColumns, type FilterScope } from "@/features/surface/allSettings";
+import {
+  allSettingsEquityFrame,
+  allSettingsSelection,
+  evaluateAllSettings,
+  neededMetrics,
+  snapshotColumns,
+  type AllSide,
+  type FilterScope,
+} from "@/features/surface/allSettings";
 import { CellDetails } from "@/features/surface/CellDetails";
-import { EquityPanel } from "@/features/surface/EquityPanel";
+import { EquityPanel, MAX_CURVES } from "@/features/surface/EquityPanel";
 import { FiltersPanel } from "@/features/surface/FiltersPanel";
 import { HeatStage } from "@/features/surface/HeatStage";
 import { LIGHT_TOKENS, readTokens, type Tokens } from "@/features/surface/color";
@@ -131,6 +139,9 @@ export function SurfaceView() {
   // Where the filters apply: the displayed grid, or every setting of the Experiment (one snapshot, loaded on demand).
   const [scope, setScopeState] = useState<FilterScope>(() => loadScope(restoreRef.current?.experimentId ?? null));
   const [allVersion, setAllVersion] = useState(0);
+  // Cells picked on the "All settings" map and which settings of them count: the matching ones or the rest.
+  const [allPicked, setAllPicked] = useState<ReadonlySet<string>>(new Set());
+  const [allSide, setAllSide] = useState<AllSide>("matching");
   const [calculating, setCalculating] = useState<{ rows: CalculationCoords[]; notAddressable: number } | null>(null);
   // A "show this point" request from the Candidates tab: the slice part is applied once the Experiment's
   // options are known, the controls and the selection once the matching slice has arrived.
@@ -313,11 +324,46 @@ export function SurfaceView() {
   const setScope = (next: FilterScope) => {
     setScopeState(next);
     if (experimentId !== null) writeSession(scopeKey(experimentId), next);
-    if (next === "all") {
-      setSelectMode(false);
-      setPicked(new Set());
+    setSelectMode(false);
+    setPicked(new Set());
+    setAllPicked(new Set());
+  };
+
+  // A new evaluation (conditions, metric, arms, snapshot) clears the cells picked on the "All settings" map.
+  useEffect(() => setAllPicked(new Set()), [allResult]);
+
+  const allSelection = useMemo(
+    () =>
+      scope === "all" && schema && all.snap && allResult && state
+        ? allSettingsSelection(schema, all.snap, allResult, { picked: allPicked, side: allSide, mode: state.mode, compare: state.compare })
+        : null,
+    [scope, schema, all.snap, allResult, state, allPicked, allSide],
+  );
+  const allEquity = useMemo(
+    () => (scope === "all" && all.snap && allResult && state ? allSettingsEquityFrame(all.snap, allResult, state.metric, equity, MAX_CURVES) : null),
+    [scope, all.snap, allResult, state, equity],
+  );
+  const pickAll = (side: AllSide) => {
+    if (!allResult) return;
+    setAllSide(side);
+    if (side === "matching") setAllPicked(new Set(allResult.cells.keys()));
+    else {
+      // cells that have a setting failing the conditions
+      const keys = new Set<string>();
+      for (let i = 0; i < allResult.cellOf.length; i += 1) {
+        const c = allResult.cellOf[i];
+        if (c >= 0 && allResult.pass[i] === 0) keys.add(allResult.cellKeys[c]);
+      }
+      setAllPicked(keys);
     }
   };
+  const toggleAllCell = (key: string) =>
+    setAllPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   // Open a setting found under "All settings" on the displayed grid (same path as "On Surface" of a candidate).
   const openSetting = (row: Row) => {
@@ -390,6 +436,7 @@ export function SurfaceView() {
   const afterDeletion = () => {
     if (experimentId === null) return;
     setPicked(new Set());
+    setAllPicked(new Set());
     dropStorage(experimentId);
     // Reload the slice and keep the point shown in details (its run_id may now be empty).
     const x = schema && view && selected ? dimValue(schema, selected, view.x, null) : null;
@@ -402,6 +449,7 @@ export function SurfaceView() {
   // The job is over: clear the selection; reload the slice only when a row was published.
   const afterCalculation = (job: CalculationJob) => {
     setPicked(new Set());
+    setAllPicked(new Set());
     if ((job.counts.published ?? 0) > 0) afterDeletion();
   };
 
@@ -542,18 +590,47 @@ export function SurfaceView() {
               <>
                 {all.error && <p role="alert" className="sx-error">{all.error}</p>}
                 {all.loading && <p className="sx-note">Loading all settings… one request, {allColumns?.length ?? 0} columns.</p>}
-                {allResult && all.snap && !all.loading && (
-                  <AllSettingsStage
-                    schema={schema}
-                    view={view}
-                    snap={all.snap}
-                    result={allResult}
-                    metric={state.metric}
-                    mode={state.mode}
-                    equity={equity}
-                    tokens={tokens}
-                    onOpen={openSetting}
-                  />
+                {allResult && all.snap && !all.loading && allSelection && (
+                  <>
+                    <SelectionBar
+                      selection={allSelection}
+                      selectMode={selectMode}
+                      onSelectMode={setSelectMode}
+                      onSelectPassing={() => pickAll("matching")}
+                      onSelectNotPassing={() => pickAll("other")}
+                      onClear={() => setAllPicked(new Set())}
+                      onDelete={() => setDeleting(allSelection.runIds)}
+                      calculable={canCalculate(manifest)}
+                      onCalculate={() => setCalculating({ rows: allSelection.calcCoords, notAddressable: allSelection.notAddressable })}
+                      allSettings={{ side: allSide, settings: allSelection.settings }}
+                    />
+                    <AllSettingsStage
+                      schema={schema}
+                      view={view}
+                      snap={all.snap}
+                      result={allResult}
+                      metric={state.metric}
+                      mode={state.mode}
+                      equity={equity}
+                      tokens={tokens}
+                      onOpen={openSetting}
+                      picked={allPicked}
+                      pickMode={selectMode}
+                      onPick={toggleAllCell}
+                    />
+                    {allEquity && (
+                      <EquityPanel
+                        schema={schema}
+                        view={view}
+                        rows={rows}
+                        state={state}
+                        selected={null}
+                        initialEquity={equity}
+                        onSelect={openSetting}
+                        allSettings={allEquity}
+                      />
+                    )}
+                  </>
                 )}
               </>
             ) : (

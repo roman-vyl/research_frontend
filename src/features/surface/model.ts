@@ -265,7 +265,7 @@ export function baselineIndex(
   return out;
 }
 
-function matchKey(schema: ExperimentResultSchema, row: Row): string {
+export function matchKey(schema: ExperimentResultSchema, row: Row): string {
   const dims = schema.arms?.match_on ?? [];
   return dims.map((d) => String(dimValue(schema, row, d, null))).join("|");
 }

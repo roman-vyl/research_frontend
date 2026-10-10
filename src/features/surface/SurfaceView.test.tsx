@@ -673,7 +673,7 @@ describe("SurfaceView: filter scope", () => {
     await screen.findByRole("table", { name: /^All settings:/ });
     expect(fullCalls()).toHaveLength(1);
     const first = fullCalls()[0].columns!;
-    expect(first).toEqual(["lookback", "realised_trade_count", "return_pct", "sl", "tp_ratio", "width"]);
+    expect(first).toEqual(["lookback", "realised_trade_count", "return_pct", "run_id", "sl", "tp_ratio", "width"]);
     expect(screen.getByText(/6 of 6 settings match · 6 of 6 cells have a match/)).toBeTruthy();
 
     fireEvent.click(screen.getByText("+ add condition"));
@@ -683,7 +683,42 @@ describe("SurfaceView: filter scope", () => {
     // the whole needed set again, never one extra column joined by row index
     expect(fullCalls()[1].columns).toEqual([...first, "profit_factor"].sort());
     expect(await screen.findByText(/4 of 6 settings match · 4 of 6 cells have a match/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /Select cells/ })).toBeNull();
+  });
+
+  it("filters pick cells for Delete runs and Calculate across all settings; equity curves of the matches are shown", async () => {
+    planRunDeletion.mockResolvedValue(PLAN);
+    render(<SurfaceView />);
+    await openExperiment(/fixed SL/);
+    await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
+    fireEvent.click(screen.getByRole("button", { name: /^All settings/ }));
+    await screen.findByRole("table", { name: /^All settings:/ });
+    fireEvent.click(screen.getByText("+ add condition"));
+    fireEvent.change(screen.getByLabelText("metric"), { target: { value: "profit_factor" } });
+    fireEvent.change(screen.getByLabelText("threshold"), { target: { value: "1.3" } });
+    expect(await screen.findByText(/4 of 6 settings match · 4 of 6 cells/)).toBeTruthy();
+    // settings 3..6 match; 3 and 4 have runs
+    expect(await screen.findByText(/Equity curves · \d+ of 2 runs drawn · 4 of 6 settings match/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Select matching" }));
+    expect(screen.getByText(/4 cells selected · 4 matching settings of all settings/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Calculate (4)" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Select not matching" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete runs (2)" }));
+    await screen.findByRole("dialog", { name: "Delete runs" });
+    expect(planRunDeletion).toHaveBeenCalledWith("btcusdt_p.ema500.ratio_4d", [RUN("1"), RUN("2")]);
+  });
+
+  it("select mode on the All settings map toggles cells instead of opening them", async () => {
+    render(<SurfaceView />);
+    await openExperiment(/fixed SL/);
+    await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
+    fireEvent.click(screen.getByRole("button", { name: /^All settings/ }));
+    const table = await screen.findByRole("table", { name: /^All settings:/ });
+    fireEvent.click(screen.getByRole("button", { name: "Select cells" }));
+    fireEvent.click(within(table).getAllByRole("button")[0]);
+    expect(screen.getByRole("button", { name: /^All settings/ }).getAttribute("aria-pressed")).toBe("true");
+    expect(document.querySelectorAll(".sx-cell.sx-pick")).toHaveLength(1);
+    expect(screen.getByText(/1 cells selected · 1 matching settings of all settings · 1 runs/)).toBeTruthy();
   });
 
   it("a cell opens its best setting on the displayed grid", async () => {
