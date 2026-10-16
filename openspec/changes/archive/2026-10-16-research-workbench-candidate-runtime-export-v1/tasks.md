@@ -11,4 +11,4 @@
 
 ## 2. Manual check (owner)
 
-- [ ] 2.1 (Not run at archive time, 2026-10-16: the archive was requested before the owner check; to be recorded when done.) On the Mac stack, export one candidate from the Candidates tab: the row shows "In Runtime catalog · Off" and "To Runtime" is disabled; the same candidate cannot be exported again.
+- [x] 2.1 (Done 2026-10-16 on the Mac, dev server on main `156e2ee`, Research `e19a764`: cancel sent no request; confirm sent one POST, 201, the list reloaded; the row showed "In Runtime catalog · Off" with the file name and "To Runtime" became disabled as already in the catalog; a second click sent nothing. Test file removed.) On the Mac stack, export one candidate from the Candidates tab: the row shows "In Runtime catalog · Off" and "To Runtime" is disabled; the same candidate cannot be exported again.
