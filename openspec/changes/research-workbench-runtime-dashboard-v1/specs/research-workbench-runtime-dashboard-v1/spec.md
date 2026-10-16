@@ -75,7 +75,7 @@ kind. Refresh and Retry SHALL repeat the request and SHALL be disabled while one
 - **THEN** the panel shows "Runtime catalog is unavailable"
 - **WHEN** Runtime answers any other non-success status
 - **THEN** the panel shows "Runtime returned an error"
-- **WHEN** the request fails at the network level, or the proxy answers 502 or 504
+- **WHEN** the request fails at the network level, or the proxy answers 502, 504 or a 5xx without a Runtime body
 - **THEN** the panel shows "Runtime is not reachable"
 
 #### Scenario: Retry after error

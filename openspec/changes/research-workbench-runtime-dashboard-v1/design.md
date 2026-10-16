@@ -36,7 +36,7 @@ Workbench anywhere but the Vite dev server would need its own routing and is out
 New `src/api/runtime.ts` with the response types above and `fetchRuntimeStrategyInstances()`
 (`GET`, no body, no caching). Failures become one `RuntimeListError` with a `kind`:
 `not_ready`, `catalog_unavailable`, `runtime_error` (any other status) or `unreachable`
-(network failure or a 502/504 from the proxy). The panel maps each kind to a fixed message:
+(network failure, a 502/504 from the proxy, or any 5xx without a Runtime body, which is what the Vite proxy returns when Runtime is down). The panel maps each kind to a fixed message:
 "Runtime is not ready", "Runtime catalog is unavailable", "Runtime returned an error",
 "Runtime is not reachable". Status codes and bodies are not shown.
 

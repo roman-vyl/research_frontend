@@ -5,6 +5,7 @@ const TABS: { id: WorkbenchTab; label: string }[] = [
   { id: "chart", label: "Chart" },
   { id: "surface", label: "Surface" },
   { id: "candidates", label: "Candidates" },
+  { id: "runtime", label: "Runtime Dashboard" },
   { id: "reports", label: "Reports" },
   { id: "composer", label: "Strategy Composer" },
 ];

@@ -570,7 +570,7 @@ export type SignalTraceBundle = {
   short: SideSignalTrace;
 };
 
-export type WorkbenchTab = "chart" | "surface" | "composer" | "reports" | "candidates";
+export type WorkbenchTab = "chart" | "surface" | "composer" | "reports" | "candidates" | "runtime";
 
 export function msToChartTime(openTimeMs: number): number {
   return Math.floor(openTimeMs / 1000);
