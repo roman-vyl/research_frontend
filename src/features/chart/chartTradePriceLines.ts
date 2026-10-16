@@ -3,7 +3,7 @@ import type { CreatePriceLineOptions } from "lightweight-charts";
 import type { TradeRecord } from "@/api/types";
 import { classifyExitReason } from "@/features/chart/chartMarkers";
 
-export type TradePriceLineKind = "entry" | "exit";
+export type TradePriceLineKind = "entry";
 
 export type TradePriceLineSpec = {
   kind: TradePriceLineKind;
@@ -50,17 +50,38 @@ export function buildTradePriceLineSpecs(trade: TradeRecord, displayNumber?: num
     },
   });
 
-  specs.push({
-    kind: "exit",
-    options: {
-      price: Number(trade.exit_price),
-      color: exitLineColor(),
-      lineWidth: 2,
-      lineStyle: 2,
-      axisLabelVisible: true,
-      title: buildExitPriceLineTitle(trade, displayNumber),
-    },
-  });
-
   return specs;
+}
+
+export type TradeExitLineSegment = {
+  fromTimeSec: number;
+  toTimeSec: number;
+  price: number;
+  color: string;
+  title: string;
+};
+
+/**
+ * The exit level is drawn only over the trade's own lifetime (entry bar to
+ * exit bar) instead of a full-width price line, so it never appears before
+ * the entry. A same-bar trade is stretched to one chart bar to stay visible.
+ */
+export function buildTradeExitLineSegment(
+  trade: TradeRecord,
+  barMs: number,
+  displayNumber?: number,
+): TradeExitLineSegment | null {
+  const price = Number(trade.exit_price);
+  if (!Number.isFinite(price) || price <= 0) return null;
+  if (!Number.isFinite(trade.entry_time_ms) || !Number.isFinite(trade.exit_time_ms)) return null;
+  const fromTimeSec = Math.floor(trade.entry_time_ms / 1000);
+  let toTimeSec = Math.floor(trade.exit_time_ms / 1000);
+  if (toTimeSec <= fromTimeSec) toTimeSec = fromTimeSec + Math.max(1, Math.floor(barMs / 1000));
+  return {
+    fromTimeSec,
+    toTimeSec,
+    price,
+    color: exitLineColor(),
+    title: buildExitPriceLineTitle(trade, displayNumber),
+  };
 }

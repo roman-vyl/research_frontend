@@ -43,7 +43,10 @@ import { ChartTradeDiagnostics } from "@/features/chart/ChartTradeDiagnostics";
 import { ChartTradeFocusNav } from "@/features/chart/ChartTradeFocusNav";
 import { useChartAsideResize } from "@/features/chart/useChartAsideResize";
 import { useChartAsideStackResize } from "@/features/chart/useChartAsideStackResize";
-import { buildTradePriceLineSpecs } from "@/features/chart/chartTradePriceLines";
+import {
+  buildTradeExitLineSegment,
+  buildTradePriceLineSpecs,
+} from "@/features/chart/chartTradePriceLines";
 
 import { ChartMarkerLegend } from "@/features/chart/ChartMarkerLegend";
 
@@ -965,9 +968,34 @@ export function ChartPanel() {
     }
     tradeManagementLevelSeriesRef.current = [];
 
-    if (!selectedTrade || !runDetail) return;
+    if (!selectedTrade) return;
 
     const displayNumber = tradeDisplayNumber(runTrades, selectedTrade.trade_id);
+    let barMs = 300_000;
+    try {
+      barMs = resolveChartTimeframeMs(chartTimeframe);
+    } catch {
+      // keep the 5m default
+    }
+    const exitSegment = buildTradeExitLineSegment(selectedTrade, barMs, displayNumber ?? undefined);
+    if (exitSegment) {
+      const exitSeries = chart.addSeries(LineSeries, {
+        color: exitSegment.color,
+        lineWidth: 2,
+        lineStyle: 2,
+        title: exitSegment.title,
+        priceLineVisible: false,
+        lastValueVisible: true,
+      });
+      exitSeries.setData([
+        { time: exitSegment.fromTimeSec as Time, value: exitSegment.price },
+        { time: exitSegment.toTimeSec as Time, value: exitSegment.price },
+      ]);
+      tradeManagementLevelSeriesRef.current.push(exitSeries);
+    }
+
+    if (!runDetail) return;
+
     const curves = groupTradeManagementLevelCurves(
       buildTradeManagementLevelSegments({
         trade: selectedTrade,
@@ -978,7 +1006,7 @@ export function ChartPanel() {
       }),
     );
 
-    tradeManagementLevelSeriesRef.current = curves.map((curve) => {
+    const levelSeries = curves.map((curve) => {
       const isStop = curve.kind === "stop";
       const lineSeries = chart.addSeries(LineSeries, {
         color: isStop ? "#f87171" : "#60a5fa",
@@ -997,6 +1025,7 @@ export function ChartPanel() {
       );
       return lineSeries;
     });
+    tradeManagementLevelSeriesRef.current.push(...levelSeries);
   }, [
     chartCandles,
     chartTimeframe,

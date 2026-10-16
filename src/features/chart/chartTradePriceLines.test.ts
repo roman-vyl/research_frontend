@@ -4,6 +4,7 @@ import type { TradeRecord } from "@/api/types";
 import {
   buildEntryPriceLineTitle,
   buildExitPriceLineTitle,
+  buildTradeExitLineSegment,
   buildTradePriceLineSpecs,
 } from "@/features/chart/chartTradePriceLines";
 import { makeTradeRecord } from "@/features/chart/testFixtures/tradeRecordFixtures";
@@ -21,13 +22,24 @@ const closedLong: TradeRecord = makeTradeRecord({
 });
 
 describe("buildTradePriceLineSpecs", () => {
-  it("builds entry and exit lines for a closed trade", () => {
+  it("builds only the entry price line for a closed trade", () => {
     const specs = buildTradePriceLineSpecs(closedLong);
-    expect(specs).toHaveLength(2);
+    expect(specs).toHaveLength(1);
     expect(specs[0].kind).toBe("entry");
     expect(specs[0].options.price).toBe(100);
-    expect(specs[1].kind).toBe("exit");
-    expect(specs[1].options.price).toBe(105);
+  });
+});
+
+describe("buildTradeExitLineSegment", () => {
+  it("spans from the entry to the exit, never before the entry", () => {
+    const trade = makeTradeRecord({ ...closedLong, entry_time_ms: 600_000, exit_time_ms: 1_200_000 });
+    const segment = buildTradeExitLineSegment(trade, 300_000);
+    expect(segment).toMatchObject({ fromTimeSec: 600, toTimeSec: 1200, price: 105, color: "#fbbf24" });
+  });
+
+  it("stretches a same-bar trade to one chart bar", () => {
+    const trade = makeTradeRecord({ ...closedLong, entry_time_ms: 600_000, exit_time_ms: 600_000 });
+    expect(buildTradeExitLineSegment(trade, 300_000)).toMatchObject({ fromTimeSec: 600, toTimeSec: 900 });
   });
 });
 
