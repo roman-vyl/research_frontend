@@ -5,6 +5,7 @@ import type { Candidate, CandidateMeaning } from "@/api/candidates";
 import type { ExperimentResultSchema } from "@/api/experiments";
 import "@/features/surface/surface.css";
 import { emitFocus } from "@/features/candidates/focus";
+import { CatalogMark, ExportDialog, exportRule } from "@/features/candidates/RuntimeExport";
 import {
   depthConditions,
   depthRow,
@@ -140,7 +141,7 @@ function Details({ c, meaning }: { c: Candidate; meaning: CandidateMeaning | nul
           <h3 className="sx-cd-h">Strategy spec of the picked run</h3>
           <p className="sx-note">
             Historical: the spec of run {spec.run_id} as it was when this point was starred. It is not the current spec of
-            this point and not a deployable specification.
+            this point. "To Runtime" exports exactly this stored snapshot.
           </p>
           {spec.source === "run_request" ? (
             <details className="sx-cd-pre">
@@ -164,6 +165,7 @@ export function CandidatesPanel() {
   const [filters, setFilters] = useState<Condition[]>(loadFilters);
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const [actionError, setActionError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState<string | null>(null);
 
   useEffect(() => {
     void loadCandidates();
@@ -180,6 +182,8 @@ export function CandidatesPanel() {
     const pass = makePasses(schema, rows, depthConditions(filters), () => new Map());
     return candidates.map((c, i) => ({ c, s: shown[i], ok: pass(rows[i]) })).filter((x) => x.ok);
   }, [candidates, shown, schema, filters]);
+
+  const exportCandidate = exporting === null ? null : (candidates.find((c) => c.candidate_id === exporting) ?? null);
 
   const update = (next: Condition[]) => {
     setFilters(next);
@@ -264,6 +268,8 @@ export function CandidatesPanel() {
                     const runId = c.current?.run_id ?? null;
                     const origin = originBadge(c);
                     const hint = STATE_HINT[rowState];
+                    const toRuntime = exportRule(c);
+                    const hasMark = c.current?.runtime != null && c.current.runtime.present;
                     const expanded = open.has(c.candidate_id);
                     const [day, time] = c.picked_at.replace("T", " ").slice(0, 16).split(" ");
                     return (
@@ -277,10 +283,11 @@ export function CandidatesPanel() {
                             <div className="sx-cand-chips" title={meaningLine(c)}>
                               {meaningParts(c).map((p, i) => <span key={i} className="sx-chip">{p}</span>)}
                             </div>
-                            {(origin || rowState !== "same") && (
+                            {(origin || rowState !== "same" || hasMark) && (
                               <div className="sx-cand-badges">
                                 {origin && <span className="sx-badge">{origin}</span>}
                                 {rowState !== "same" && <span className="sx-badge sx-badge-warn">{rowState}</span>}
+                                <CatalogMark c={c} />
                               </div>
                             )}
                           </td>
@@ -325,6 +332,15 @@ export function CandidatesPanel() {
                               >
                                 On Surface
                               </button>
+                              <button
+                                type="button"
+                                className="sx-act"
+                                disabled={!toRuntime.canExport}
+                                title={toRuntime.hint}
+                                onClick={() => toRuntime.canExport && setExporting(c.candidate_id)}
+                              >
+                                To Runtime
+                              </button>
                             </div>
                             {hint && <div className="sx-note">{hint}</div>}
                           </td>
@@ -345,6 +361,7 @@ export function CandidatesPanel() {
           </>
         )}
       </div>
+      {exportCandidate && <ExportDialog candidate={exportCandidate} onClose={() => setExporting(null)} />}
     </section>
   );
 }

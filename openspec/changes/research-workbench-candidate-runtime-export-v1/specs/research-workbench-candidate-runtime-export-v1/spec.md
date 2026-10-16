@@ -5,7 +5,7 @@
 Each Candidates row SHALL offer a "To Runtime" action. It SHALL be enabled only when
 the candidate's strategy spec snapshot has a spec and `current.runtime` is
 `{present: false}`. Activating it SHALL open a confirmation dialog, built on the
-existing modal dialog pattern, that names the file Research will create, states that
+existing modal dialog pattern, that names the candidate being exported (the file name is known only from the response and is then shown), states that
 it is created switched off (`enabled: false`) and that Research does not change it
 afterwards. Confirming SHALL send `POST /api/research/candidates/{candidate_id}/runtime-export`
 with no body and, after a successful response, SHALL load the candidate list again.

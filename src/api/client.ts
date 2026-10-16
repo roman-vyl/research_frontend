@@ -34,7 +34,7 @@ import type {
   RunDeletionPlan,
   RunDeletionResult,
 } from "@/api/experiments";
-import type { Candidate, CandidateCoordsRequest, CandidateList } from "@/api/candidates";
+import type { Candidate, CandidateCoordsRequest, CandidateList, RuntimeExportResult } from "@/api/candidates";
 import type {
   EpisodeHistoryPage,
   EpisodeHistoryRequest,
@@ -488,5 +488,15 @@ export async function starCandidate(experimentId: string, coords: CandidateCoord
 export async function unstarCandidate(candidateId: string): Promise<{ removed: boolean }> {
   return requestJson<{ removed: boolean }>(`/api/research/candidates/${encodeURIComponent(candidateId)}`, {
     method: "DELETE",
+  });
+}
+
+/**
+ * Writes the candidate's stored spec snapshot into the Strategy Runtime catalog as a new file with `enabled: false`.
+ * No body: the service takes the candidate from the id (409 / 503 / 500 are `ApiError` with the service `code`).
+ */
+export async function exportCandidateToRuntime(candidateId: string): Promise<RuntimeExportResult> {
+  return requestJson<RuntimeExportResult>(`/api/research/candidates/${encodeURIComponent(candidateId)}/runtime-export`, {
+    method: "POST",
   });
 }

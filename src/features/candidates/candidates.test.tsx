@@ -21,6 +21,7 @@ const fetchRunSummaries = vi.fn();
 const listCandidates = vi.fn();
 const starCandidate = vi.fn();
 const unstarCandidate = vi.fn();
+const exportCandidateToRuntime = vi.fn();
 
 vi.mock("@/api/client", async () => {
   const actual = await vi.importActual<typeof import("@/api/client")>("@/api/client");
@@ -34,6 +35,7 @@ vi.mock("@/api/client", async () => {
     listCandidates: (...a: unknown[]) => listCandidates(...a),
     starCandidate: (...a: unknown[]) => starCandidate(...a),
     unstarCandidate: (...a: unknown[]) => unstarCandidate(...a),
+    exportCandidateToRuntime: (...a: unknown[]) => exportCandidateToRuntime(...a),
   };
 });
 vi.mock("@/shared/context/WorkbenchContext", () => ({
@@ -316,9 +318,8 @@ describe("Candidates tab", () => {
     render(<CandidatesPanel />);
     fireEvent.click(await screen.findByRole("button", { name: "Details" }));
     expect(screen.getByText(/as it was when this point was starred/)).toBeTruthy();
-    expect(screen.getByText(/not a deployable specification/)).toBeTruthy();
+    expect(screen.getByText(/not the current spec of this point/)).toBeTruthy();
     expect(screen.getByLabelText("Historical strategy spec").textContent).toContain("ema_bounce");
-    expect(screen.queryByText(/deploy$/i)).toBeNull();
   });
 
   it("Max DD filter compares depth: at most 20 hides deeper drawdowns", async () => {
@@ -385,5 +386,108 @@ describe("On Surface", () => {
     fireEvent.click(await screen.findByRole("button", { name: "On Surface" }));
     expect(await screen.findByText("This point is hidden by the active filters.")).toBeTruthy();
     expect(document.querySelectorAll(".sx-cell.sx-sel").length).toBe(1);
+  });
+});
+
+describe("To Runtime", () => {
+  const SPEC = { source: "run_request" as const, run_id: "run_old", spec: { strategy_id: "ema_bounce" } };
+  const withRuntime = (runtime: CandidateCurrent["runtime"], spec: Candidate["strategy_spec_snapshot"] = SPEC) =>
+    candidate("cand_1", R_COORDS, { strategy_spec_snapshot: spec, current: CURRENT({ runtime }) });
+  const button = async () => (await screen.findByRole("button", { name: "To Runtime" })) as HTMLButtonElement;
+  const RESULT = { candidate_id: "cand_1", file: "btcusdt_p-cand_1.json", strategy_instance_id: "x:1", enabled: false, journal: "ok" };
+
+  beforeEach(() => {
+    exportCandidateToRuntime.mockReset();
+    listCandidates.mockImplementation(async () => ({ candidates: shortlist }));
+  });
+  afterEach(() => cleanup());
+
+  it("is enabled only when the spec exists and the catalog has no such file", async () => {
+    shortlist = [withRuntime({ present: false })];
+    render(<CandidatesPanel />);
+    const b = await button();
+    expect(b.disabled).toBe(false);
+    expect(screen.queryByText(/In Runtime catalog/)).toBeNull();
+  });
+
+  it.each([
+    ["no spec", null, null, /no strategy spec/],
+    ["catalog unavailable", null, SPEC, /Runtime catalog is unavailable/],
+    ["file present", { present: true as const, file: "a.json", enabled: false }, SPEC, /already in the Runtime catalog: a\.json/],
+    ["duplicate", { present: true as const, duplicate: true as const, files: ["a.json", "b.json"] }, SPEC, /a\.json, b\.json/],
+  ])("is disabled with a hint: %s", async (_n, runtime, spec, hint) => {
+    shortlist = [withRuntime(runtime as CandidateCurrent["runtime"], spec as Candidate["strategy_spec_snapshot"])];
+    render(<CandidatesPanel />);
+    const b = await button();
+    expect(b.disabled).toBe(true);
+    expect(b.title).toMatch(hint);
+  });
+
+  it("marks the file only: Off, On, duplicate; no wording about running", async () => {
+    shortlist = [
+      withRuntime({ present: true, file: "off.json", enabled: false }),
+      { ...withRuntime({ present: true, file: "on.json", enabled: true }), candidate_id: "cand_2", coords: { ...R_COORDS, width: "4" } },
+      { ...withRuntime({ present: true, duplicate: true, files: ["d1.json", "d2.json"] }), candidate_id: "cand_3", coords: { ...R_COORDS, width: "5" } },
+    ];
+    const { container } = render(<CandidatesPanel />);
+    await screen.findByText(/In Runtime catalog · Off/);
+    expect(screen.getByText(/In Runtime catalog · On/)).toBeTruthy();
+    expect(screen.getByText(/Runtime duplicate: d1\.json, d2\.json/)).toBeTruthy();
+    expect(container.textContent).not.toMatch(/\b(running|active|live|loaded)\b/i);
+  });
+
+  it("confirms, posts once, reloads and shows the created file", async () => {
+    shortlist = [withRuntime({ present: false })];
+    let release: (v: unknown) => void = () => {};
+    exportCandidateToRuntime.mockImplementation(() => new Promise((r) => (release = r)));
+    render(<CandidatesPanel />);
+    fireEvent.click(await button());
+    const dlg = screen.getByRole("dialog", { name: "To Runtime" });
+    expect(dlg.textContent).toContain("cand_1");
+    expect(dlg.textContent).toContain("enabled: false");
+    expect(exportCandidateToRuntime).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dlg).getByRole("button", { name: "Create switched-off file" }));
+    await waitFor(() => expect(within(dlg).getByRole("button", { name: "Exporting…" })).toBeTruthy());
+    expect((within(dlg).getByRole("button", { name: "Exporting…" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(dlg).getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true);
+
+    const before = listCandidates.mock.calls.length;
+    shortlist = [withRuntime({ present: true, file: RESULT.file, enabled: false })];
+    release(RESULT);
+    await within(dlg).findByText(RESULT.file);
+    expect(exportCandidateToRuntime).toHaveBeenCalledTimes(1);
+    expect(exportCandidateToRuntime).toHaveBeenCalledWith("cand_1");
+    await waitFor(() => expect(listCandidates.mock.calls.length).toBeGreaterThan(before));
+    fireEvent.click(within(dlg).getByRole("button", { name: "Close" }));
+    expect(await screen.findByText(/In Runtime catalog · Off/)).toBeTruthy();
+    expect(((await button()) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("notes a failed journal line while the file is created", async () => {
+    shortlist = [withRuntime({ present: false })];
+    exportCandidateToRuntime.mockResolvedValue({ ...RESULT, journal: "failed" });
+    render(<CandidatesPanel />);
+    fireEvent.click(await button());
+    fireEvent.click(screen.getByRole("button", { name: "Create switched-off file" }));
+    expect(await screen.findByText(/journal line was not written/)).toBeTruthy();
+    expect(screen.getByText(RESULT.file)).toBeTruthy();
+  });
+
+  it.each([
+    ["no_strategy_spec", 409, {}, /Nothing was exported: .*no stored strategy spec/],
+    ["runtime_duplicate", 409, { files: ["a.json", "b.json"] }, /already in the Runtime catalog: a\.json, b\.json/],
+    ["runtime_file_exists", 409, { file: "z.json" }, /named z\.json/],
+    ["runtime_export_busy", 503, {}, /another export is running/],
+    ["runtime_catalog_unavailable", 503, {}, /Runtime catalog is unavailable/],
+    ["runtime_write_failed", 500, {}, /Nothing was exported: disk says no/],
+  ])("explains %s", async (code, status, details, text) => {
+    shortlist = [withRuntime({ present: false })];
+    exportCandidateToRuntime.mockRejectedValue(new ApiError(status, "disk says no", code, details));
+    render(<CandidatesPanel />);
+    fireEvent.click(await button());
+    fireEvent.click(screen.getByRole("button", { name: "Create switched-off file" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(text);
   });
 });

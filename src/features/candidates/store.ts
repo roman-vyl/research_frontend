@@ -4,8 +4,8 @@
  */
 import { useSyncExternalStore } from "react";
 
-import { listCandidates, starCandidate, unstarCandidate } from "@/api/client";
-import type { Candidate, CandidateCoordsRequest } from "@/api/candidates";
+import { ApiError, exportCandidateToRuntime, listCandidates, starCandidate, unstarCandidate } from "@/api/client";
+import type { Candidate, CandidateCoordsRequest, RuntimeExportResult } from "@/api/candidates";
 
 export type CandidatesState = {
   candidates: Candidate[];
@@ -53,6 +53,21 @@ export async function starPoint(experimentId: string, coords: CandidateCoordsReq
 export async function unstarPoint(candidateId: string): Promise<void> {
   await unstarCandidate(candidateId);
   await loadCandidates();
+}
+
+/**
+ * Exports the stored spec snapshot to the Runtime catalog (a new file, switched off) and reloads the list.
+ * When the service reports that the file or its identity is already there, the list is reloaded too, so the row shows it.
+ */
+export async function exportToRuntime(candidateId: string): Promise<RuntimeExportResult> {
+  try {
+    const result = await exportCandidateToRuntime(candidateId);
+    await loadCandidates();
+    return result;
+  } catch (e) {
+    if (e instanceof ApiError && (e.code === "runtime_duplicate" || e.code === "runtime_file_exists")) await loadCandidates();
+    throw e;
+  }
 }
 
 export function useCandidates(): CandidatesState {
