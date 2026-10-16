@@ -11,4 +11,4 @@
 
 ## 2. Manual check (owner)
 
-- [ ] 2.1 On the Mac stack, export one candidate from the Candidates tab: the row shows "In Runtime catalog · Off" and "To Runtime" is disabled; the same candidate cannot be exported again.
+- [ ] 2.1 (Not run at archive time, 2026-10-16: the archive was requested before the owner check; to be recorded when done.) On the Mac stack, export one candidate from the Candidates tab: the row shows "In Runtime catalog · Off" and "To Runtime" is disabled; the same candidate cannot be exported again.
