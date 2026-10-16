@@ -43,7 +43,10 @@ import { ChartTradeDiagnostics } from "@/features/chart/ChartTradeDiagnostics";
 import { ChartTradeFocusNav } from "@/features/chart/ChartTradeFocusNav";
 import { useChartAsideResize } from "@/features/chart/useChartAsideResize";
 import { useChartAsideStackResize } from "@/features/chart/useChartAsideStackResize";
-import { buildTradePriceLineSpecs } from "@/features/chart/chartTradePriceLines";
+import {
+  buildTradeExitSegment,
+  buildTradePriceLineSpecs,
+} from "@/features/chart/chartTradePriceLines";
 
 import { ChartMarkerLegend } from "@/features/chart/ChartMarkerLegend";
 
@@ -151,6 +154,7 @@ export function ChartPanel() {
   const episodeLayersRef = useRef<EpisodeLayersPrimitive | null>(null);
 
   const tradePriceLinesRef = useRef<IPriceLine[]>([]);
+  const tradeExitSegmentSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
 
   const tradeManagementLevelSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
 
@@ -952,9 +956,42 @@ export function ChartPanel() {
       tradeDisplayNumber(runTrades, selectedTrade.trade_id) ?? undefined,
     );
 
-    tradePriceLinesRef.current = specs.map((spec) => series.createPriceLine(spec.options));
+    tradePriceLinesRef.current = specs
+      .filter((spec) => spec.kind !== "exit")
+      .map((spec) => series.createPriceLine(spec.options));
 
   }, [selectedTrade]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    if (tradeExitSegmentSeriesRef.current) {
+      chart.removeSeries(tradeExitSegmentSeriesRef.current);
+      tradeExitSegmentSeriesRef.current = null;
+    }
+    if (!selectedTrade) return;
+
+    const segment = buildTradeExitSegment(
+      selectedTrade,
+      tradeDisplayNumber(runTrades, selectedTrade.trade_id) ?? undefined,
+    );
+    const lineSeries = chart.addSeries(LineSeries, {
+      color: segment.color,
+      lineWidth: 2,
+      lineStyle: 2,
+      title: segment.title,
+      priceLineVisible: false,
+      lastValueVisible: true,
+    });
+    lineSeries.setData(
+      segment.points.map((point) => ({
+        time: point.timeSec as Time,
+        value: point.price,
+      })),
+    );
+    tradeExitSegmentSeriesRef.current = lineSeries;
+  }, [runTrades, selectedTrade]);
 
   useEffect(() => {
     const chart = chartRef.current;

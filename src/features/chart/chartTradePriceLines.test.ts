@@ -4,6 +4,7 @@ import type { TradeRecord } from "@/api/types";
 import {
   buildEntryPriceLineTitle,
   buildExitPriceLineTitle,
+  buildTradeExitSegment,
   buildTradePriceLineSpecs,
 } from "@/features/chart/chartTradePriceLines";
 import { makeTradeRecord } from "@/features/chart/testFixtures/tradeRecordFixtures";
@@ -35,5 +36,26 @@ describe("price line titles", () => {
   it("formats entry and exit labels", () => {
     expect(buildEntryPriceLineTitle(closedLong)).toBe(`Entry #${closedLong.trade_id}`);
     expect(buildExitPriceLineTitle(closedLong)).toBe(`Exit #${closedLong.trade_id} · stop_loss`);
+  });
+});
+
+describe("buildTradeExitSegment", () => {
+  it("spans from the entry bar to the exit bar at the exit price", () => {
+    const trade = makeTradeRecord({
+      ...closedLong,
+      entry_time_ms: 60_000,
+      exit_time_ms: 180_000,
+    });
+    const segment = buildTradeExitSegment(trade);
+    expect(segment.points).toEqual([
+      { timeSec: 60, price: 105 },
+      { timeSec: 180, price: 105 },
+    ]);
+    expect(segment.title).toBe(`Exit #${trade.trade_id} · stop_loss`);
+  });
+
+  it("collapses to one point when entry and exit share a bar", () => {
+    const trade = makeTradeRecord({ ...closedLong, entry_time_ms: 60_000, exit_time_ms: 60_000 });
+    expect(buildTradeExitSegment(trade).points).toHaveLength(1);
   });
 });
