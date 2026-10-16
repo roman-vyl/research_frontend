@@ -64,3 +64,33 @@ export function buildTradePriceLineSpecs(trade: TradeRecord, displayNumber?: num
 
   return specs;
 }
+
+export type TradeExitSegment = {
+  color: string;
+  title: string;
+  points: { timeSec: number; price: number }[];
+};
+
+/**
+ * The exit level as a segment that spans only the life of the trade (entry
+ * bar to exit bar), not the whole chart as a price line would.
+ */
+export function buildTradeExitSegment(
+  trade: TradeRecord,
+  displayNumber?: number,
+): TradeExitSegment {
+  const price = Number(trade.exit_price);
+  const fromSec = Math.floor(trade.entry_time_ms / 1000);
+  const toSec = Math.floor(trade.exit_time_ms / 1000);
+  return {
+    color: exitLineColor(),
+    title: buildExitPriceLineTitle(trade, displayNumber),
+    points:
+      toSec > fromSec
+        ? [
+            { timeSec: fromSec, price },
+            { timeSec: toSec, price },
+          ]
+        : [{ timeSec: fromSec, price }],
+  };
+}
