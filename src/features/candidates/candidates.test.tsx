@@ -478,7 +478,7 @@ describe("To Runtime", () => {
     ["no_strategy_spec", 409, {}, /Nothing was exported: .*no stored strategy spec/],
     ["runtime_duplicate", 409, { files: ["a.json", "b.json"] }, /already in the Runtime catalog: a\.json, b\.json/],
     ["runtime_file_exists", 409, { file: "z.json" }, /named z\.json/],
-    ["runtime_export_busy", 503, {}, /another export is running/],
+    ["runtime_export_busy", 503, {}, /another export is in progress/],
     ["runtime_catalog_unavailable", 503, {}, /Runtime catalog is unavailable/],
     ["runtime_write_failed", 500, {}, /Nothing was exported: disk says no/],
   ])("explains %s", async (code, status, details, text) => {
@@ -489,5 +489,6 @@ describe("To Runtime", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create switched-off file" }));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toMatch(text);
+    expect(alert.textContent).not.toMatch(/\b(running|active|live|loaded)\b/i);
   });
 });

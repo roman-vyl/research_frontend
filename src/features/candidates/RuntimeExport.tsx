@@ -61,7 +61,7 @@ export function exportErrorText(e: unknown): string {
       return failed(`a file${file ? ` named ${file}` : ""} already exists in the Runtime catalog.`);
     }
     case "runtime_export_busy":
-      return failed("another export is running. Try again.");
+      return failed("another export is in progress. Try again.");
     case "runtime_catalog_unconfigured":
     case "runtime_catalog_unavailable":
       return failed("the Runtime catalog is unavailable.");
