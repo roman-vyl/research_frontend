@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, listCandidates, starCandidate, unstarCandidate } from "@/api/client";
+import { ApiError, exportCandidateToRuntime, listCandidates, starCandidate, unstarCandidate } from "@/api/client";
 
 const reply = (status: number, body: unknown) =>
   vi.fn().mockImplementation(async () => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }));
@@ -32,5 +32,26 @@ describe("candidates API", () => {
     expect(err).toBeInstanceOf(ApiError);
     expect(err.status).toBe(409);
     expect(err.detail).toBe("several rows match");
+  });
+
+  it("exports with a bare POST: no body, no Content-Type", async () => {
+    const f = reply(201, { candidate_id: "cand/1", file: "x.json", strategy_instance_id: "s:1", enabled: false, journal: "ok" });
+    vi.stubGlobal("fetch", f);
+    const r = await exportCandidateToRuntime("cand/1");
+    const [url, init] = f.mock.calls[0];
+    expect(url).toBe("/api/research/candidates/cand%2F1/runtime-export");
+    expect(init.method).toBe("POST");
+    expect(init.body).toBeUndefined();
+    expect(new Headers(init.headers).has("Content-Type")).toBe(false);
+    expect(r.file).toBe("x.json");
+  });
+
+  it("keeps the code and details of an export refusal", async () => {
+    vi.stubGlobal("fetch", reply(409, { error: "runtime_duplicate", message: "dup", details: { files: ["a.json"] } }));
+    const err = await exportCandidateToRuntime("c").catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.status).toBe(409);
+    expect(err.code).toBe("runtime_duplicate");
+    expect(err.details).toEqual({ files: ["a.json"] });
   });
 });

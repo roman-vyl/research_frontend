@@ -27,12 +27,22 @@ export type CandidateMeaning = {
 
 export type CandidateRowState = "same" | "changed" | "missing" | "ambiguous";
 
+/**
+ * What the Runtime catalog directory holds for the candidate's spec (a file, not the state of Strategy Runtime).
+ * `null`: the catalog is unset or unreadable, or the candidate has no spec.
+ */
+export type CandidateRuntime =
+  | { present: false }
+  | { present: true; file: string; enabled: boolean }
+  | { present: true; duplicate: true; files: string[] };
+
 export type CandidateCurrent = {
   row_state: CandidateRowState;
   run_id: string | null;
   provenance: string | null;
   metrics: Record<string, number | null> | null;
   meaning: CandidateMeaning | null;
+  runtime?: CandidateRuntime | null;
 };
 
 /** Spec of the picked run as the run request stored it at the time of the star: historical, never current. */
@@ -60,3 +70,12 @@ export type Candidate = {
 };
 
 export type CandidateList = { candidates: Candidate[] };
+
+/** Answer of `POST /candidates/{id}/runtime-export`: the file is always created with `enabled: false`. */
+export type RuntimeExportResult = {
+  candidate_id: string;
+  file: string;
+  strategy_instance_id: string;
+  enabled: false;
+  journal?: "ok" | "failed";
+};
