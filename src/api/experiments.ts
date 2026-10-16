@@ -9,6 +9,8 @@ export type ExperimentRegistryEntry = {
   ticker: string;
   anchor: string;
   manifest: string;
+  /** Optional section on the Experiments page; entries without one go to "Other". Sections keep the registry's order of first appearance. */
+  group?: string;
 };
 
 export type ExperimentRegistry = {

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import { metricId, type ExperimentResultSchema, type ExperimentView } from "@/api/experiments";
+import { metricId, type ExperimentRegistryEntry, type ExperimentResultSchema, type ExperimentView } from "@/api/experiments";
 
 import "@/features/surface/surface.css";
 import { coordNumber, coordsMatch, focusControls, rowCoords } from "@/features/candidates/coords";
@@ -117,6 +117,17 @@ function useTokens(ref: React.RefObject<HTMLElement | null>): Tokens {
  * Viewer of an Experiment's ready-made results. All state is local to this component; its only
  * link to the workbench is `setSelectedRunId(run_id)` from the explicit "Open run" action.
  */
+/** Registry entries split into sections by their `group`, in the order each group first appears; entries without one go to "Other". */
+export function groupExperiments(entries: ExperimentRegistryEntry[]): [string, ExperimentRegistryEntry[]][] {
+  const out = new Map<string, ExperimentRegistryEntry[]>();
+  for (const e of entries) {
+    const g = e.group?.trim() || "Other";
+    if (!out.has(g)) out.set(g, []);
+    out.get(g)!.push(e);
+  }
+  return [...out.entries()];
+}
+
 export function SurfaceView() {
   const { setSelectedRunId } = useWorkbenchReport();
   const { setActiveTab } = useWorkbenchShell();
@@ -548,13 +559,20 @@ export function SurfaceView() {
                 Ready-made results of a research Experiment. Pick an Experiment; points with a run can be opened in Chart and Reports.
               </p>
             </header>
-            <div className="sx-cards" role="group" aria-label="Experiments">
-              {(data.registry ?? []).map((x) => (
-                <button type="button" key={x.experiment_id} className="sx-card sx-panel" onClick={() => setExperimentId(x.experiment_id)}>
-                  <span className="sx-eyebrow">{x.ticker} · {x.anchor}</span>
-                  <span className="sx-card-title">{x.title}</span>
-                  <StorageBlock entry={storage[x.experiment_id]} />
-                </button>
+            <div className="sx-groups" role="group" aria-label="Experiments">
+              {groupExperiments(data.registry ?? []).map(([group, items]) => (
+                <section key={group} className="sx-exp-group" aria-label={group}>
+                  <h2 className="sx-exp-group-title">{group}</h2>
+                  <div className="sx-cards">
+                    {items.map((x) => (
+                      <button type="button" key={x.experiment_id} className="sx-card sx-panel" onClick={() => setExperimentId(x.experiment_id)}>
+                        <span className="sx-eyebrow">{x.ticker} · {x.anchor}</span>
+                        <span className="sx-card-title">{x.title}</span>
+                        <StorageBlock entry={storage[x.experiment_id]} />
+                      </button>
+                    ))}
+                  </div>
+                </section>
               ))}
               {data.registry !== null && data.registry.length === 0 && <p className="sx-note">No experiments are registered.</p>}
             </div>
