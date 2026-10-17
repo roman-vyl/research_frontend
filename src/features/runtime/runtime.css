@@ -41,3 +41,4 @@
 .sx .rt-swatch[data-line="entry"]::before{ border-color:var(--ink-2); }
 .sx .rt-swatch[data-line="stop"]::before{ border-color:var(--neg-500); }
 .sx .rt-swatch[data-line="take"]::before{ border-color:var(--pos-500); }
+.sx .rt-swatch[data-ring="applied"]::before{ width:8px; height:8px; border:1.5px solid var(--ink-2); border-radius:50%; }

@@ -17,7 +17,7 @@ const desired = (entry = "100", stop = "90", take = "120") => ({
   initial_take_price: take,
 });
 function ev(i: number, de: unknown, occurred = "2026-10-17T12:00:00Z", id = `e${i}`): JournalEvent {
-  return { event_id: id, occurred_at: occurred, bar_open_time_ms: (T0 + i * TF) * 1000, body: { payload: { desired_entry: de } } };
+  return { event_id: id, event_type: "live_entry_evaluated", occurred_at: occurred, bar_open_time_ms: (T0 + i * TF) * 1000, body: { payload: { desired_entry: de } } };
 }
 const known = T0 * 1000;
 /** Per candle bar: the projected value of a line at that bar, or undefined where there is no point. */

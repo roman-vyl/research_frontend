@@ -11,7 +11,8 @@ const fetchRuntimeStrategyInstances = vi.fn();
 const fetchJournalEvents = vi.fn();
 const fetchJournalStrategyInstances = vi.fn();
 
-vi.mock("@/api/journal", () => ({
+vi.mock("@/api/journal", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/api/journal")>()),
   fetchJournalEvents: (...a: unknown[]) => fetchJournalEvents(...a),
   fetchJournalStrategyInstances: (...a: unknown[]) => fetchJournalStrategyInstances(...a),
 }));
