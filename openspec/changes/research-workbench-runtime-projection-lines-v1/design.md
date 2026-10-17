@@ -49,8 +49,8 @@ decimal text. `GET /v1/strategy-instances` returns per instance `first_bar_open_
    prices, sets `priceValueBuilder` to `[min, max, entry]` so autoscale includes the lines, and turns
    off its last-value label and price line. Lines are plain lines (one segment per bar), not step lines.
    Colours from Surface tokens: entry `--ink-2`, stop `--neg-500`, take `--pos-500`, restyled on theme
-   change like the candles. *No evaluation recorded* bars get a small grey marker under the bar on the
-   candle series (`createSeriesMarkers`). Nothing calls a viewport method.
+   change like the candles. *No evaluation recorded* bars draw nothing on the chart (owner decision 2026-10-17: the grey
+   markers were noise); they only feed the legend counter. Nothing calls a viewport method.
 5. **Library behaviour is verified, not assumed.** A real-browser check (Chromium via Playwright,
    run on demand, not in CI) draws a fixture with signal, no-signal and missing bars and the
    screenshot is reviewed; unit tests assert the whitespace data produced by `buildProjection`.
@@ -68,5 +68,3 @@ decimal text. `GET /v1/strategy-instances` returns per instance `first_bar_open_
 
 - The custom series draws on a canvas through the library's plugin API; its draw code is verified
   in a real browser (single points, gaps, both themes, 30-day stress), not in jsdom.
-- Many missed bars produce many markers; the chart window is at most 8640 bars, which the library
-  handles.

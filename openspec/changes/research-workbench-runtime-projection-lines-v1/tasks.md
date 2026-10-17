@@ -10,7 +10,7 @@
 
 ## 3. Chart and UI
 
-- [x] 3.1 `projectionSeries.ts`: one custom series drawing entry, stop and take with gaps between non-consecutive bars and a dot on every point (`splitRuns` unit-tested); `RuntimeCandleChart.tsx` uses it plus the no-evaluation markers; Surface-token colours for light/dark; no viewport calls.
+- [x] 3.1 `projectionSeries.ts`: one custom series drawing entry, stop and take with gaps between non-consecutive bars and a dot on every point (`splitRuns` unit-tested); `RuntimeCandleChart.tsx` uses it; no-evaluation bars are not drawn (counter only); Surface-token colours for light/dark; no viewport calls.
 - [x] 3.2 `RuntimeChartPanel.tsx`: legend (Entry, Stop, Take, N without a recorded evaluation, N unreadable), "Projection unavailable" + Retry, Refresh repeats events.
 - [x] 3.3 `RuntimeDashboard.tsx`: summary request on list load/Refresh, "Last evaluated" / "No evaluations yet" on cards.
 

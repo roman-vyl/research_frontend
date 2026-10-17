@@ -48,11 +48,11 @@ why the record is missing. Bars before that time SHALL stay empty.
 
 #### Scenario: Missing event
 - **WHEN** events exist for bars 1, 2 and 4 of a strategy
-- **THEN** bar 3 is marked "No evaluation recorded" and the lines are broken at bar 3
+- **THEN** bar 3 is counted as "No evaluation recorded" (legend counter, no marker on the chart) and the lines are broken at bar 3
 
 #### Scenario: Window starts inside the known history
 - **WHEN** the strategy's `first_bar_open_time_ms` is earlier than the window start and the first event inside the window is on day 3
-- **THEN** days 1 and 2 of the window are marked "No evaluation recorded", not left empty
+- **THEN** the bars of days 1 and 2 are counted as "No evaluation recorded" in the legend, with no lines and no markers
 
 #### Scenario: Before the strategy's known history
 - **WHEN** the window starts earlier than `first_bar_open_time_ms`
@@ -75,7 +75,7 @@ When several events exist for one bar the one with the latest `occurred_at` SHAL
 
 ### Requirement: Journal unavailable
 If the Central Journal request fails the panel SHALL keep the candles, draw no projection lines and
-no "No evaluation recorded" markers, and show "Projection unavailable" with Retry.
+no "No evaluation recorded" count, and show "Projection unavailable" with Retry.
 
 #### Scenario: Journal down
 - **WHEN** the events request fails

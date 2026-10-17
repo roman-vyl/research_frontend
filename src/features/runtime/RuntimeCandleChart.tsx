@@ -1,10 +1,8 @@
 import {
   CandlestickSeries,
   createChart,
-  createSeriesMarkers,
   type IChartApi,
   type ISeriesApi,
-  type ISeriesMarkersPluginApi,
   type Time,
 } from "lightweight-charts";
 import { useEffect, useRef } from "react";
@@ -44,8 +42,7 @@ function projectionColors(p: Palette): Partial<ProjectionSeriesOptions> {
 /**
  * One candlestick series plus ONE custom series that draws the three projection lines (entry, stop,
  * take) for the signal bars of `projection`; it breaks the lines wherever bars are not consecutive and
- * draws every point, so a one-bar signal is visible. Bars without a recorded evaluation get a small
- * marker. The number of series is fixed. Pan and zoom are left to the library.
+ * draws every point, so a one-bar signal is visible. Bars without a recorded evaluation are left empty. The number of series is fixed. Pan and zoom are left to the library.
  */
 export function RuntimeCandleChart({
   candles,
@@ -58,9 +55,6 @@ export function RuntimeCandleChart({
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const projectionRef = useRef<ISeriesApi<"Custom", Time> | null>(null);
-  const noEvaluationRef = useRef<readonly number[]>([]);
-  const applyMarkersRef = useRef<() => void>(() => undefined);
-  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -78,25 +72,15 @@ export function RuntimeCandleChart({
     chartRef.current = chart;
     seriesRef.current = series;
     projectionRef.current = projectionSeries;
-    markersRef.current = createSeriesMarkers(series, []);
 
     const resize = new ResizeObserver(() => chart.applyOptions({ width: host.clientWidth, height: host.clientHeight }));
     resize.observe(host);
-    const applyMarkers = () => {
-      const times = noEvaluationRef.current;
-      const color = readPalette(host).muted;
-      markersRef.current?.setMarkers(
-        times.map((time) => ({ time: time as Time, position: "belowBar" as const, shape: "circle" as const, color, size: 0.3 })),
-      );
-    };
-    applyMarkersRef.current = applyMarkers;
     const scheme = window.matchMedia("(prefers-color-scheme: dark)");
     const restyle = () => {
       const p = readPalette(host);
       chart.applyOptions(chartOptions(p));
       series.applyOptions({ upColor: p.up, downColor: p.down, wickUpColor: p.up, wickDownColor: p.down });
       projectionSeries.applyOptions(projectionColors(p));
-      applyMarkers();
     };
     scheme.addEventListener("change", restyle);
 
@@ -107,7 +91,6 @@ export function RuntimeCandleChart({
       chartRef.current = null;
       seriesRef.current = null;
       projectionRef.current = null;
-      markersRef.current = null;
     };
   }, []);
 
@@ -127,8 +110,6 @@ export function RuntimeCandleChart({
     projectionRef.current?.setData(
       (projection?.points ?? []).map((p) => ({ time: p.time as Time, entry: p.entry, stop: p.stop, take: p.take })),
     );
-    noEvaluationRef.current = projection?.noEvaluationTimes ?? [];
-    applyMarkersRef.current();
   }, [projection]);
 
   return <div ref={hostRef} className="rt-chart-host" role="img" aria-label="Candlestick chart" />;
