@@ -35,15 +35,16 @@ decimal text. `GET /v1/strategy-instances` returns per instance `first_bar_open_
    is broken by the greater `event_id`, the same order as the Journal. An event whose
    `desired_entry` is neither `null` nor a valid three-price object is *unreadable*: it breaks the
    lines like *no evaluation recorded* and is counted separately.
-4. **Rendering.** Three `LineSeries` (`pointMarkersVisible: true` so a one-bar signal is visible)
-   fed with one datum per candle bar: `{time, value}` for *signal*, an empty datum `{time}` for every
-   other state. The browser check showed that the library joins points across empty data (and a step
-   line even extends the last value forward), so a gap is made explicitly: `buildProjection` flags the
-   last point of every run of signals `breakAfter` and the chart gives that point a transparent
-   segment colour, so no segment leaves a run; the point marker stays. Lines are plain lines (one
-   segment per bar), not step lines. Colours from Surface tokens: entry `--ink-2`, stop `--neg-500`,
-   take `--pos-500`, theme-aware like the candles. *No evaluation recorded* bars get a small grey
-   marker under the bar on the candle series (`createSeriesMarkers`). Nothing calls a viewport method.
+4. **Rendering.** `buildProjection` groups the signal bars into runs of consecutive bars. Each run
+   is drawn as its own three `LineSeries` (entry, stop, take; `pointMarkersVisible: true` so a
+   one-bar run is visible). Real-browser checks showed that one series per line cannot be used: the
+   library joins points across empty (whitespace) data, a step line even extends the last value
+   forward, and hiding the segment with a transparent point colour also hides that point's marker
+   (a one-bar run disappears). Lines are plain lines (one segment per bar), not step lines. Series
+   are replaced when the projection changes. Colours from Surface tokens: entry `--ink-2`, stop
+   `--neg-500`, take `--pos-500`, theme-aware like the candles. *No evaluation recorded* bars get a
+   small grey marker under the bar on the candle series (`createSeriesMarkers`). Nothing calls a
+   viewport method.
 5. **Library behaviour is verified, not assumed.** A real-browser check (Chromium via Playwright,
    run on demand, not in CI) draws a fixture with signal, no-signal and missing bars and the
    screenshot is reviewed; unit tests assert the whitespace data produced by `buildProjection`.
@@ -58,6 +59,10 @@ decimal text. `GET /v1/strategy-instances` returns per instance `first_bar_open_
 9. **Proxy.** `/journal-api` → `VITE_JOURNAL_PROXY_TARGET` or `http://127.0.0.1:8097`, prefix stripped.
 
 ## Risks
+
+- One series set per run: a pathological window (a signal on 3 of every 5 bars for 30 days, 1728 runs,
+  5184 series) took about 10 s to draw in Chromium. Real strategies signal on far fewer runs; if a
+  window ever has more than a few hundred runs, merging or a custom series is the follow-up.
 
 - A single isolated point is the weakest case for line series; `pointMarkersVisible` and the
   browser check cover it.

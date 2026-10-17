@@ -1,12 +1,13 @@
 import type { JournalEvent } from "@/api/journal";
 import type { ChartBar } from "@/api/types";
 
-export type LinePoint = { time: number; value?: number; breakAfter?: boolean };
+export type LinePoint = { time: number; value: number };
+
+/** Consecutive bars with a signal: the three lines of one run are drawn as separate series, so no line joins two runs. */
+export type ProjectionRun = { entry: LinePoint[]; stop: LinePoint[]; take: LinePoint[] };
 
 export type Projection = {
-  entry: LinePoint[];
-  stop: LinePoint[];
-  take: LinePoint[];
+  runs: ProjectionRun[];
   /** Bar times (unix seconds) at or after the known history that have no journal event. */
   noEvaluationTimes: number[];
   /** Events whose `desired_entry` is neither `null` nor a three-price object. */
@@ -45,9 +46,9 @@ function later(a: JournalEvent, b: JournalEvent): JournalEvent {
 }
 
 /**
- * One datum per candle bar for each line: a value for a signal, an empty datum for every other
- * state. The chart library joins points across empty data, so the last point of each run of
- * signals is flagged `breakAfter` and the chart hides the segment leaving it.
+ * The signal bars grouped into runs of consecutive bars. The chart library joins points across
+ * empty data (and a transparent segment would also hide the point marker of a one-bar run), so every
+ * run is its own set of line series.
  *
  * - signal: three prices;
  * - no signal (`desired_entry = null`): evaluated, line broken;
@@ -65,7 +66,8 @@ export function buildProjection(
     const prev = byBar.get(event.bar_open_time_ms);
     byBar.set(event.bar_open_time_ms, prev === undefined ? event : later(prev, event));
   }
-  const out: Projection = { entry: [], stop: [], take: [], noEvaluationTimes: [], unreadableCount: 0, signalCount: 0 };
+  const out: Projection = { runs: [], noEvaluationTimes: [], unreadableCount: 0, signalCount: 0 };
+  let run: ProjectionRun | null = null;
   for (const bar of candles) {
     const event = byBar.get(bar.time * 1000);
     let state: BarState | null = null;
@@ -74,20 +76,16 @@ export function buildProjection(
     if (state?.kind === "unreadable") out.unreadableCount += 1;
     if (state?.kind === "signal") {
       out.signalCount += 1;
-      out.entry.push({ time: bar.time, value: state.entry });
-      out.stop.push({ time: bar.time, value: state.stop });
-      out.take.push({ time: bar.time, value: state.take });
+      if (run === null) {
+        run = { entry: [], stop: [], take: [] };
+        out.runs.push(run);
+      }
+      run.entry.push({ time: bar.time, value: state.entry });
+      run.stop.push({ time: bar.time, value: state.stop });
+      run.take.push({ time: bar.time, value: state.take });
     } else {
-      out.entry.push({ time: bar.time });
-      out.stop.push({ time: bar.time });
-      out.take.push({ time: bar.time });
+      run = null;
     }
-  }
-  // a run of signals ends where the next bar is not a signal: the segment leaving its last point must not be drawn
-  for (const line of [out.entry, out.stop, out.take]) {
-    line.forEach((point, i) => {
-      if (point.value !== undefined && line[i + 1]?.value === undefined) point.breakAfter = true;
-    });
   }
   return out;
 }

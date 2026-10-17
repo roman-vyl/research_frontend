@@ -35,14 +35,14 @@ vi.mock("@/features/runtime/RuntimeCandleChart", () => ({
     projection,
   }: {
     candles: readonly unknown[];
-    projection?: { entry: { value?: number }[]; noEvaluationTimes: number[]; unreadableCount: number } | null;
+    projection?: { runs: { entry: unknown[] }[]; noEvaluationTimes: number[]; unreadableCount: number } | null;
   }) => {
     chartRenders(candles.length);
     return (
       <div
         data-testid="chart"
         data-bars={candles.length}
-        data-points={projection ? projection.entry.filter((p) => p.value !== undefined).length : "none"}
+        data-points={projection ? projection.runs.reduce((n, r) => n + r.entry.length, 0) : "none"}
         data-noeval={projection ? projection.noEvaluationTimes.length : "none"}
       />
     );

@@ -11,7 +11,7 @@ import {
 import { useEffect, useRef } from "react";
 
 import type { ChartBar } from "@/api/types";
-import type { LinePoint, Projection } from "@/features/runtime/runtimeProjection";
+import type { Projection } from "@/features/runtime/runtimeProjection";
 
 type Palette = { text: string; grid: string; up: string; down: string; muted: string };
 
@@ -37,13 +37,6 @@ function chartOptions(p: Palette) {
   };
 }
 
-/** The last point of a run hides the segment leaving it, so a line never joins two separated runs. */
-function toDatum(p: LinePoint) {
-  const time = p.time as Time;
-  if (p.value === undefined) return { time };
-  return p.breakAfter ? { time, value: p.value, color: "transparent" } : { time, value: p.value };
-}
-
 function lineOptions(color: string) {
   return {
     color,
@@ -56,8 +49,8 @@ function lineOptions(color: string) {
 }
 
 /**
- * One candlestick series plus three step lines (entry, stop, take) from `projection`; a gap
- * is made by hiding the segment that leaves the last point of a run. Bars without a recorded evaluation get a small marker. Pan and zoom are left to the library.
+ * One candlestick series plus three step lines (entry, stop, take) from `projection`; each run of
+ * consecutive signal bars is its own set of series, so no line joins two runs. Bars without a recorded evaluation get a small marker. Pan and zoom are left to the library.
  */
 export function RuntimeCandleChart({
   candles,
@@ -69,7 +62,8 @@ export function RuntimeCandleChart({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const linesRef = useRef<{ entry: ISeriesApi<"Line">; stop: ISeriesApi<"Line">; take: ISeriesApi<"Line"> } | null>(null);
+  const runSeriesRef = useRef<{ entry: ISeriesApi<"Line">; stop: ISeriesApi<"Line">; take: ISeriesApi<"Line"> }[]>([]);
+  const paletteRef = useRef<Palette | null>(null);
   const noEvaluationRef = useRef<readonly number[]>([]);
   const applyMarkersRef = useRef<() => void>(() => undefined);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
@@ -86,12 +80,9 @@ export function RuntimeCandleChart({
       wickUpColor: palette.up,
       wickDownColor: palette.down,
     });
-    const entry = chart.addSeries(LineSeries, lineOptions(palette.text));
-    const stop = chart.addSeries(LineSeries, lineOptions(palette.down));
-    const take = chart.addSeries(LineSeries, lineOptions(palette.up));
     chartRef.current = chart;
     seriesRef.current = series;
-    linesRef.current = { entry, stop, take };
+    paletteRef.current = palette;
     markersRef.current = createSeriesMarkers(series, []);
 
     const resize = new ResizeObserver(() => chart.applyOptions({ width: host.clientWidth, height: host.clientHeight }));
@@ -109,9 +100,12 @@ export function RuntimeCandleChart({
       const p = readPalette(host);
       chart.applyOptions(chartOptions(p));
       series.applyOptions({ upColor: p.up, downColor: p.down, wickUpColor: p.up, wickDownColor: p.down });
-      entry.applyOptions({ color: p.text });
-      stop.applyOptions({ color: p.down });
-      take.applyOptions({ color: p.up });
+      paletteRef.current = p;
+      for (const run of runSeriesRef.current) {
+        run.entry.applyOptions({ color: p.text });
+        run.stop.applyOptions({ color: p.down });
+        run.take.applyOptions({ color: p.up });
+      }
       applyMarkers();
     };
     scheme.addEventListener("change", restyle);
@@ -122,7 +116,7 @@ export function RuntimeCandleChart({
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
-      linesRef.current = null;
+      runSeriesRef.current = [];
       markersRef.current = null;
     };
   }, []);
@@ -140,11 +134,24 @@ export function RuntimeCandleChart({
   }, [candles]);
 
   useEffect(() => {
-    const lines = linesRef.current;
-    if (!lines) return;
-    lines.entry.setData((projection?.entry ?? []).map(toDatum));
-    lines.stop.setData((projection?.stop ?? []).map(toDatum));
-    lines.take.setData((projection?.take ?? []).map(toDatum));
+    const chart = chartRef.current;
+    const palette = paletteRef.current;
+    if (!chart || !palette) return;
+    for (const old of runSeriesRef.current) {
+      chart.removeSeries(old.entry);
+      chart.removeSeries(old.stop);
+      chart.removeSeries(old.take);
+    }
+    // one set of series per run of consecutive signal bars: the library joins points across gaps
+    runSeriesRef.current = (projection?.runs ?? []).map((run) => {
+      const entry = chart.addSeries(LineSeries, lineOptions(palette.text));
+      const stop = chart.addSeries(LineSeries, lineOptions(palette.down));
+      const take = chart.addSeries(LineSeries, lineOptions(palette.up));
+      entry.setData(run.entry.map((p) => ({ time: p.time as Time, value: p.value })));
+      stop.setData(run.stop.map((p) => ({ time: p.time as Time, value: p.value })));
+      take.setData(run.take.map((p) => ({ time: p.time as Time, value: p.value })));
+      return { entry, stop, take };
+    });
     noEvaluationRef.current = projection?.noEvaluationTimes ?? [];
     applyMarkersRef.current();
   }, [projection]);

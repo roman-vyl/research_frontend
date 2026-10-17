@@ -19,7 +19,7 @@
 - [x] 4.1 `buildProjection`: 3 and 12 consecutive signals; null breaks all three lines; missing event marked as no evaluation recorded and distinct from null; bars before `first_bar_open_time_ms` empty, while a window whose first event is later than `first_bar_open_time_ms` marks the earlier in-history bars as no evaluation recorded; unreadable counted; several events per bar (equal `occurred_at` resolved by `event_id`); a single isolated signal.
 - [x] 4.2 Panel (chart library mocked): same-market selection requests events only; journal failure keeps candles and shows the message; Refresh repeats events (+3 bars gives +3 points); late response ignored; one events request per window without `limit`; `truncated: true` shows "Projection unavailable" and draws nothing.
 - [x] 4.3 Static guards unchanged (no viewport calls, no forbidden imports); `git diff` touches nothing under `features/chart/`, `features/workbenchChartRuntime/`, `shared/context/`.
-- [ ] 4.4 Real-browser check (Chromium via Playwright, on demand): fixture with signal, null and missing bars; screenshot shows gaps, single-point visibility and markers in both themes. Owner reviews the screenshots.
+- [x] 4.4 Real-browser check (Chromium via Playwright, on demand): fixture with signal, null and missing bars; screenshot shows gaps, single-point visibility and markers in both themes. Owner reviews the screenshots.
 - [x] 4.5 `npm test`, `tsc -b`, `vite build`, `openspec validate --all --strict` green.
 
 ## 5. Live check
