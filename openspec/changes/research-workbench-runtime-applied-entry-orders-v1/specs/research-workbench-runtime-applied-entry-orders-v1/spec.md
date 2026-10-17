@@ -1,21 +1,31 @@
 ## ADDED Requirements
 
-### Requirement: Applied orders come from the Central Journal
-The panel SHALL read the selected strategy's `entry_package_applied` events from the Central Journal
-(`GET /v1/events`, `event_type=entry_package_applied`, no `limit`) for the bars of the candle window,
-in parallel with the evaluation request, and SHALL NOT compute or infer an applied order itself. It
-SHALL read only `trigger_price`, `stop_loss` and `take_profit` of each payload.
+### Requirement: Applied orders come from the same Journal answer
+The panel SHALL take the selected strategy's `entry_package_applied` events from the same
+`GET /v1/events` answer as the evaluations: one request for the bars of the candle window, without
+`event_type` and without `limit`. It SHALL split the answer by `event_type`, pass
+`live_entry_evaluated` to the projection and `entry_package_applied` to the rings, and ignore other
+types. It SHALL NOT compute or infer an applied order itself and SHALL read only `trigger_price`,
+`stop_loss` and `take_profit` of each payload.
 
 #### Scenario: Strategy selected
 - **WHEN** a strategy is selected
-- **THEN** the panel requests its evaluations and its applied records for the candle window
+- **THEN** the panel makes one events request without `event_type` and draws the lines and the rings from its answer
 
-#### Scenario: Applied answer unavailable
-- **WHEN** the applied request fails or its answer has `truncated = true`
-- **THEN** the panel shows "Applied orders unavailable", draws no rings, and still draws the projection
+#### Scenario: No applied events
+- **WHEN** a successful answer has evaluations and no `entry_package_applied` events
+- **THEN** the projection is drawn as before, no rings are drawn and no error is shown
+
+#### Scenario: Answer unavailable
+- **WHEN** the events request fails or its answer has `truncated = true`
+- **THEN** the panel shows "Projection unavailable" and draws neither lines nor rings
+
+#### Scenario: Unknown event type
+- **WHEN** the answer also contains an event of another type
+- **THEN** that event draws nothing and is not counted
 
 ### Requirement: Rings on the bar of the applied order
-For each bar of the window with an applied record, the chart SHALL draw a ring at the bar's open time
+For each applied record on a bar of the window, the chart SHALL draw a ring at the bar's open time
 for each of `trigger_price` (Entry colour), `stop_loss` (Stop colour) and `take_profit` (Take colour)
 that is a decimal string. A null value SHALL draw no ring. The rings SHALL NOT change the projection lines.
 
@@ -31,25 +41,26 @@ that is a decimal string. A null value SHALL draw no ring. The rings SHALL NOT c
 - **WHEN** an applied record has `stop_loss` and `take_profit` null
 - **THEN** only the Entry ring is drawn on that bar
 
-### Requirement: One applied record per bar
-When a bar has several applied records, the record with the latest `occurred_at` SHALL count, equal
-times resolved by the greater `event_id`.
+### Requirement: Every applied record counts
+Each `entry_package_applied` event SHALL be treated as a separate applied order. The panel SHALL NOT
+select, merge or drop records of one bar; rings of several records may coincide visually.
 
 #### Scenario: Two records on one bar
 - **WHEN** bar 5 has two applied records
-- **THEN** only the rings of the later one are drawn
+- **THEN** the rings of both are drawn and the legend counts 2 applied orders
 
 ### Requirement: Unreadable applied record
-A record whose three prices are all unreadable or null, or that has a value that is neither null nor
+A record whose three prices are all null or unreadable, or that has a value that is neither null nor
 a decimal string, SHALL draw no ring and SHALL be counted in the legend as unreadable applied.
 
 #### Scenario: Broken value
 - **WHEN** an applied record has `trigger_price` equal to `"abc"`
-- **THEN** that bar has no rings and the legend shows "1 unreadable applied"
+- **THEN** that record draws no rings and the legend shows "1 unreadable applied"
 
 ### Requirement: Legend
-When the window has applied records, the legend SHALL show an "Applied" ring swatch and "N applied orders".
+When the window has applied records, the legend SHALL show an "Applied" ring swatch and
+"N applied orders", where N counts every applied record of the window.
 
 #### Scenario: Three applied orders
-- **WHEN** the window has applied records on 3 bars
+- **WHEN** the window has 3 applied records, two of them on the same bar
 - **THEN** the legend shows "3 applied orders"
