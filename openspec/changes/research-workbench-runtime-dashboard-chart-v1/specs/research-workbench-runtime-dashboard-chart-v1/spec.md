@@ -97,8 +97,8 @@ of another market SHALL abort the previous requests.
 The panel SHALL show a prompt when nothing is selected, "Loading…" while data loads, an empty
 state when the window has no candles, and an error state with Retry when bounds or candles fail or
 the timeframe is not supported. The header SHALL show the strategy name, the market and the UTC
-time of the last bar. A Refresh button SHALL repeat the bounds and candle requests for the current
-market. There SHALL be no automatic polling.
+time of the last bar. A Refresh button SHALL always repeat the bounds request and then re-evaluate cache coverage;
+it SHALL request candles only for a missing range, if one exists. There SHALL be no automatic polling.
 
 #### Scenario: Bounds fail
 - **WHEN** the bounds request fails
@@ -110,7 +110,19 @@ market. There SHALL be no automatic polling.
 
 #### Scenario: Refresh
 - **WHEN** the user presses Refresh
-- **THEN** one bounds request and the candles request for the missing range are made
+- **THEN** one bounds request is made and cache coverage is re-evaluated; candles are requested only for a missing range
+
+#### Scenario: Refresh with unchanged latest bar
+- **WHEN** the user presses Refresh and the latest committed bar is unchanged
+- **THEN** one bounds request and zero candle requests are made
+
+#### Scenario: Refresh after the stream advanced
+- **WHEN** the user presses Refresh and the latest committed bar moved forward by 3 bars
+- **THEN** one bounds request and one candle request for the tail only are made
+
+#### Scenario: Half-open cache range to inclusive request
+- **WHEN** a missing cache range `[fromMs, toMs)` is loaded
+- **THEN** the request uses `from = fromMs` and `to_open_time_ms = toMs - tfMs`, and the exclusive boundary is never passed as `to_open_time_ms`
 
 ### Requirement: Look and layout
 The chart panel SHALL use the Surface design tokens and follow the light and dark theme. From

@@ -19,8 +19,8 @@
 
 ## 4. Tests
 
-- [ ] 4.1 `runtimeMarket`: window math (5m, 15m, 1h, 4h, 1d; short history), request parameters, missing-range-only loading, same-market no request, other-market request, error kinds, unsupported timeframe, late response ignored.
-- [ ] 4.2 Panel (chart library mocked): selection marks, same-market selection makes no request, different market loads, states, Retry, Refresh, abort on switch.
+- [ ] 4.1 `runtimeMarket`: window math (5m, 15m, 1h, 4h, 1d; short history), request parameters, missing-range-only loading, half-open → inclusive conversion `toOpenTimeMs = missing.toMs - tfMs` with mandatory cases: (a) full initial 5m window; (b) tail fill of 3 bars (cached through T, bounds latest = T + 3 bars → missing `[T+1bar, T+4bars)` → `from = T+1bar`, `to_open_time_ms = T+3bars`, never beyond the latest committed bar); (c) 15m and 1h boundaries; same-market no request, other-market request, error kinds, unsupported timeframe, late response ignored.
+- [ ] 4.2 Panel (chart library mocked): selection marks, same-market selection makes no request, different market loads, states, Retry, abort on switch; Refresh = always one bounds request, then candles only for a missing range (unchanged latest → 0 candle requests; latest +3 bars → 1 tail request).
 - [ ] 4.3 Cache contract: Runtime never calls reset/clear; a Runtime chunk merged into a store holding Research chunks leaves their coverage intact (below the 10-chunk limit) and Research's own cache tests stay unchanged.
 - [ ] 4.4 Static guards: no viewport methods and no forbidden imports in `src/features/runtime/`; `git diff` of the change touches no file under `features/chart/`, `features/workbenchChartRuntime/`, `shared/context/`.
 - [ ] 4.5 `npm test`, `tsc -b`, `vite build`, `openspec validate --all --strict` green.

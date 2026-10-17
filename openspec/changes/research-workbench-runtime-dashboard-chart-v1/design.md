@@ -31,7 +31,12 @@ Explore findings this design relies on (`/mnt/project-files/runtime-dashboard/ex
    public cache API only: `getMarketCandlesCache(key).missingRange(fromMs, toMs)`, then one
    `fetchCandlesWindow` for the missing range, `mergeCandlesWindowBundle`, then `getCandles`. It
    does not use `RunMarketView`, the planner, the load owner or any `workbenchChartRuntime` code, so
-   no Research file changes. A repeated selection of a covered window makes no candles request.
+   no Research file changes. **Range conversion (mandatory):** cache ranges are half-open
+   `[fromMs, toMs)`, while `fetchCandlesWindow` takes the inclusive `toOpenTimeMs` (the service adds
+   one timeframe step itself). For every missing cache range the request is
+   `request.fromMs = missing.fromMs` and `request.toOpenTimeMs = missing.toMs - tfMs`. The exclusive
+   cache boundary MUST NOT be passed directly as `toOpenTimeMs`; the request never reaches beyond
+   `latest_open_time_ms` (the latest committed bar). A repeated selection of a covered window makes no candles request.
    When the committed tail has moved on, only the missing tail range is requested.
 5. **Cache key and token.** `buildCandlesCacheKey({symbol, timeframe, reloadToken: 0})` with a
    named constant `RUNTIME_CHART_RELOAD_TOKEN = 0`. Contract (verified in code): Research moves to a
@@ -58,8 +63,10 @@ Explore findings this design relies on (`/mnt/project-files/runtime-dashboard/ex
    market's candles stay in the cache.
 9. **Header and states.** Header: strategy name, `ETHUSDT.P · 5m`, "Last bar" with
    `latest_open_time_ms` in UTC, Refresh. States: select prompt, loading, empty (no candles),
-   error (bounds failed, candles failed, unsupported timeframe) with Retry. Refresh repeats bounds
-   and the candle window for the current market.
+   error (bounds failed, candles failed, unsupported timeframe) with Retry. Refresh always repeats
+   the bounds request and then re-evaluates cache coverage; it requests candles only for a missing
+   range, if one exists (latest unchanged → 0 candle requests; latest +3 bars → 1 request for the
+   tail only).
 10. **Layout.** From 1000px the list is on the left and the chart panel on the right (sticky);
     below that the chart is under the list. Surface tokens and panel classes as in V1.
 
