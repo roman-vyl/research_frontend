@@ -197,8 +197,10 @@ describe("RuntimeDashboard", () => {
     fetchRuntimeStrategyInstances.mockResolvedValue(realisticList());
     render(<RuntimeDashboard />);
     await screen.findByLabelText("Strategies");
-    const buttons = screen.getAllByRole("button").map((b) => b.textContent);
-    expect(buttons).toEqual(["Refresh"]);
+    // the only buttons are Refresh and the selection toggles of the cards (aria-pressed, UI state only)
+    const controls = screen.getAllByRole("button").filter((b) => !b.hasAttribute("aria-pressed"));
+    expect(controls.map((b) => b.textContent)).toEqual(["Refresh"]);
+    expect(screen.getAllByRole("button", { pressed: false })).toHaveLength(33);
     expect(screen.queryByRole("checkbox")).toBeNull();
     expect(screen.queryByRole("switch")).toBeNull();
   });
