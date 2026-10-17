@@ -19,7 +19,7 @@ itself. It SHALL read only `desired_entry.planned_entry_price`, `initial_stop_pr
 - **THEN** no candles or bounds request is made and that strategy's events are requested
 
 ### Requirement: Three projection lines
-The chart SHALL draw three step lines over the candles: Entry from `planned_entry_price`, Stop from
+The chart SHALL draw three lines over the candles: Entry from `planned_entry_price`, Stop from
 `initial_stop_price` and Take from `initial_take_price`, with one point per bar that has a valid
 signal event, at the bar's open time. A bar with a single signal SHALL still be visible.
 

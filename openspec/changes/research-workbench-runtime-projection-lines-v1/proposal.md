@@ -10,7 +10,7 @@ Runtime strategies is to draw this projection on the existing CandleChart.
 
 - Read `desired_entry` events of the selected strategy from the Central Journal through a dev
   proxy `/journal-api`.
-- Draw three step lines on the existing candle chart: entry (`planned_entry_price`), stop
+- Draw three lines on the existing candle chart: entry (`planned_entry_price`), stop
   (`initial_stop_price`) and take (`initial_take_price`), one point per evaluated bar.
 - A bar evaluated with `desired_entry = null` breaks all three lines. A bar from the strategy's
   first known evaluation onward that has no journal event also breaks them and is marked "No

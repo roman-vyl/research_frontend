@@ -35,12 +35,15 @@ decimal text. `GET /v1/strategy-instances` returns per instance `first_bar_open_
    is broken by the greater `event_id`, the same order as the Journal. An event whose
    `desired_entry` is neither `null` nor a valid three-price object is *unreadable*: it breaks the
    lines like *no evaluation recorded* and is counted separately.
-4. **Rendering.** Three `LineSeries` (`LineType.WithSteps`, `pointMarkersVisible: true` so a
-   one-bar signal is visible) fed with one datum per candle bar: `{time, value}` for *signal*, a
-   whitespace datum `{time}` for every other state, which makes the library break the line. Colours
-   from Surface tokens: entry `--ink-2`, stop `--neg-500`, take `--pos-500`, theme-aware like the
-   candles. *No evaluation recorded* bars get a small grey marker under the bar on the candle series
-   (`createSeriesMarkers`). Nothing calls a viewport method.
+4. **Rendering.** Three `LineSeries` (`pointMarkersVisible: true` so a one-bar signal is visible)
+   fed with one datum per candle bar: `{time, value}` for *signal*, an empty datum `{time}` for every
+   other state. The browser check showed that the library joins points across empty data (and a step
+   line even extends the last value forward), so a gap is made explicitly: `buildProjection` flags the
+   last point of every run of signals `breakAfter` and the chart gives that point a transparent
+   segment colour, so no segment leaves a run; the point marker stays. Lines are plain lines (one
+   segment per bar), not step lines. Colours from Surface tokens: entry `--ink-2`, stop `--neg-500`,
+   take `--pos-500`, theme-aware like the candles. *No evaluation recorded* bars get a small grey
+   marker under the bar on the candle series (`createSeriesMarkers`). Nothing calls a viewport method.
 5. **Library behaviour is verified, not assumed.** A real-browser check (Chromium via Playwright,
    run on demand, not in CI) draws a fixture with signal, no-signal and missing bars and the
    screenshot is reviewed; unit tests assert the whitespace data produced by `buildProjection`.

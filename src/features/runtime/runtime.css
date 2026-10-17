@@ -35,3 +35,9 @@
 .sx .rt-chart-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
 .sx .rt-chart-title{ display:flex; flex-direction:column; gap:3px; min-width:0; }
 .sx .rt-chart-host{ width:100%; height:420px; }
+.sx .rt-legend{ display:flex; flex-wrap:wrap; align-items:center; gap:14px; font-size:12px; color:var(--ink-2); }
+.sx .rt-swatch{ display:inline-flex; align-items:center; gap:6px; }
+.sx .rt-swatch::before{ content:""; width:14px; height:0; border-top:2px solid currentColor; }
+.sx .rt-swatch[data-line="entry"]::before{ border-color:var(--ink-2); }
+.sx .rt-swatch[data-line="stop"]::before{ border-color:var(--neg-500); }
+.sx .rt-swatch[data-line="take"]::before{ border-color:var(--pos-500); }
