@@ -6,18 +6,21 @@ import viteConfig from "./vite.config";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
-export default mergeConfig(
-  viteConfig,
-  defineConfig({
-    test: {
-      include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
-      environment: "node",
-      environmentMatchGlobs: [["src/**/*.test.tsx", "jsdom"]],
-    },
-    resolve: {
-      alias: {
-        "@": path.resolve(rootDir, "src"),
+// vite.config.ts exports a function of the mode (it reads VITE_ env), which mergeConfig cannot merge: resolve it first.
+export default defineConfig(async (env) =>
+  mergeConfig(
+    await viteConfig(env),
+    defineConfig({
+      test: {
+        include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+        environment: "node",
+        environmentMatchGlobs: [["src/**/*.test.tsx", "jsdom"]],
       },
-    },
-  }),
+      resolve: {
+        alias: {
+          "@": path.resolve(rootDir, "src"),
+        },
+      },
+    }),
+  ),
 );

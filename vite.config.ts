@@ -10,6 +10,10 @@ export default defineConfig(({ mode }) => {
   const apiTarget =
     loadEnv(mode, rootDir, "VITE_").VITE_API_PROXY_TARGET ||
     "http://127.0.0.1:8095";
+  // Strategy Runtime of the local stack listens on 8093 and sends no CORS headers, so the browser reaches it through this proxy.
+  const runtimeTarget =
+    loadEnv(mode, rootDir, "VITE_").VITE_RUNTIME_PROXY_TARGET ||
+    "http://127.0.0.1:8093";
   return {
     plugins: [react()],
     resolve: {
@@ -26,6 +30,11 @@ export default defineConfig(({ mode }) => {
         "/api": {
           target: apiTarget,
           changeOrigin: true,
+        },
+        "/runtime-api": {
+          target: runtimeTarget,
+          changeOrigin: true,
+          rewrite: (requestPath) => requestPath.replace(/^\/runtime-api/, ""),
         },
       },
     },
