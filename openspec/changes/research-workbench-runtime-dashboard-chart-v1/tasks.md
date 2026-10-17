@@ -27,5 +27,5 @@
 
 ## 5. Visual and live check
 
-- [ ] 5.1 Screenshots with mocked bounds and candles: light, dark, desktop two columns, phone, market switch; owner reviews the look.
-- [ ] 5.2 On the Mac against the live stack (on the owner's word, after the bounds route is deployed): select the enabled strategy, the `ETHUSDT.P · 5m` chart draws 30 days ending at the real last committed bar; select a second strategy on the same market, no requests are made.
+- [x] 5.1 Screenshots with mocked bounds and candles: light, dark, desktop two columns, phone, market switch; owner reviews the look.
+- [x] 5.2 On the Mac against the live stack (on the owner's word, after the bounds route is deployed): select the enabled strategy, the `ETHUSDT.P · 5m` chart draws 30 days ending at the real last committed bar; select a second strategy on the same market, no requests are made.
