@@ -19,7 +19,8 @@ type BarState =
   | { kind: "no_signal" }
   | { kind: "unreadable" };
 
-function price(value: unknown): number | null {
+/** A decimal string as a number; anything else is `null`. */
+export function price(value: unknown): number | null {
   if (typeof value !== "string" || !/^-?\d+(\.\d+)?$/.test(value)) return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;

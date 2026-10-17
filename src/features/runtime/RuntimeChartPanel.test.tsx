@@ -16,7 +16,8 @@ const chartRenders = vi.fn();
 const fetchJournalEvents = vi.fn();
 const fetchJournalStrategyInstances = vi.fn();
 
-vi.mock("@/api/journal", () => ({
+vi.mock("@/api/journal", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/api/journal")>()),
   fetchJournalEvents: (...a: unknown[]) => fetchJournalEvents(...a),
   fetchJournalStrategyInstances: (...a: unknown[]) => fetchJournalStrategyInstances(...a),
 }));
@@ -33,9 +34,11 @@ vi.mock("@/features/runtime/RuntimeCandleChart", () => ({
   RuntimeCandleChart: ({
     candles,
     projection,
+    applied,
   }: {
     candles: readonly unknown[];
     projection?: { points: unknown[]; noEvaluationTimes: number[]; unreadableCount: number } | null;
+    applied?: { bars: { rings: unknown[] }[]; appliedCount: number } | null;
   }) => {
     chartRenders(candles.length);
     return (
@@ -44,6 +47,7 @@ vi.mock("@/features/runtime/RuntimeCandleChart", () => ({
         data-bars={candles.length}
         data-points={projection ? projection.points.length : "none"}
         data-noeval={projection ? projection.noEvaluationTimes.length : "none"}
+        data-rings={applied ? applied.bars.reduce((n, b) => n + b.rings.length, 0) : "none"}
       />
     );
   },
@@ -326,6 +330,7 @@ describe("Runtime strategy selection and chart", () => {
     });
     const ev = (bar: number, desired: unknown, id = `e${bar}`) => ({
       event_id: id,
+      event_type: "live_entry_evaluated",
       occurred_at: `2026-10-17T12:${String(bar % 60).padStart(2, "0")}:00Z`,
       bar_open_time_ms: bar,
       body: { payload: { desired_entry: desired } },
@@ -351,6 +356,7 @@ describe("Runtime strategy selection and chart", () => {
       const req = fetchJournalEvents.mock.calls[0]![0];
       expect(req).toMatchObject({ strategyInstanceId: a.strategy_instance_id, fromBarMs: LATEST + TF - DAY_30, toBarMs: LATEST });
       expect(req.limit).toBeUndefined();
+      expect(req.eventType).toBeUndefined();
       expect(screen.getByTestId("chart").getAttribute("data-noeval")).toBe("0");
     });
 
@@ -407,6 +413,76 @@ describe("Runtime strategy selection and chart", () => {
       fireEvent.click(card("a"));
       expect(await screen.findByText("Projection unavailable")).toBeTruthy();
       expect(screen.getByTestId("chart").getAttribute("data-points")).toBe("none");
+    });
+
+    const appliedEv = (bar: number, id: string, trigger: unknown = "100.5", stop: unknown = "90", take: unknown = "120") => ({
+      event_id: id,
+      event_type: "entry_package_applied",
+      occurred_at: "2026-10-17T12:00:30Z",
+      bar_open_time_ms: bar,
+      body: { payload: { trade_cycle_id: `c-${id}`, bar_open_time_ms: bar, trigger_price: trigger, stop_loss: stop, take_profit: take } },
+    });
+
+    it("splits one answer by type: evaluations to the lines, applied orders to the rings, other types ignored", async () => {
+      const { eth } = freshSymbols();
+      fetchRuntimeStrategyInstances.mockResolvedValue(list(inst("a", eth)));
+      fetchJournalEvents.mockResolvedValue({
+        events: [
+          ev(bar(1), entry("100")),
+          ev(bar(0), entry("101")),
+          appliedEv(bar(0), "a1"),
+          appliedEv(bar(0), "a2"),
+          appliedEv(bar(1), "a3", "100", null, null),
+          { ...appliedEv(bar(1), "x"), event_type: "something_else" },
+        ],
+        truncated: false,
+      });
+      render(<RuntimeDashboard />);
+      await screen.findByLabelText("Strategies");
+      fireEvent.click(card("a"));
+      await waitFor(() => expect(screen.getByTestId("chart").getAttribute("data-points")).toBe("2"));
+      expect(fetchJournalEvents).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId("chart").getAttribute("data-rings")).toBe("3");
+      expect(screen.getByText("Applied")).toBeTruthy();
+      expect(screen.getByText("3 applied orders")).toBeTruthy();
+      expect(screen.queryByText("Projection unavailable")).toBeNull();
+    });
+
+    it("an answer without applied orders draws the lines, no rings and no error", async () => {
+      const { eth } = freshSymbols();
+      fetchRuntimeStrategyInstances.mockResolvedValue(list(inst("a", eth)));
+      fetchJournalEvents.mockResolvedValue({ events: [ev(bar(0), entry("101"))], truncated: false });
+      render(<RuntimeDashboard />);
+      await screen.findByLabelText("Strategies");
+      fireEvent.click(card("a"));
+      await waitFor(() => expect(screen.getByTestId("chart").getAttribute("data-points")).toBe("1"));
+      expect(screen.getByTestId("chart").getAttribute("data-rings")).toBe("0");
+      expect(screen.queryByText("Applied")).toBeNull();
+      expect(screen.queryByText("Projection unavailable")).toBeNull();
+    });
+
+    it("an unreadable applied record is counted and draws no ring", async () => {
+      const { eth } = freshSymbols();
+      fetchRuntimeStrategyInstances.mockResolvedValue(list(inst("a", eth)));
+      fetchJournalEvents.mockResolvedValue({ events: [ev(bar(0), entry("101")), appliedEv(bar(0), "a1", "abc")], truncated: false });
+      render(<RuntimeDashboard />);
+      await screen.findByLabelText("Strategies");
+      fireEvent.click(card("a"));
+      expect(await screen.findByText("1 unreadable applied")).toBeTruthy();
+      expect(screen.getByText("1 applied orders")).toBeTruthy();
+      expect(screen.getByTestId("chart").getAttribute("data-rings")).toBe("0");
+    });
+
+    it("a truncated answer draws neither lines nor rings", async () => {
+      const { eth } = freshSymbols();
+      fetchRuntimeStrategyInstances.mockResolvedValue(list(inst("a", eth)));
+      fetchJournalEvents.mockResolvedValue({ events: [ev(bar(0), entry("101")), appliedEv(bar(0), "a1")], truncated: true });
+      render(<RuntimeDashboard />);
+      await screen.findByLabelText("Strategies");
+      fireEvent.click(card("a"));
+      expect(await screen.findByText("Projection unavailable")).toBeTruthy();
+      expect(screen.getByTestId("chart").getAttribute("data-points")).toBe("none");
+      expect(screen.getByTestId("chart").getAttribute("data-rings")).toBe("none");
     });
 
     it("Refresh repeats the events request and a later answer adds points", async () => {

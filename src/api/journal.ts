@@ -1,7 +1,7 @@
 /**
  * Central Journal read API, reached through the dev-server proxy `/journal-api`:
- * `GET /v1/events` (stored `live_entry_evaluated` events of one strategy for a bar range, all of
- * them when no `limit` is passed) and `GET /v1/strategy-instances` (evaluated bar range per strategy).
+ * `GET /v1/events` (every stored event of one strategy for a bar range, of every type since no
+ * `event_type` is passed, all of them since no `limit` is passed) and `GET /v1/strategy-instances` (evaluated bar range per strategy).
  */
 
 export type JournalDesiredEntry = {
@@ -13,12 +13,20 @@ export type JournalDesiredEntry = {
   locked_exit_profile?: string;
 };
 
+export const LIVE_ENTRY_EVALUATED = "live_entry_evaluated";
+export const ENTRY_PACKAGE_APPLIED = "entry_package_applied";
+
 export type JournalEvent = {
   event_id: string;
+  event_type: string;
   occurred_at: string;
   bar_open_time_ms: number;
-  /** The stored Runtime line; `payload.desired_entry` is `null` or an object, read by `runtimeProjection`. */
-  body: { payload?: { desired_entry?: unknown } } & Record<string, unknown>;
+  /**
+   * The stored Runtime line. `live_entry_evaluated`: `payload.desired_entry` is `null` or an object,
+   * read by `runtimeProjection`. `entry_package_applied`: `payload.trigger_price`, `stop_loss` and
+   * `take_profit` are decimal strings or `null`, read by `runtimeAppliedOrders`.
+   */
+  body: { payload?: Record<string, unknown> } & Record<string, unknown>;
 };
 
 export type JournalEventsAnswer = { events: JournalEvent[]; truncated: boolean };
@@ -72,7 +80,6 @@ export async function fetchJournalEvents(args: {
 }): Promise<JournalEventsAnswer> {
   const query = new URLSearchParams({
     strategy_instance_id: args.strategyInstanceId,
-    event_type: "live_entry_evaluated",
     from_bar_ms: String(args.fromBarMs),
     to_bar_ms: String(args.toBarMs),
   });

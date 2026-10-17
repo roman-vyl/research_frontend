@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { fetchJournalEvents, fetchJournalStrategyInstances } from "@/api/journal";
+import {
+  ENTRY_PACKAGE_APPLIED,
+  fetchJournalEvents,
+  fetchJournalStrategyInstances,
+  LIVE_ENTRY_EVALUATED,
+} from "@/api/journal";
 import { RuntimeCandleChart } from "@/features/runtime/RuntimeCandleChart";
 import {
   loadRuntimeMarket,
@@ -9,6 +14,7 @@ import {
   type RuntimeMarket,
   type RuntimeMarketData,
 } from "@/features/runtime/runtimeMarket";
+import { buildAppliedOrders, type AppliedOrders } from "@/features/runtime/runtimeAppliedOrders";
 import { buildProjection, type Projection } from "@/features/runtime/runtimeProjection";
 
 const ERROR_TEXT: Record<RuntimeChartErrorKind, string> = {
@@ -21,7 +27,7 @@ type Status = "loading" | "ready" | "error";
 type ProjectionPhase =
   | { kind: "idle" }
   | { kind: "loading" }
-  | { kind: "ready"; projection: Projection }
+  | { kind: "ready"; projection: Projection; applied: AppliedOrders }
   | { kind: "unavailable" };
 
 function formatUtc(ms: number): string {
@@ -88,7 +94,8 @@ export function RuntimeChartPanel({
     };
   }, [symbol, timeframe, load]);
 
-  // Events of one strategy for the bars of the candle window, in one request, plus the start of its known history.
+  // Events of one strategy for the bars of the candle window, of every type in one request, plus the
+  // start of its known history. The answer is split by type; other types are ignored.
   useEffect(() => {
     if (data === null || strategyInstanceId === null || data.candles.length === 0) {
       setPhase({ kind: "idle" });
@@ -110,9 +117,12 @@ export function RuntimeChartPanel({
           return;
         }
         const known = instances.find((i) => i.strategy_instance_id === strategyInstanceId);
+        const evaluations = answer.events.filter((e) => e.event_type === LIVE_ENTRY_EVALUATED);
+        const applied = answer.events.filter((e) => e.event_type === ENTRY_PACKAGE_APPLIED);
         setPhase({
           kind: "ready",
-          projection: buildProjection(data.candles, answer.events, known ? known.first_bar_open_time_ms : null),
+          projection: buildProjection(data.candles, evaluations, known ? known.first_bar_open_time_ms : null),
+          applied: buildAppliedOrders(data.candles, applied),
         });
       },
       () => {
@@ -126,6 +136,7 @@ export function RuntimeChartPanel({
   }, [data, strategyInstanceId, projectionRetry]);
 
   const projection = useMemo(() => (phase.kind === "ready" ? phase.projection : null), [phase]);
+  const applied = useMemo(() => (phase.kind === "ready" ? phase.applied : null), [phase]);
 
   if (symbol === null || timeframe === null) {
     return (
@@ -189,7 +200,7 @@ export function RuntimeChartPanel({
         </div>
       )}
 
-      {data && data.candles.length > 0 && <RuntimeCandleChart candles={data.candles} projection={projection} />}
+      {data && data.candles.length > 0 && <RuntimeCandleChart candles={data.candles} projection={projection} applied={applied} />}
 
       {projection && (
         <div className="rt-legend" aria-label="Projection legend">
@@ -201,6 +212,15 @@ export function RuntimeChartPanel({
           )}
           {projection.unreadableCount > 0 && (
             <span className="rt-meta sx-num">{projection.unreadableCount} unreadable</span>
+          )}
+          {applied && applied.appliedCount > 0 && (
+            <>
+              <span className="rt-swatch" data-ring="applied">Applied</span>
+              <span className="rt-meta sx-num">{applied.appliedCount} applied orders</span>
+            </>
+          )}
+          {applied && applied.unreadableCount > 0 && (
+            <span className="rt-meta sx-num">{applied.unreadableCount} unreadable applied</span>
           )}
         </div>
       )}
