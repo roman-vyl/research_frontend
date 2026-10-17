@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { fetchJournalStrategyInstances, type JournalStrategyInstance } from "@/api/journal";
 import {
   fetchRuntimeStrategyInstances,
   RuntimeListError,
@@ -22,6 +23,10 @@ type Phase =
   | { kind: "loading" }
   | { kind: "ready"; list: RuntimeStrategyList }
   | { kind: "error"; error: RuntimeListErrorKind };
+
+function formatUtc(ms: number): string {
+  return `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
 
 /** Card title: the spec file name without its `.json` suffix. */
 function cardName(sourcePath: string): string {
@@ -53,11 +58,21 @@ function Diagnostics({ list }: { list: RuntimeStrategyList }) {
 export function RuntimeDashboard() {
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [selected, setSelected] = useState<RuntimeStrategyInstance | null>(null);
+  const [journal, setJournal] = useState<ReadonlyMap<string, JournalStrategyInstance> | null>(null);
   const generation = useRef(0);
 
   const load = useCallback(() => {
     const mine = ++generation.current;
     setPhase({ kind: "loading" });
+    // the cards' "Last evaluated" line; a Journal failure leaves the cards as they were
+    fetchJournalStrategyInstances().then(
+      (rows) => {
+        if (generation.current === mine) setJournal(new Map(rows.map((r) => [r.strategy_instance_id, r])));
+      },
+      () => {
+        if (generation.current === mine) setJournal(null);
+      },
+    );
     fetchRuntimeStrategyInstances().then(
       (list) => {
         if (generation.current !== mine) return;
@@ -159,6 +174,13 @@ export function RuntimeDashboard() {
                           {s.strategy_id} · {s.instrument} · {s.base_timeframe}
                         </div>
                         <div className="rt-id sx-num">{s.strategy_instance_id}</div>
+                        {journal && (
+                          <div className="rt-meta sx-num">
+                            {journal.has(s.strategy_instance_id)
+                              ? `Last evaluated ${formatUtc(journal.get(s.strategy_instance_id)!.last_bar_open_time_ms)}`
+                              : "No evaluations yet"}
+                          </div>
+                        )}
                       </button>
                     </li>
                   );
@@ -167,6 +189,7 @@ export function RuntimeDashboard() {
             )}
             <RuntimeChartPanel
               strategyName={selected ? cardName(selected.source_path) : null}
+              strategyInstanceId={selected ? selected.strategy_instance_id : null}
               market={selected ? { symbol: selected.instrument, timeframe: selected.base_timeframe } : null}
             />
           </div>

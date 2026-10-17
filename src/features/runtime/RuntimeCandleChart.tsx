@@ -1,9 +1,17 @@
-import { CandlestickSeries, createChart, type IChartApi, type ISeriesApi, type Time } from "lightweight-charts";
+import {
+  CandlestickSeries,
+  createChart,
+  type IChartApi,
+  type ISeriesApi,
+  type Time,
+} from "lightweight-charts";
 import { useEffect, useRef } from "react";
 
 import type { ChartBar } from "@/api/types";
+import { ProjectionSeriesView, type ProjectionSeriesOptions } from "@/features/runtime/projectionSeries";
+import type { Projection } from "@/features/runtime/runtimeProjection";
 
-type Palette = { text: string; grid: string; up: string; down: string };
+type Palette = { text: string; grid: string; up: string; down: string; muted: string };
 
 /** Colours come from the Surface tokens of the element, so the chart follows light and dark. */
 function readPalette(el: HTMLElement): Palette {
@@ -14,6 +22,7 @@ function readPalette(el: HTMLElement): Palette {
     grid: token("--hair", "#e1e0d9"),
     up: token("--pos-500", "#2f9e44"),
     down: token("--neg-500", "#d75352"),
+    muted: token("--ink-muted", "#8a8984"),
   };
 }
 
@@ -26,11 +35,26 @@ function chartOptions(p: Palette) {
   };
 }
 
-/** One candlestick series; pan and zoom are left to the library. */
-export function RuntimeCandleChart({ candles }: { candles: readonly ChartBar[] }) {
+function projectionColors(p: Palette): Partial<ProjectionSeriesOptions> {
+  return { entryColor: p.text, stopColor: p.down, takeColor: p.up };
+}
+
+/**
+ * One candlestick series plus ONE custom series that draws the three projection lines (entry, stop,
+ * take) for the signal bars of `projection`; it breaks the lines wherever bars are not consecutive and
+ * draws every point, so a one-bar signal is visible. Bars without a recorded evaluation are left empty. The number of series is fixed. Pan and zoom are left to the library.
+ */
+export function RuntimeCandleChart({
+  candles,
+  projection = null,
+}: {
+  candles: readonly ChartBar[];
+  projection?: Projection | null;
+}) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const projectionRef = useRef<ISeriesApi<"Custom", Time> | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -44,8 +68,10 @@ export function RuntimeCandleChart({ candles }: { candles: readonly ChartBar[] }
       wickUpColor: palette.up,
       wickDownColor: palette.down,
     });
+    const projectionSeries = chart.addCustomSeries(new ProjectionSeriesView(), projectionColors(palette));
     chartRef.current = chart;
     seriesRef.current = series;
+    projectionRef.current = projectionSeries;
 
     const resize = new ResizeObserver(() => chart.applyOptions({ width: host.clientWidth, height: host.clientHeight }));
     resize.observe(host);
@@ -54,6 +80,7 @@ export function RuntimeCandleChart({ candles }: { candles: readonly ChartBar[] }
       const p = readPalette(host);
       chart.applyOptions(chartOptions(p));
       series.applyOptions({ upColor: p.up, downColor: p.down, wickUpColor: p.up, wickDownColor: p.down });
+      projectionSeries.applyOptions(projectionColors(p));
     };
     scheme.addEventListener("change", restyle);
 
@@ -63,6 +90,7 @@ export function RuntimeCandleChart({ candles }: { candles: readonly ChartBar[] }
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      projectionRef.current = null;
     };
   }, []);
 
@@ -77,6 +105,12 @@ export function RuntimeCandleChart({ candles }: { candles: readonly ChartBar[] }
       })),
     );
   }, [candles]);
+
+  useEffect(() => {
+    projectionRef.current?.setData(
+      (projection?.points ?? []).map((p) => ({ time: p.time as Time, entry: p.entry, stop: p.stop, take: p.take })),
+    );
+  }, [projection]);
 
   return <div ref={hostRef} className="rt-chart-host" role="img" aria-label="Candlestick chart" />;
 }

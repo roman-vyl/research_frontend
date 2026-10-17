@@ -14,6 +14,10 @@ export default defineConfig(({ mode }) => {
   const runtimeTarget =
     loadEnv(mode, rootDir, "VITE_").VITE_RUNTIME_PROXY_TARGET ||
     "http://127.0.0.1:8093";
+  // Central Journal of the local stack listens on 8097 and sends no CORS headers, so the browser reaches it through this proxy.
+  const journalTarget =
+    loadEnv(mode, rootDir, "VITE_").VITE_JOURNAL_PROXY_TARGET ||
+    "http://127.0.0.1:8097";
   return {
     plugins: [react()],
     resolve: {
@@ -35,6 +39,11 @@ export default defineConfig(({ mode }) => {
           target: runtimeTarget,
           changeOrigin: true,
           rewrite: (requestPath) => requestPath.replace(/^\/runtime-api/, ""),
+        },
+        "/journal-api": {
+          target: journalTarget,
+          changeOrigin: true,
+          rewrite: (requestPath) => requestPath.replace(/^\/journal-api/, ""),
         },
       },
     },

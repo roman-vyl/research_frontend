@@ -13,6 +13,13 @@ const fetchRuntimeStrategyInstances = vi.fn();
 const fetchMarketBounds = vi.fn();
 const fetchCandlesWindow = vi.fn();
 const chartRenders = vi.fn();
+const fetchJournalEvents = vi.fn();
+const fetchJournalStrategyInstances = vi.fn();
+
+vi.mock("@/api/journal", () => ({
+  fetchJournalEvents: (...a: unknown[]) => fetchJournalEvents(...a),
+  fetchJournalStrategyInstances: (...a: unknown[]) => fetchJournalStrategyInstances(...a),
+}));
 
 vi.mock("@/api/runtime", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/api/runtime")>();
@@ -23,9 +30,22 @@ vi.mock("@/api/client", () => ({
   fetchCandlesWindow: (...a: unknown[]) => fetchCandlesWindow(...a),
 }));
 vi.mock("@/features/runtime/RuntimeCandleChart", () => ({
-  RuntimeCandleChart: ({ candles }: { candles: readonly unknown[] }) => {
+  RuntimeCandleChart: ({
+    candles,
+    projection,
+  }: {
+    candles: readonly unknown[];
+    projection?: { points: unknown[]; noEvaluationTimes: number[]; unreadableCount: number } | null;
+  }) => {
     chartRenders(candles.length);
-    return <div data-testid="chart" data-bars={candles.length} />;
+    return (
+      <div
+        data-testid="chart"
+        data-bars={candles.length}
+        data-points={projection ? projection.points.length : "none"}
+        data-noeval={projection ? projection.noEvaluationTimes.length : "none"}
+      />
+    );
   },
 }));
 
@@ -85,6 +105,10 @@ describe("Runtime strategy selection and chart", () => {
     fetchMarketBounds.mockReset();
     fetchCandlesWindow.mockReset();
     chartRenders.mockReset();
+    fetchJournalEvents.mockReset();
+    fetchJournalStrategyInstances.mockReset();
+    fetchJournalStrategyInstances.mockResolvedValue([]);
+    fetchJournalEvents.mockResolvedValue({ events: [], truncated: false });
     latest = LATEST;
     fetchMarketBounds.mockImplementation(async (p: { symbol: string; timeframe: string }) => ({
       symbol: p.symbol,
@@ -289,5 +313,118 @@ describe("Runtime strategy selection and chart", () => {
     await screen.findByLabelText("Strategies");
     fireEvent.click(card("a"));
     await screen.findByText("No candles in this window");
+  });
+
+  describe("projection lines", () => {
+    const entry = (price: string) => ({
+      side: "long",
+      source_plan_bar_open_time_ms: 0,
+      planned_entry_price: price,
+      initial_stop_price: "90",
+      initial_take_price: "120",
+      locked_exit_profile: "runner",
+    });
+    const ev = (bar: number, desired: unknown, id = `e${bar}`) => ({
+      event_id: id,
+      occurred_at: `2026-10-17T12:${String(bar % 60).padStart(2, "0")}:00Z`,
+      bar_open_time_ms: bar,
+      body: { payload: { desired_entry: desired } },
+    });
+    const bar = (i: number) => LATEST - i * TF;
+
+    it("requests one events window for the strategy without limit and draws the points", async () => {
+      const { eth } = freshSymbols();
+      const a = inst("a", eth);
+      fetchRuntimeStrategyInstances.mockResolvedValue(list(a));
+      fetchJournalStrategyInstances.mockResolvedValue([
+        { strategy_instance_id: a.strategy_instance_id, event_count: 3, first_bar_open_time_ms: bar(2), last_bar_open_time_ms: bar(0), last_occurred_at: "x" },
+      ]);
+      fetchJournalEvents.mockResolvedValue({
+        events: [ev(bar(2), entry("100")), ev(bar(1), null), ev(bar(0), entry("101"))],
+        truncated: false,
+      });
+      render(<RuntimeDashboard />);
+      await screen.findByLabelText("Strategies");
+      fireEvent.click(card("a"));
+      await waitFor(() => expect(screen.getByTestId("chart").getAttribute("data-points")).toBe("2"));
+      expect(fetchJournalEvents).toHaveBeenCalledTimes(1);
+      const req = fetchJournalEvents.mock.calls[0]![0];
+      expect(req).toMatchObject({ strategyInstanceId: a.strategy_instance_id, fromBarMs: LATEST + TF - DAY_30, toBarMs: LATEST });
+      expect(req.limit).toBeUndefined();
+      expect(screen.getByTestId("chart").getAttribute("data-noeval")).toBe("0");
+    });
+
+    it("another strategy of the same market requests only its events, not candles", async () => {
+      const { eth } = freshSymbols();
+      fetchRuntimeStrategyInstances.mockResolvedValue(list(inst("a", eth), inst("b", eth)));
+      render(<RuntimeDashboard />);
+      await screen.findByLabelText("Strategies");
+      fireEvent.click(card("a"));
+      await waitFor(() => expect(fetchJournalEvents).toHaveBeenCalledTimes(1));
+      fireEvent.click(card("b"));
+      await waitFor(() => expect(fetchJournalEvents).toHaveBeenCalledTimes(2));
+      expect(fetchJournalEvents.mock.calls[1]![0].strategyInstanceId).toBe("ema_pullback:b");
+      expect(fetchMarketBounds).toHaveBeenCalledTimes(1);
+      expect(fetchCandlesWindow).toHaveBeenCalledTimes(1);
+    });
+
+    it("a missing event inside the known history is counted, bars before it are not", async () => {
+      const { eth } = freshSymbols();
+      const a = inst("a", eth);
+      fetchRuntimeStrategyInstances.mockResolvedValue(list(a));
+      fetchJournalStrategyInstances.mockResolvedValue([
+        { strategy_instance_id: a.strategy_instance_id, event_count: 2, first_bar_open_time_ms: bar(3), last_bar_open_time_ms: bar(0), last_occurred_at: "x" },
+      ]);
+      fetchJournalEvents.mockResolvedValue({ events: [ev(bar(0), entry("101"))], truncated: false });
+      render(<RuntimeDashboard />);
+      await screen.findByLabelText("Strategies");
+      fireEvent.click(card("a"));
+      await waitFor(() => expect(screen.getByTestId("chart").getAttribute("data-noeval")).toBe("3"));
+      expect(screen.getByText("3 bars without a recorded evaluation")).toBeTruthy();
+    });
+
+    it("a journal failure keeps the candles and offers Retry", async () => {
+      const { eth } = freshSymbols();
+      fetchRuntimeStrategyInstances.mockResolvedValue(list(inst("a", eth)));
+      fetchJournalEvents.mockRejectedValueOnce(new Error("down"));
+      render(<RuntimeDashboard />);
+      await screen.findByLabelText("Strategies");
+      fireEvent.click(card("a"));
+      expect(await screen.findByText("Projection unavailable")).toBeTruthy();
+      expect(screen.getByTestId("chart").getAttribute("data-points")).toBe("none");
+      fireEvent.click(screen.getByLabelText("Retry projection"));
+      await waitFor(() => expect(screen.queryByText("Projection unavailable")).toBeNull());
+      expect(fetchJournalEvents).toHaveBeenCalledTimes(2);
+      expect(fetchCandlesWindow).toHaveBeenCalledTimes(1);
+    });
+
+    it("an unexpectedly truncated answer is not drawn as a complete history", async () => {
+      const { eth } = freshSymbols();
+      fetchRuntimeStrategyInstances.mockResolvedValue(list(inst("a", eth)));
+      fetchJournalEvents.mockResolvedValue({ events: [ev(bar(0), entry("101"))], truncated: true });
+      render(<RuntimeDashboard />);
+      await screen.findByLabelText("Strategies");
+      fireEvent.click(card("a"));
+      expect(await screen.findByText("Projection unavailable")).toBeTruthy();
+      expect(screen.getByTestId("chart").getAttribute("data-points")).toBe("none");
+    });
+
+    it("Refresh repeats the events request and a later answer adds points", async () => {
+      const { eth } = freshSymbols();
+      const a = inst("a", eth);
+      fetchRuntimeStrategyInstances.mockResolvedValue(list(a));
+      fetchJournalEvents.mockResolvedValueOnce({ events: [ev(bar(0), entry("101"))], truncated: false });
+      render(<RuntimeDashboard />);
+      await screen.findByLabelText("Strategies");
+      fireEvent.click(card("a"));
+      await waitFor(() => expect(screen.getByTestId("chart").getAttribute("data-points")).toBe("1"));
+      fetchJournalEvents.mockResolvedValueOnce({
+        events: [ev(bar(2), entry("100")), ev(bar(1), entry("100")), ev(bar(0), entry("101"))],
+        truncated: false,
+      });
+      fireEvent.click(screen.getByLabelText("Refresh chart"));
+      await waitFor(() => expect(screen.getByTestId("chart").getAttribute("data-points")).toBe("3"));
+      expect(fetchJournalEvents).toHaveBeenCalledTimes(2);
+    });
   });
 });

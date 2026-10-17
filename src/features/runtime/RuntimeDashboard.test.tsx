@@ -8,6 +8,13 @@ import { RuntimeListError, type RuntimeStrategyInstance, type RuntimeStrategyLis
 import { RuntimeDashboard } from "@/features/runtime/RuntimeDashboard";
 
 const fetchRuntimeStrategyInstances = vi.fn();
+const fetchJournalEvents = vi.fn();
+const fetchJournalStrategyInstances = vi.fn();
+
+vi.mock("@/api/journal", () => ({
+  fetchJournalEvents: (...a: unknown[]) => fetchJournalEvents(...a),
+  fetchJournalStrategyInstances: (...a: unknown[]) => fetchJournalStrategyInstances(...a),
+}));
 
 vi.mock("@/api/runtime", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/api/runtime")>();
@@ -50,6 +57,10 @@ function realisticList(): RuntimeStrategyList {
 describe("RuntimeDashboard", () => {
   beforeEach(() => {
     fetchRuntimeStrategyInstances.mockReset();
+    fetchJournalEvents.mockReset();
+    fetchJournalStrategyInstances.mockReset();
+    fetchJournalStrategyInstances.mockResolvedValue([]);
+    fetchJournalEvents.mockResolvedValue({ events: [], truncated: false });
   });
   afterEach(cleanup);
 
@@ -203,5 +214,25 @@ describe("RuntimeDashboard", () => {
     expect(screen.getAllByRole("button", { pressed: false })).toHaveLength(33);
     expect(screen.queryByRole("checkbox")).toBeNull();
     expect(screen.queryByRole("switch")).toBeNull();
+  });
+
+  it("cards show the last evaluated bar from the Journal, or that there are none", async () => {
+    fetchRuntimeStrategyInstances.mockResolvedValue(list({ strategy_instances: [instance("a.json", true), instance("b.json", true)] }));
+    const a = instance("a.json", true);
+    fetchJournalStrategyInstances.mockResolvedValue([
+      { strategy_instance_id: a.strategy_instance_id, event_count: 3, first_bar_open_time_ms: 0, last_bar_open_time_ms: 1_760_000_100_000, last_occurred_at: "x" },
+    ]);
+    render(<RuntimeDashboard />);
+    expect(await screen.findByText(/Last evaluated 2025-10-09 \d{2}:\d{2} UTC/)).toBeTruthy();
+    expect(screen.getByText("No evaluations yet")).toBeTruthy();
+  });
+
+  it("a Journal failure leaves the cards as before", async () => {
+    fetchRuntimeStrategyInstances.mockResolvedValue(list({ strategy_instances: [instance("a.json", true)] }));
+    fetchJournalStrategyInstances.mockRejectedValue(new Error("down"));
+    render(<RuntimeDashboard />);
+    await screen.findByLabelText("Strategies");
+    expect(screen.queryByText("No evaluations yet")).toBeNull();
+    expect(screen.queryByText(/Last evaluated/)).toBeNull();
   });
 });
