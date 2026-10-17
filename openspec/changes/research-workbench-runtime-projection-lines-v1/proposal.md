@@ -12,11 +12,11 @@ Runtime strategies is to draw this projection on the existing CandleChart.
   proxy `/journal-api`.
 - Draw three step lines on the existing candle chart: entry (`planned_entry_price`), stop
   (`initial_stop_price`) and take (`initial_take_price`), one point per evaluated bar.
-- A bar evaluated with `desired_entry = null` breaks all three lines. A bar after the first
-  evaluated one that has no journal event also breaks them and is marked as "not computed", so a
-  missed calculation is never shown as a calculation without a signal.
-- Strategy cards show the last evaluated bar from the Journal.
-- If the Journal is unavailable the chart keeps its candles and says the projection is unavailable.
+- A bar evaluated with `desired_entry = null` breaks all three lines. A bar from the strategy's
+  first known evaluation onward that has no journal event also breaks them and is marked "No
+  evaluation recorded", so a missing record is never shown as a calculation without a signal.
+- Strategy cards show the last evaluated bar from the Journal; the strategy's `first_bar_open_time_ms` from the same endpoint marks where its known history starts.
+- If the Journal is unavailable, or the event answer is unexpectedly truncated, the chart keeps its candles and says the projection is unavailable; it never draws an incomplete history as complete.
 
 ## Out of Scope
 

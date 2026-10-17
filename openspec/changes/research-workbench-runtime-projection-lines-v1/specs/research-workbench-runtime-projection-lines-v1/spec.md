@@ -2,13 +2,17 @@
 
 ### Requirement: Projection comes from the Central Journal
 The panel SHALL read the selected strategy's `live_entry_evaluated` events from the Central Journal
-(`GET /v1/events`) for the bars of the candle window and SHALL NOT compute or infer a projection
+(`GET /v1/events`, `event_type=live_entry_evaluated`, no `limit`) with one request for the bars of the candle window and SHALL NOT compute or infer a projection
 itself. It SHALL read only `desired_entry.planned_entry_price`, `initial_stop_price` and
 `initial_take_price` of each event.
 
 #### Scenario: Strategy selected
 - **WHEN** a strategy is selected
 - **THEN** the panel requests that strategy's events for the candle window and draws the lines from them
+
+#### Scenario: Unexpectedly truncated answer
+- **WHEN** the events answer has `truncated = true`
+- **THEN** the panel shows "Projection unavailable" and draws no lines, never an incomplete history as complete
 
 #### Scenario: Same market, other strategy
 - **WHEN** another strategy of the displayed market is selected
@@ -35,18 +39,24 @@ NOT continue the previous values across it.
 - **WHEN** bars 1 to 3 have a signal, bar 4 has `desired_entry = null`, and bar 5 has a signal
 - **THEN** the lines have points at bars 1 to 3, a gap at bar 4 and a new segment at bar 5
 
-### Requirement: A missed calculation is not a calculation without a signal
-A bar after the first evaluated bar of the window that has no journal event SHALL break all three
-lines and SHALL be marked on the chart as not computed. It SHALL NOT be drawn like a bar with
-`desired_entry = null`. Bars before the first evaluated bar SHALL stay empty.
+### Requirement: A missing record is not a calculation without a signal
+The start of a strategy's known history SHALL be its `first_bar_open_time_ms` from
+`GET /v1/strategy-instances`, not the first event inside the loaded window. A bar at or after that
+time that has no journal event SHALL break all three lines and SHALL be marked "No evaluation
+recorded". It SHALL NOT be drawn like a bar with `desired_entry = null`, and the UI SHALL NOT claim
+why the record is missing. Bars before that time SHALL stay empty.
 
 #### Scenario: Missing event
 - **WHEN** events exist for bars 1, 2 and 4 of a strategy
-- **THEN** bar 3 is marked not computed and the lines are broken at bar 3
+- **THEN** bar 3 is marked "No evaluation recorded" and the lines are broken at bar 3
 
-#### Scenario: Before the strategy existed
-- **WHEN** the window starts earlier than the first event
-- **THEN** the bars before the first event have no lines and no markers
+#### Scenario: Window starts inside the known history
+- **WHEN** the strategy's `first_bar_open_time_ms` is earlier than the window start and the first event inside the window is on day 3
+- **THEN** days 1 and 2 of the window are marked "No evaluation recorded", not left empty
+
+#### Scenario: Before the strategy's known history
+- **WHEN** the window starts earlier than `first_bar_open_time_ms`
+- **THEN** the bars before it have no lines and no markers
 
 ### Requirement: Unreadable events are counted, not drawn
 An event whose `desired_entry` is neither `null` nor an object with the three price strings SHALL
@@ -57,7 +67,7 @@ break the lines at its bar and SHALL be counted as unreadable in the legend.
 - **THEN** the lines break at that bar and the legend reports one unreadable bar
 
 ### Requirement: Several evaluations of one bar
-When several events exist for one bar the one with the latest `occurred_at` SHALL be used.
+When several events exist for one bar the one with the latest `occurred_at` SHALL be used, and equal `occurred_at` SHALL be resolved by the greater `event_id`.
 
 #### Scenario: Bar evaluated twice
 - **WHEN** a bar has an earlier signal event and a later event with `desired_entry = null`
@@ -65,7 +75,7 @@ When several events exist for one bar the one with the latest `occurred_at` SHAL
 
 ### Requirement: Journal unavailable
 If the Central Journal request fails the panel SHALL keep the candles, draw no projection lines and
-no not-computed markers, and show "Projection unavailable" with Retry.
+no "No evaluation recorded" markers, and show "Projection unavailable" with Retry.
 
 #### Scenario: Journal down
 - **WHEN** the events request fails
