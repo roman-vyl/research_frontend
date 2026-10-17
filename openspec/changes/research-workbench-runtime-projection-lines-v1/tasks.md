@@ -24,4 +24,6 @@
 
 ## 5. Live check
 
-- [ ] 5.1 On the Mac (on the owner's word, after `journal-read-api-v1` is deployed and one strategy ran 3 bars in ABI dry-run): the three lines grow by a point per bar; a bar with `desired_entry = null` breaks them; stopping the Journal Service shows "Projection unavailable".
+- [x] 5.1 On the Mac (on the owner's word, after `journal-read-api-v1` is deployed and one strategy ran 3 bars in ABI dry-run): the three lines grow by a point per bar; a bar with `desired_entry = null` breaks them; stopping the Journal Service shows "Projection unavailable".
+
+Mac check 2026-10-17 (ABI on Bybit demo, three strategies): solid Entry/Stop/Take lines, single points, gaps on `desired_entry = null` and a legend counter confirmed by the owner on the dev server; the Journal-stopped state was covered by tests, not stopped live.
