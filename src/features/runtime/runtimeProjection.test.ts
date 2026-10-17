@@ -20,27 +20,36 @@ function ev(i: number, de: unknown, occurred = "2026-10-17T12:00:00Z", id = `e${
   return { event_id: id, occurred_at: occurred, bar_open_time_ms: (T0 + i * TF) * 1000, body: { payload: { desired_entry: de } } };
 }
 const known = T0 * 1000;
-/** Per candle bar: the value of the run line at that bar, or undefined where there is no point. */
+/** Per candle bar: the projected value of a line at that bar, or undefined where there is no point. */
 function perBar(p: ReturnType<typeof buildProjection>, line: "entry" | "stop" | "take", n: number): (number | undefined)[] {
-  const byTime = new Map(p.runs.flatMap((r) => r[line]).map((x) => [x.time, x.value]));
+  const byTime = new Map(p.points.map((x) => [x.time, x[line]]));
   return Array.from({ length: n }, (_, i) => byTime.get(T0 + i * TF));
 }
-const runLengths = (p: ReturnType<typeof buildProjection>) => p.runs.map((r) => r.entry.length);
+/** Lengths of the runs of consecutive bars among the points. */
+function runLengths(p: ReturnType<typeof buildProjection>): number[] {
+  const lengths: number[] = [];
+  let prev: number | null = null;
+  for (const x of p.points) {
+    if (prev !== null && x.time === prev + TF) lengths[lengths.length - 1]! += 1;
+    else lengths.push(1);
+    prev = x.time;
+  }
+  return lengths;
+}
 
 describe("buildProjection", () => {
   it("draws 3 and 12 consecutive signals as 3 and 12 points per line", () => {
     for (const n of [3, 12]) {
       const p = buildProjection(candles(n), Array.from({ length: n }, (_, i) => ev(i, desired())), known);
       expect(runLengths(p)).toEqual([n]);
-      for (const line of ["entry", "stop", "take"] as const) expect(p.runs[0]![line]).toHaveLength(n);
+      expect(p.points).toHaveLength(n);
       expect(p.signalCount).toBe(n);
     }
   });
 
   it("reads entry, stop and take from the matching fields as numbers", () => {
     const p = buildProjection(candles(1), [ev(0, desired("100.5", "99", "103.25"))], known);
-    const r = p.runs[0]!;
-    expect([r.entry[0]!.value, r.stop[0]!.value, r.take[0]!.value]).toEqual([100.5, 99, 103.25]);
+    expect(p.points).toEqual([{ time: T0, entry: 100.5, stop: 99, take: 103.25 }]);
   });
 
   it("null breaks all three lines and is not a missing record", () => {
@@ -94,6 +103,5 @@ describe("buildProjection", () => {
   it("splits runs of consecutive signals so two runs are never one line", () => {
     const p = buildProjection(candles(7), [0, 1, 3, 5, 6].map((i) => ev(i, desired())).concat(ev(2, null), ev(4, null)), known);
     expect(runLengths(p)).toEqual([2, 1, 2]);
-    expect(p.runs.map((r) => r.stop.length)).toEqual([2, 1, 2]);
   });
 });

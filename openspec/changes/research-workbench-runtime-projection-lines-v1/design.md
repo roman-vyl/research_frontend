@@ -35,16 +35,22 @@ decimal text. `GET /v1/strategy-instances` returns per instance `first_bar_open_
    is broken by the greater `event_id`, the same order as the Journal. An event whose
    `desired_entry` is neither `null` nor a valid three-price object is *unreadable*: it breaks the
    lines like *no evaluation recorded* and is counted separately.
-4. **Rendering.** `buildProjection` groups the signal bars into runs of consecutive bars. Each run
-   is drawn as its own three `LineSeries` (entry, stop, take; `pointMarkersVisible: true` so a
-   one-bar run is visible). Real-browser checks showed that one series per line cannot be used: the
-   library joins points across empty (whitespace) data, a step line even extends the last value
-   forward, and hiding the segment with a transparent point colour also hides that point's marker
-   (a one-bar run disappears). Lines are plain lines (one segment per bar), not step lines. Series
-   are replaced when the projection changes. Colours from Surface tokens: entry `--ink-2`, stop
-   `--neg-500`, take `--pos-500`, theme-aware like the candles. *No evaluation recorded* bars get a
-   small grey marker under the bar on the candle series (`createSeriesMarkers`). Nothing calls a
-   viewport method.
+4. **Rendering: one custom series.** `buildProjection` returns one point per signal bar (entry,
+   stop, take); bars in any other state produce no point. A single Lightweight Charts *custom series*
+   (`addCustomSeries`, `projectionSeries.ts`) receives these points and draws all three lines itself:
+   the renderer splits its bars into runs wherever the logical time-scale index is not consecutive
+   (`splitRuns`, pure and unit-tested), strokes one polyline per run and line, and draws a dot on every
+   point, so a one-bar run is visible. The number of series is fixed (candles, projection, plus the
+   marker plugin on the candles) and does not depend on the number of runs.
+   Why not the library's own line series (verified in Chromium, Lightweight Charts 5.2): a line series
+   joins points across whitespace data, a step line even extends the last value forward, hiding a
+   segment with a transparent point colour also hides that point's marker (a one-bar run vanishes),
+   and one line series per run costs about 10 s for 1728 runs. The custom series reads only the three
+   prices, sets `priceValueBuilder` to `[min, max, entry]` so autoscale includes the lines, and turns
+   off its last-value label and price line. Lines are plain lines (one segment per bar), not step lines.
+   Colours from Surface tokens: entry `--ink-2`, stop `--neg-500`, take `--pos-500`, restyled on theme
+   change like the candles. *No evaluation recorded* bars get a small grey marker under the bar on the
+   candle series (`createSeriesMarkers`). Nothing calls a viewport method.
 5. **Library behaviour is verified, not assumed.** A real-browser check (Chromium via Playwright,
    run on demand, not in CI) draws a fixture with signal, no-signal and missing bars and the
    screenshot is reviewed; unit tests assert the whitespace data produced by `buildProjection`.
@@ -60,11 +66,7 @@ decimal text. `GET /v1/strategy-instances` returns per instance `first_bar_open_
 
 ## Risks
 
-- One series set per run: a pathological window (a signal on 3 of every 5 bars for 30 days, 1728 runs,
-  5184 series) took about 10 s to draw in Chromium. Real strategies signal on far fewer runs; if a
-  window ever has more than a few hundred runs, merging or a custom series is the follow-up.
-
-- A single isolated point is the weakest case for line series; `pointMarkersVisible` and the
-  browser check cover it.
+- The custom series draws on a canvas through the library's plugin API; its draw code is verified
+  in a real browser (single points, gaps, both themes, 30-day stress), not in jsdom.
 - Many missed bars produce many markers; the chart window is at most 8640 bars, which the library
   handles.
