@@ -51,6 +51,15 @@ export type CandlesWindowCoverage = {
   truncated: boolean;
 };
 
+/** `GET /api/market/bounds`: committed stream bounds; both times are open times of existing bars. */
+export type MarketBounds = {
+  symbol: string;
+  timeframe: string;
+  earliest_open_time_ms: number;
+  latest_open_time_ms: number;
+  stream_state: string;
+};
+
 /** Windowed candles only — no EMA overlays. */
 export type CandlesWindowBundle = {
   candles: ChartBar[];

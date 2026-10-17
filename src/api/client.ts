@@ -1,5 +1,6 @@
 import { dbgTimed } from "@/shared/diagnostics/pipelineDebug";
 import {
+  type MarketBounds,
   type CandlesWindowBundle,
   type ChartBar,
   type ChartMarketBundle,
@@ -217,6 +218,16 @@ function chartMarketQuery(params: {
     from: String(params.fromMs),
     to_open_time_ms: String(params.toOpenTimeMs),
   });
+}
+
+/** Committed Market Data Service bounds of one market (`research-market-bounds-v1`). */
+export async function fetchMarketBounds(params: {
+  symbol: string;
+  timeframe: string;
+  signal?: AbortSignal;
+}): Promise<MarketBounds> {
+  const qs = new URLSearchParams({ symbol: params.symbol, timeframe: params.timeframe });
+  return requestJson<MarketBounds>(`/api/market/bounds?${qs.toString()}`, { signal: params.signal });
 }
 
 /** Windowed OHLC candles with coverage metadata (split cold-load path). */

@@ -4,8 +4,10 @@ import {
   fetchRuntimeStrategyInstances,
   RuntimeListError,
   type RuntimeListErrorKind,
+  type RuntimeStrategyInstance,
   type RuntimeStrategyList,
 } from "@/api/runtime";
+import { RuntimeChartPanel } from "@/features/runtime/RuntimeChartPanel";
 import "@/features/surface/surface.css";
 import "@/features/runtime/runtime.css";
 
@@ -50,6 +52,7 @@ function Diagnostics({ list }: { list: RuntimeStrategyList }) {
 
 export function RuntimeDashboard() {
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
+  const [selected, setSelected] = useState<RuntimeStrategyInstance | null>(null);
   const generation = useRef(0);
 
   const load = useCallback(() => {
@@ -57,7 +60,14 @@ export function RuntimeDashboard() {
     setPhase({ kind: "loading" });
     fetchRuntimeStrategyInstances().then(
       (list) => {
-        if (generation.current === mine) setPhase({ kind: "ready", list });
+        if (generation.current !== mine) return;
+        setPhase({ kind: "ready", list });
+        // the selection survives a refresh while its strategy is still listed
+        setSelected((prev) =>
+          prev === null
+            ? null
+            : (list.strategy_instances.find((s) => s.strategy_instance_id === prev.strategy_instance_id) ?? null),
+        );
       },
       (err: unknown) => {
         if (generation.current !== mine) return;
@@ -124,25 +134,43 @@ export function RuntimeDashboard() {
           <p className="sx-note">No strategies in the Runtime catalog</p>
         )}
 
-        {list && total > 0 && (
-          <ul className="rt-grid" aria-label="Strategies">
-            {list.strategy_instances.map((s) => (
-              <li key={s.strategy_instance_id} className="sx-panel rt-card">
-                <div className="rt-card-top">
-                  <span className="rt-name">{cardName(s.source_path)}</span>
-                  <span className="rt-state" data-enabled={s.enabled ? "true" : "false"}>
-                    <span className="rt-dot" aria-hidden="true" />
-                    {s.enabled ? "ENABLED" : "DISABLED"}
-                  </span>
-                </div>
-                <div className="rt-meta sx-num">
-                  {s.strategy_id} · {s.instrument} · {s.base_timeframe}
-                </div>
-                <div className="rt-id sx-num">{s.strategy_instance_id}</div>
-              </li>
-            ))}
-          </ul>
-        )}
+        {(list && total > 0) || selected !== null ? (
+          <div className="rt-split">
+            {list && total > 0 && (
+              <ul className="rt-grid" aria-label="Strategies">
+                {list.strategy_instances.map((s) => {
+                  const isSelected = selected?.strategy_instance_id === s.strategy_instance_id;
+                  return (
+                    <li key={s.strategy_instance_id} className="sx-panel rt-card" data-selected={isSelected ? "true" : "false"}>
+                      <button
+                        type="button"
+                        className="rt-card-btn"
+                        aria-pressed={isSelected}
+                        onClick={() => setSelected(s)}
+                      >
+                        <div className="rt-card-top">
+                          <span className="rt-name">{cardName(s.source_path)}</span>
+                          <span className="rt-state" data-enabled={s.enabled ? "true" : "false"}>
+                            <span className="rt-dot" aria-hidden="true" />
+                            {s.enabled ? "ENABLED" : "DISABLED"}
+                          </span>
+                        </div>
+                        <div className="rt-meta sx-num">
+                          {s.strategy_id} · {s.instrument} · {s.base_timeframe}
+                        </div>
+                        <div className="rt-id sx-num">{s.strategy_instance_id}</div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <RuntimeChartPanel
+              strategyName={selected ? cardName(selected.source_path) : null}
+              market={selected ? { symbol: selected.instrument, timeframe: selected.base_timeframe } : null}
+            />
+          </div>
+        ) : null}
 
         {list && <Diagnostics list={list} />}
       </div>
