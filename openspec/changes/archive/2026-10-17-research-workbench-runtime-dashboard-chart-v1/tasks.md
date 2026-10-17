@@ -1,6 +1,6 @@
 ## 0. Precondition
 
-- [ ] 0.1 `research-market-bounds-v1` is merged and deployed in Research Service (otherwise apply may proceed against a mocked bounds, acceptance may not).
+- [x] 0.1 `research-market-bounds-v1` is merged and deployed in Research Service (otherwise apply may proceed against a mocked bounds, acceptance may not).
 
 ## 1. API client
 
