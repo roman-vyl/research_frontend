@@ -35,10 +35,12 @@ vi.mock("@/features/runtime/RuntimeCandleChart", () => ({
     candles,
     projection,
     applied,
+    cycles,
   }: {
     candles: readonly unknown[];
     projection?: { points: unknown[]; noEvaluationTimes: number[]; unreadableCount: number } | null;
     applied?: { bars: { rings: unknown[] }[]; appliedCount: number } | null;
+    cycles?: { opens: unknown[]; closes: unknown[]; periods: unknown[] } | null;
   }) => {
     chartRenders(candles.length);
     return (
@@ -48,6 +50,7 @@ vi.mock("@/features/runtime/RuntimeCandleChart", () => ({
         data-points={projection ? projection.points.length : "none"}
         data-noeval={projection ? projection.noEvaluationTimes.length : "none"}
         data-rings={applied ? applied.bars.reduce((n, b) => n + b.rings.length, 0) : "none"}
+        data-cycles={cycles ? `${cycles.opens.length}/${cycles.closes.length}/${cycles.periods.length}` : "none"}
       />
     );
   },
@@ -473,6 +476,51 @@ describe("Runtime strategy selection and chart", () => {
       expect(screen.getByTestId("chart").getAttribute("data-rings")).toBe("0");
     });
 
+    const cycleEv = (type: string, bar: number, id: string, payload: Record<string, unknown>) => ({
+      event_id: id,
+      event_type: type,
+      occurred_at: "2026-10-17T12:00:40Z",
+      bar_open_time_ms: bar,
+      body: { payload: { trade_cycle_id: "c-a1", bar_open_time_ms: bar, ...payload } },
+    });
+
+    it("trade cycle events from the same answer draw fills, closes and the legend", async () => {
+      const { eth } = freshSymbols();
+      fetchRuntimeStrategyInstances.mockResolvedValue(list(inst("a", eth)));
+      fetchJournalEvents.mockResolvedValue({
+        events: [
+          ev(bar(3), entry("101")),
+          appliedEv(bar(3), "a1"),
+          cycleEv("trade_cycle_opened", bar(2), "o1", { average_entry_price: "100.6" }),
+          cycleEv("trade_cycle_closed", bar(1), "c1", { reason: "stop_loss" }),
+          { ...cycleEv("trade_cycle_opened", bar(1), "o2", { average_entry_price: "100" }), body: { payload: { trade_cycle_id: "c-b" , average_entry_price: "100" } } },
+          { ...cycleEv("trade_cycle_closed", bar(0), "c2", {}), body: { payload: { trade_cycle_id: "c-b", reason: "take_profit" } } },
+          cycleEv("trade_cycle_opened", bar(0), "o3", { average_entry_price: "abc" }),
+        ],
+        truncated: false,
+      });
+      render(<RuntimeDashboard />);
+      await screen.findByLabelText("Strategies");
+      fireEvent.click(card("a"));
+      await waitFor(() => expect(screen.getByTestId("chart").getAttribute("data-cycles")).toBe("2/2/2"));
+      expect(fetchJournalEvents).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("Opened")).toBeTruthy();
+      expect(screen.getByText("3 opened")).toBeTruthy();
+      expect(screen.getByText("2 closed (SL 1, TP 1)")).toBeTruthy();
+      expect(screen.getByText("1 unreadable cycle events")).toBeTruthy();
+    });
+
+    it("an answer without cycle events shows no cycle legend", async () => {
+      const { eth } = freshSymbols();
+      fetchRuntimeStrategyInstances.mockResolvedValue(list(inst("a", eth)));
+      fetchJournalEvents.mockResolvedValue({ events: [ev(bar(0), entry("101"))], truncated: false });
+      render(<RuntimeDashboard />);
+      await screen.findByLabelText("Strategies");
+      fireEvent.click(card("a"));
+      await waitFor(() => expect(screen.getByTestId("chart").getAttribute("data-cycles")).toBe("0/0/0"));
+      expect(screen.queryByText("Opened")).toBeNull();
+    });
+
     it("a truncated answer draws neither lines nor rings", async () => {
       const { eth } = freshSymbols();
       fetchRuntimeStrategyInstances.mockResolvedValue(list(inst("a", eth)));
@@ -483,6 +531,7 @@ describe("Runtime strategy selection and chart", () => {
       expect(await screen.findByText("Projection unavailable")).toBeTruthy();
       expect(screen.getByTestId("chart").getAttribute("data-points")).toBe("none");
       expect(screen.getByTestId("chart").getAttribute("data-rings")).toBe("none");
+      expect(screen.getByTestId("chart").getAttribute("data-cycles")).toBe("none");
     });
 
     it("Refresh repeats the events request and a later answer adds points", async () => {

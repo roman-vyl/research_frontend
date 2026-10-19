@@ -15,6 +15,8 @@ export type JournalDesiredEntry = {
 
 export const LIVE_ENTRY_EVALUATED = "live_entry_evaluated";
 export const ENTRY_PACKAGE_APPLIED = "entry_package_applied";
+export const TRADE_CYCLE_OPENED = "trade_cycle_opened";
+export const TRADE_CYCLE_CLOSED = "trade_cycle_closed";
 
 export type JournalEvent = {
   event_id: string;
@@ -25,6 +27,8 @@ export type JournalEvent = {
    * The stored Runtime line. `live_entry_evaluated`: `payload.desired_entry` is `null` or an object,
    * read by `runtimeProjection`. `entry_package_applied`: `payload.trigger_price`, `stop_loss` and
    * `take_profit` are decimal strings or `null`, read by `runtimeAppliedOrders`.
+   * `trade_cycle_opened`: `payload.trade_cycle_id` and `average_entry_price` (decimal string);
+   * `trade_cycle_closed`: `payload.trade_cycle_id` and `reason`; both read by `runtimeTradeCycles`.
    */
   body: { payload?: Record<string, unknown> } & Record<string, unknown>;
 };
