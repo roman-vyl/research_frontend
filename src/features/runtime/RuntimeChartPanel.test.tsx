@@ -36,11 +36,15 @@ vi.mock("@/features/runtime/RuntimeCandleChart", () => ({
     projection,
     applied,
     cycles,
+    openTrade,
+    protection,
   }: {
     candles: readonly unknown[];
     projection?: { points: unknown[]; noEvaluationTimes: number[]; unreadableCount: number } | null;
     applied?: { bars: { rings: unknown[] }[]; appliedCount: number } | null;
     cycles?: { opens: unknown[]; closes: unknown[]; periods: unknown[] } | null;
+    openTrade?: { points: unknown[]; closeTimes: unknown[] } | null;
+    protection?: { bars: { rings: unknown[] }[] } | null;
   }) => {
     chartRenders(candles.length);
     return (
@@ -51,6 +55,8 @@ vi.mock("@/features/runtime/RuntimeCandleChart", () => ({
         data-noeval={projection ? projection.noEvaluationTimes.length : "none"}
         data-rings={applied ? applied.bars.reduce((n, b) => n + b.rings.length, 0) : "none"}
         data-cycles={cycles ? `${cycles.opens.length}/${cycles.closes.length}/${cycles.periods.length}` : "none"}
+        data-open={openTrade ? `${openTrade.points.length}/${openTrade.closeTimes.length}` : "none"}
+        data-protection={protection ? protection.bars.reduce((n, b) => n + b.rings.length, 0) : "none"}
       />
     );
   },
@@ -521,6 +527,87 @@ describe("Runtime strategy selection and chart", () => {
       expect(screen.queryByText("Opened")).toBeNull();
     });
 
+    const openEv = (bar: number, id: string, payload: Record<string, unknown> = {}) => ({
+      event_id: id,
+      event_type: "open_trade_evaluated",
+      occurred_at: "2026-10-17T12:00:50Z",
+      bar_open_time_ms: bar,
+      body: {
+        payload: {
+          trade_cycle_id: "c-a1",
+          bar_open_time_ms: bar,
+          side: "short",
+          desired_protection: { stop_price: "105.150", take_price: "93.11" },
+          close_signal: { active: false, reason: null, component_id: null, layer: null },
+          ...payload,
+        },
+      },
+    });
+    const protectionEv = (bar: number, id: string, confirmedTake: string | null = "93.11") => ({
+      event_id: id,
+      event_type: "protection_applied",
+      occurred_at: "2026-10-17T12:00:55Z",
+      bar_open_time_ms: bar,
+      body: {
+        payload: {
+          trade_cycle_id: "c-a1",
+          bar_open_time_ms: bar,
+          requested_protection: { stop_price: "105.15", take_price: confirmedTake },
+          confirmed_protection: { stop_price: "105.15", take_price: confirmedTake },
+          position_quantity: "1.5",
+          stop_order: { order_id: "s1", trigger_price: "105.15" },
+          take_order: { order_id: "t1", trigger_price: confirmedTake ?? "155.0" },
+        },
+      },
+    });
+
+    it("open-position events from the same answer draw lines, close markers, protection rings and the legend", async () => {
+      const { eth } = freshSymbols();
+      fetchRuntimeStrategyInstances.mockResolvedValue(list(inst("a", eth)));
+      fetchJournalEvents.mockResolvedValue({
+        events: [
+          ev(bar(4), entry("101")),
+          openEv(bar(2), "p2"),
+          openEv(bar(1), "p1", { close_signal: { active: true, reason: "x", component_id: "c", layer: "l" } }),
+          openEv(bar(0), "p0", { desired_protection: { stop_price: "abc", take_price: null }, close_signal: { active: true } }),
+          protectionEv(bar(2), "r2"),
+          protectionEv(bar(1), "r1", null),
+          { ...protectionEv(bar(0), "r0"), body: { payload: { stop_order: {} } } },
+          { ...openEv(bar(3), "u"), event_type: "something_new" },
+        ],
+        truncated: false,
+      });
+      render(<RuntimeDashboard />);
+      await screen.findByLabelText("Strategies");
+      fireEvent.click(card("a"));
+      await waitFor(() => expect(screen.getByTestId("chart").getAttribute("data-open")).toBe("2/2"));
+      expect(fetchJournalEvents).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId("chart").getAttribute("data-points")).toBe("1");
+      expect(screen.getByTestId("chart").getAttribute("data-protection")).toBe("2");
+      expect(screen.getByText("Engine stop/take (open)")).toBeTruthy();
+      expect(screen.getByText("3 open-position bars")).toBeTruthy();
+      expect(screen.getByText("1 unreadable open-position events")).toBeTruthy();
+      expect(screen.getByText("Protection")).toBeTruthy();
+      expect(screen.getByText("3 protection changes")).toBeTruthy();
+      expect(screen.getByText("1 technical takes (not drawn)")).toBeTruthy();
+      expect(screen.getByText("1 unreadable protection")).toBeTruthy();
+      expect(screen.queryByText("c-a1")).toBeNull();
+    });
+
+    it("an answer without open-position events shows no open-position legend and no error", async () => {
+      const { eth } = freshSymbols();
+      fetchRuntimeStrategyInstances.mockResolvedValue(list(inst("a", eth)));
+      fetchJournalEvents.mockResolvedValue({ events: [ev(bar(0), entry("101"))], truncated: false });
+      render(<RuntimeDashboard />);
+      await screen.findByLabelText("Strategies");
+      fireEvent.click(card("a"));
+      await waitFor(() => expect(screen.getByTestId("chart").getAttribute("data-open")).toBe("0/0"));
+      expect(screen.getByTestId("chart").getAttribute("data-protection")).toBe("0");
+      expect(screen.queryByText("Engine stop/take (open)")).toBeNull();
+      expect(screen.queryByText("Protection")).toBeNull();
+      expect(screen.queryByText("Projection unavailable")).toBeNull();
+    });
+
     it("a truncated answer draws neither lines nor rings", async () => {
       const { eth } = freshSymbols();
       fetchRuntimeStrategyInstances.mockResolvedValue(list(inst("a", eth)));
@@ -532,6 +619,8 @@ describe("Runtime strategy selection and chart", () => {
       expect(screen.getByTestId("chart").getAttribute("data-points")).toBe("none");
       expect(screen.getByTestId("chart").getAttribute("data-rings")).toBe("none");
       expect(screen.getByTestId("chart").getAttribute("data-cycles")).toBe("none");
+      expect(screen.getByTestId("chart").getAttribute("data-open")).toBe("none");
+      expect(screen.getByTestId("chart").getAttribute("data-protection")).toBe("none");
     });
 
     it("Refresh repeats the events request and a later answer adds points", async () => {

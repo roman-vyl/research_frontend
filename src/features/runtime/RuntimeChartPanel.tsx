@@ -5,6 +5,8 @@ import {
   fetchJournalEvents,
   fetchJournalStrategyInstances,
   LIVE_ENTRY_EVALUATED,
+  OPEN_TRADE_EVALUATED,
+  PROTECTION_APPLIED,
   TRADE_CYCLE_CLOSED,
   TRADE_CYCLE_OPENED,
 } from "@/api/journal";
@@ -17,6 +19,12 @@ import {
   type RuntimeMarketData,
 } from "@/features/runtime/runtimeMarket";
 import { buildAppliedOrders, type AppliedOrders } from "@/features/runtime/runtimeAppliedOrders";
+import {
+  buildAppliedProtection,
+  buildOpenTradeProjection,
+  type AppliedProtection,
+  type OpenTradeProjection,
+} from "@/features/runtime/runtimeOpenTrade";
 import { buildProjection, type Projection } from "@/features/runtime/runtimeProjection";
 import { buildTradeCycles, type TradeCycles } from "@/features/runtime/runtimeTradeCycles";
 
@@ -30,7 +38,14 @@ type Status = "loading" | "ready" | "error";
 type ProjectionPhase =
   | { kind: "idle" }
   | { kind: "loading" }
-  | { kind: "ready"; projection: Projection; applied: AppliedOrders; cycles: TradeCycles }
+  | {
+      kind: "ready";
+      projection: Projection;
+      applied: AppliedOrders;
+      cycles: TradeCycles;
+      openTrade: OpenTradeProjection;
+      protection: AppliedProtection;
+    }
   | { kind: "unavailable" };
 
 /** "2 closed (SL 1, TP 1)": only the reasons that occur. */
@@ -142,6 +157,8 @@ export function RuntimeChartPanel({
           projection: buildProjection(data.candles, evaluations, known ? known.first_bar_open_time_ms : null),
           applied: buildAppliedOrders(data.candles, applied),
           cycles: buildTradeCycles(data.candles, cycleEvents, applied),
+          openTrade: buildOpenTradeProjection(data.candles, answer.events.filter((e) => e.event_type === OPEN_TRADE_EVALUATED)),
+          protection: buildAppliedProtection(data.candles, answer.events.filter((e) => e.event_type === PROTECTION_APPLIED)),
         });
       },
       () => {
@@ -157,6 +174,8 @@ export function RuntimeChartPanel({
   const projection = useMemo(() => (phase.kind === "ready" ? phase.projection : null), [phase]);
   const applied = useMemo(() => (phase.kind === "ready" ? phase.applied : null), [phase]);
   const cycles = useMemo(() => (phase.kind === "ready" ? phase.cycles : null), [phase]);
+  const openTrade = useMemo(() => (phase.kind === "ready" ? phase.openTrade : null), [phase]);
+  const protection = useMemo(() => (phase.kind === "ready" ? phase.protection : null), [phase]);
 
   if (symbol === null || timeframe === null) {
     return (
@@ -220,7 +239,16 @@ export function RuntimeChartPanel({
         </div>
       )}
 
-      {data && data.candles.length > 0 && <RuntimeCandleChart candles={data.candles} projection={projection} applied={applied} cycles={cycles} />}
+      {data && data.candles.length > 0 && (
+        <RuntimeCandleChart
+          candles={data.candles}
+          projection={projection}
+          applied={applied}
+          cycles={cycles}
+          openTrade={openTrade}
+          protection={protection}
+        />
+      )}
 
       {projection && (
         <div className="rt-legend" aria-label="Projection legend">
@@ -251,6 +279,27 @@ export function RuntimeChartPanel({
           )}
           {cycles && cycles.unreadableCount > 0 && (
             <span className="rt-meta sx-num">{cycles.unreadableCount} unreadable cycle events</span>
+          )}
+          {openTrade && openTrade.barCount > 0 && (
+            <>
+              <span className="rt-swatch" data-line="open">Engine stop/take (open)</span>
+              <span className="rt-meta sx-num">{openTrade.barCount} open-position bars</span>
+            </>
+          )}
+          {openTrade && openTrade.unreadableCount > 0 && (
+            <span className="rt-meta sx-num">{openTrade.unreadableCount} unreadable open-position events</span>
+          )}
+          {protection && protection.appliedCount > 0 && (
+            <>
+              <span className="rt-swatch" data-ring="protection">Protection</span>
+              <span className="rt-meta sx-num">{protection.appliedCount} protection changes</span>
+            </>
+          )}
+          {protection && protection.technicalTakeCount > 0 && (
+            <span className="rt-meta sx-num">{protection.technicalTakeCount} technical takes (not drawn)</span>
+          )}
+          {protection && protection.unreadableCount > 0 && (
+            <span className="rt-meta sx-num">{protection.unreadableCount} unreadable protection</span>
           )}
         </div>
       )}

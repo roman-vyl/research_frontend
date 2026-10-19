@@ -13,7 +13,9 @@ import { useEffect, useRef } from "react";
 import type { ChartBar } from "@/api/types";
 import { AppliedSeriesView, type AppliedSeriesOptions } from "@/features/runtime/appliedSeries";
 import { ProjectionSeriesView, type ProjectionSeriesOptions } from "@/features/runtime/projectionSeries";
-import type { AppliedOrders } from "@/features/runtime/runtimeAppliedOrders";
+import { OpenTradeSeriesView, type OpenTradeSeriesOptions } from "@/features/runtime/openTradeSeries";
+import type { AppliedOrders, AppliedRing } from "@/features/runtime/runtimeAppliedOrders";
+import type { AppliedProtection, OpenTradeProjection } from "@/features/runtime/runtimeOpenTrade";
 import type { Projection } from "@/features/runtime/runtimeProjection";
 import { closeLabel, closePosition, type TradeCycles } from "@/features/runtime/runtimeTradeCycles";
 import { tradeCycleData, TradeCycleSeriesView, type TradeCycleSeriesOptions } from "@/features/runtime/tradeCycleSeries";
@@ -50,13 +52,20 @@ function appliedColors(p: Palette): Partial<AppliedSeriesOptions> {
   return { entryColor: p.text, stopColor: p.down, takeColor: p.up };
 }
 
+function openTradeColors(p: Palette): Partial<OpenTradeSeriesOptions> {
+  return { stopColor: p.down, takeColor: p.up };
+}
+
 function cycleColors(p: Palette): Partial<TradeCycleSeriesOptions> {
   return { entryColor: p.text, stopColor: p.down, takeColor: p.up };
 }
 
-/** Close labels on the candles; SL and TP in the stop and take colours, any other reason muted. */
-function closeMarkers(cycles: TradeCycles | null, p: Palette): SeriesMarker<Time>[] {
-  return (cycles?.closes ?? []).map((mark) => ({
+/**
+ * Close labels on the candles; SL and TP in the stop and take colours, any other reason muted. Engine's
+ * active close signal is a "close" marker above its candle, never placed at a price.
+ */
+function closeMarkers(cycles: TradeCycles | null, openTrade: OpenTradeProjection | null, p: Palette): SeriesMarker<Time>[] {
+  const closes: SeriesMarker<Time>[] = (cycles?.closes ?? []).map((mark) => ({
     time: mark.time as Time,
     position: closePosition(mark),
     shape: "square",
@@ -64,6 +73,24 @@ function closeMarkers(cycles: TradeCycles | null, p: Palette): SeriesMarker<Time
     color: mark.reason === "stop_loss" ? p.down : mark.reason === "take_profit" ? p.up : p.muted,
     text: closeLabel(mark.reason),
   }));
+  const signals: SeriesMarker<Time>[] = (openTrade?.closeTimes ?? []).map((time) => ({
+    time: time as Time,
+    position: "aboveBar",
+    shape: "circle",
+    size: 0.5,
+    color: p.muted,
+    text: "close",
+  }));
+  return [...closes, ...signals].sort((a, b) => (a.time as number) - (b.time as number));
+}
+
+/** Applied entry rings and confirmed protection rings share one ring series, merged per bar. */
+function ringData(applied: AppliedOrders | null, protection: AppliedProtection | null) {
+  const byTime = new Map<number, AppliedRing[]>();
+  for (const bar of [...(applied?.bars ?? []), ...(protection?.bars ?? [])]) {
+    byTime.set(bar.time, [...(byTime.get(bar.time) ?? []), ...bar.rings]);
+  }
+  return [...byTime.entries()].sort(([a], [b]) => a - b).map(([time, rings]) => ({ time: time as Time, rings }));
 }
 
 /**
@@ -73,18 +100,24 @@ function closeMarkers(cycles: TradeCycles | null, p: Palette): SeriesMarker<Time
  * A second custom series draws a ring per price of every applied order in `applied`, in the same
  * colours. A third custom series draws trade cycles from `cycles`: a filled arrow at each fill price and,
 for each position period, the entry line and dashed stop and take; close labels are markers on the
-candles, never at a price. The number of series is fixed. Pan and zoom are left to the library.
+candles, never at a price. A fourth custom series draws Engine's open-position Stop and Take lines from
+`openTrade`, broken between trades; its active close signals are "close" markers on the candles.
+Confirmed protection rings from `protection` join the applied ring series. The number of series is fixed. Pan and zoom are left to the library.
  */
 export function RuntimeCandleChart({
   candles,
   projection = null,
   applied = null,
   cycles = null,
+  openTrade = null,
+  protection = null,
 }: {
   candles: readonly ChartBar[];
   projection?: Projection | null;
   applied?: AppliedOrders | null;
   cycles?: TradeCycles | null;
+  openTrade?: OpenTradeProjection | null;
+  protection?: AppliedProtection | null;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -92,6 +125,8 @@ export function RuntimeCandleChart({
   const projectionRef = useRef<ISeriesApi<"Custom", Time> | null>(null);
   const appliedRef = useRef<ISeriesApi<"Custom", Time> | null>(null);
   const cyclesRef = useRef<ISeriesApi<"Custom", Time> | null>(null);
+  const openTradeRef = useRef<ISeriesApi<"Custom", Time> | null>(null);
+  const openTradeDataRef = useRef<OpenTradeProjection | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const hostPaletteRef = useRef<Palette | null>(null);
   const cyclesDataRef = useRef<TradeCycles | null>(null);
@@ -111,6 +146,7 @@ export function RuntimeCandleChart({
     const projectionSeries = chart.addCustomSeries(new ProjectionSeriesView(), projectionColors(palette));
     const appliedSeries = chart.addCustomSeries(new AppliedSeriesView(), appliedColors(palette));
     const cyclesSeries = chart.addCustomSeries(new TradeCycleSeriesView(), cycleColors(palette));
+    const openTradeSeries = chart.addCustomSeries(new OpenTradeSeriesView(), openTradeColors(palette));
     const markers = createSeriesMarkers(series, []);
     hostPaletteRef.current = palette;
     chartRef.current = chart;
@@ -118,6 +154,7 @@ export function RuntimeCandleChart({
     projectionRef.current = projectionSeries;
     appliedRef.current = appliedSeries;
     cyclesRef.current = cyclesSeries;
+    openTradeRef.current = openTradeSeries;
     markersRef.current = markers;
 
     const resize = new ResizeObserver(() => chart.applyOptions({ width: host.clientWidth, height: host.clientHeight }));
@@ -130,8 +167,9 @@ export function RuntimeCandleChart({
       projectionSeries.applyOptions(projectionColors(p));
       appliedSeries.applyOptions(appliedColors(p));
       cyclesSeries.applyOptions(cycleColors(p));
+      openTradeSeries.applyOptions(openTradeColors(p));
       hostPaletteRef.current = p;
-      markers.setMarkers(closeMarkers(cyclesDataRef.current, p));
+      markers.setMarkers(closeMarkers(cyclesDataRef.current, openTradeDataRef.current, p));
     };
     scheme.addEventListener("change", restyle);
 
@@ -144,6 +182,7 @@ export function RuntimeCandleChart({
       projectionRef.current = null;
       appliedRef.current = null;
       cyclesRef.current = null;
+      openTradeRef.current = null;
       markersRef.current = null;
       hostPaletteRef.current = null;
     };
@@ -168,15 +207,19 @@ export function RuntimeCandleChart({
   }, [projection]);
 
   useEffect(() => {
-    appliedRef.current?.setData((applied?.bars ?? []).map((b) => ({ time: b.time as Time, rings: b.rings })));
-  }, [applied]);
+    appliedRef.current?.setData(ringData(applied, protection));
+  }, [applied, protection]);
 
   useEffect(() => {
     cyclesDataRef.current = cycles;
+    openTradeDataRef.current = openTrade;
     cyclesRef.current?.setData(cycles === null ? [] : tradeCycleData(candles.map((bar) => bar.time), cycles));
+    openTradeRef.current?.setData(
+      (openTrade?.points ?? []).map((p) => ({ time: p.time as Time, segment: p.segment, stop: p.stop, take: p.take })),
+    );
     const palette = hostPaletteRef.current;
-    if (palette !== null) markersRef.current?.setMarkers(closeMarkers(cycles, palette));
-  }, [candles, cycles]);
+    if (palette !== null) markersRef.current?.setMarkers(closeMarkers(cycles, openTrade, palette));
+  }, [candles, cycles, openTrade]);
 
   return <div ref={hostRef} className="rt-chart-host" role="img" aria-label="Candlestick chart" />;
 }
