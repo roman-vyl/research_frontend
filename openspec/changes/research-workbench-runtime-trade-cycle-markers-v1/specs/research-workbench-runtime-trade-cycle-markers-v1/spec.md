@@ -21,17 +21,16 @@ draw no cycle markers.
 ### Requirement: Open marker at the fill price
 For each `trade_cycle_opened` on a bar of the window with a readable `average_entry_price`, the chart
 SHALL draw a filled arrow at that price on that bar: up for a long cycle, down for a short cycle,
-a dot when the side is unknown. The side SHALL be the `desired_entry.side` of the
-`live_entry_evaluated` on the same bar as the cycle's last applied record, and SHALL NOT be derived
-from prices.
+a dot when the side is unknown. The side SHALL come only from the cycle's last applied record
+(stop above trigger is short, below is long).
 
 #### Scenario: SOL short fill
-- **WHEN** cycle `e8fc6911` has its last applied record on bar 21:55Z, the evaluation of 21:55Z has `desired_entry.side` `short`, and `trade_cycle_opened` is on bar 22:00Z with `average_entry_price` 103.32
+- **WHEN** cycle `e8fc6911` has an applied record with trigger 103.30 and stop 105.15, and `trade_cycle_opened` on bar 22:00Z with `average_entry_price` 103.32
 - **THEN** a down arrow is drawn at 103.32 on the 22:00Z candle
 
 #### Scenario: Side unknown
-- **WHEN** a cycle has an opened event and the bar of its last applied record has no evaluation with a `long` or `short` side in the answer
-- **THEN** a dot is drawn at `average_entry_price` on its bar, even if its stop and take prices would suggest a direction
+- **WHEN** a cycle has an opened event and no readable applied record in the answer
+- **THEN** a dot is drawn at `average_entry_price` on its bar
 
 ### Requirement: Close marker without a price
 For each `trade_cycle_closed` on a bar of the window, the chart SHALL draw a label on that candle:
