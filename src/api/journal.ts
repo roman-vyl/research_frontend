@@ -17,6 +17,8 @@ export const LIVE_ENTRY_EVALUATED = "live_entry_evaluated";
 export const ENTRY_PACKAGE_APPLIED = "entry_package_applied";
 export const TRADE_CYCLE_OPENED = "trade_cycle_opened";
 export const TRADE_CYCLE_CLOSED = "trade_cycle_closed";
+export const OPEN_TRADE_EVALUATED = "open_trade_evaluated";
+export const PROTECTION_APPLIED = "protection_applied";
 
 export type JournalEvent = {
   event_id: string;
@@ -29,6 +31,10 @@ export type JournalEvent = {
    * `take_profit` are decimal strings or `null`, read by `runtimeAppliedOrders`.
    * `trade_cycle_opened`: `payload.trade_cycle_id` and `average_entry_price` (decimal string);
    * `trade_cycle_closed`: `payload.trade_cycle_id` and `reason`; both read by `runtimeTradeCycles`.
+   * `open_trade_evaluated`: `payload.desired_protection {stop_price, take_price|null}` (Engine's decimal
+   * text), `close_signal.active` (boolean) and `trade_cycle_id` (only to split lines);
+   * `protection_applied`: `payload.confirmed_protection.take_price`, `stop_order.trigger_price` and
+   * `take_order.trigger_price`; both read by `runtimeOpenTrade`.
    */
   body: { payload?: Record<string, unknown> } & Record<string, unknown>;
 };
