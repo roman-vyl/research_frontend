@@ -18,8 +18,10 @@ position was open and what was actually set on the exchange.
 - The existing single events request (no `event_type`) already returns both new types; the panel
   splits them out next to `live_entry_evaluated` and `entry_package_applied`.
 - `open_trade_evaluated` → open-position projection: two lines, desired Stop and desired Take, one
-  point per bar, in the Stop and Take colours, drawn like the entry projection lines. A bar with an
-  active close signal gets a small "close" marker.
+  point per bar, in the Stop and Take colours, drawn like the entry projection lines. Lines break
+  between bars without events and when `trade_cycle_id` changes (read only for this split). A bar
+  with an active close signal gets a small "close" marker bound to the candle, shown even without
+  readable protection levels.
 - `protection_applied` → rings on the bar of the record at the trigger prices of the real stop and
   take orders, like the applied entry rings.
 - A take that Engine disabled (`requested_protection.take_price: null`) whose real order ABI keeps

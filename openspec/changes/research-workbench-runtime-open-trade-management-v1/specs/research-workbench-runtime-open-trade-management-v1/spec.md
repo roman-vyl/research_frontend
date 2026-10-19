@@ -19,7 +19,11 @@ The chart SHALL draw, from one `open_trade_evaluated` event per bar (latest `occ
 greater `event_id`), a Stop line at `desired_protection.stop_price` and a Take line at
 `desired_protection.take_price` in the Stop and Take colours, with dots on each bar. A null
 `take_price` SHALL give no Take point on that bar. Lines SHALL be broken between bars without an
-event. A bar with `close_signal.active = true` SHALL get one "close" marker.
+event and between bars whose `trade_cycle_id` differs, even when the bars are adjacent.
+`trade_cycle_id` SHALL be read only for this split and SHALL NOT be shown. A bar with
+`close_signal.active = true` SHALL get one "close" marker bound to the candle, whose vertical place
+does not depend on the Stop point; it SHALL be drawn even when the bar's stop or take is unreadable
+or missing.
 
 #### Scenario: Engine text with trailing zeros
 - **WHEN** an event has `desired_protection.stop_price` `"105.150"`
@@ -29,9 +33,17 @@ event. A bar with `close_signal.active = true` SHALL get one "close" marker.
 - **WHEN** two open positions are separated by bars without `open_trade_evaluated`
 - **THEN** their lines are not joined
 
+#### Scenario: Two trades on adjacent bars
+- **WHEN** two adjacent bars have `open_trade_evaluated` events with different `trade_cycle_id`
+- **THEN** their lines are not joined and no `trade_cycle_id` is shown
+
 #### Scenario: Close signal
 - **WHEN** an event has `close_signal.active = true`
-- **THEN** that bar shows a "close" marker
+- **THEN** that bar shows a "close" marker bound to the candle
+
+#### Scenario: Close signal without protection levels
+- **WHEN** an event has `close_signal.active = true` and no readable `desired_protection.stop_price`
+- **THEN** that bar shows the "close" marker, has no Stop or Take point, and is counted as unreadable
 
 ### Requirement: Confirmed protection as rings
 For each `protection_applied` record on a bar of the window, the chart SHALL draw a Stop ring at

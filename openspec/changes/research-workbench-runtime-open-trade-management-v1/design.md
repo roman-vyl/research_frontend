@@ -30,12 +30,19 @@ truncated answer draws none of the layers. An answer without the new types is no
 ### D2. Open-position projection: same rule as the entry projection
 
 One event per bar, chosen exactly as `buildProjection` does (latest `occurred_at`, then greater
-`event_id`). From it only `desired_protection.stop_price`, `desired_protection.take_price` and
-`close_signal.active` are read. Stop and Take become two lines with dots, in the Stop and Take
-colours, drawn by the same projection series style (no Entry line: there is no entry to project
-while the position is open). A null `take_price` gives no Take point on that bar. A bar where
-`close_signal.active` is `true` gets one small marker "close" at the Stop point. Lines are broken
-between bars that have no event (no interpolation), so separate trades never join.
+`event_id`). From it only `desired_protection.stop_price`, `desired_protection.take_price`,
+`close_signal.active` and `trade_cycle_id` are read. Stop and Take become two lines with dots, in the
+Stop and Take colours, drawn by the same projection series style (no Entry line: there is no entry to
+project while the position is open). A null `take_price` gives no Take point on that bar.
+
+Lines are split into segments. A new segment starts on a bar with no event before it (no
+interpolation) and on a bar whose `trade_cycle_id` differs from the previous bar's, even when the two
+bars are adjacent. So separate trades never join.
+
+A bar where `close_signal.active` is `true` gets one small "close" marker bound to the candle, through
+the candle series markers already used for the trade-cycle close labels (#27): its vertical place is
+set by the candle, not by the Stop point. The marker is drawn whenever `close_signal.active` is
+`true`, even when the bar's stop or take cannot be read or is missing.
 
 ### D3. Applied protection: same rule as applied entry orders
 
@@ -57,10 +64,19 @@ values; the frontend only chooses not to draw them.
 ### D5. Reading values
 
 Prices are read with the same decimal-string rule as the entry projection; Engine's own text such as
-`"105.150"` is read by value. A record whose needed values are missing or not decimal strings (or,
-for `open_trade_evaluated`, whose `close_signal.active` is not a boolean) is counted as unreadable
-and draws nothing. Quantity, order ids, `side`, `trade_cycle_id`, `requested_protection` are not
-read.
+`"105.150"` is read by value. The close signal and the protection levels are read separately:
+
+- `close_signal.active` that is a boolean drives the close marker on its own; it does not need
+  readable prices.
+- A missing or non-decimal `stop_price` (or a `take_price` that is neither null nor a decimal string)
+  gives no Stop and Take points on that bar, and the event is counted as unreadable.
+- An event whose `close_signal.active` is not a boolean gets no close marker and is counted as
+  unreadable; its readable prices are still drawn.
+- A `protection_applied` record without decimal-string trigger prices draws nothing and is counted as
+  unreadable.
+
+`trade_cycle_id` is read only to split lines into segments (D2); it is never shown. Quantity, order
+ids, `side` and `requested_protection` are not read.
 
 ### D6. Legend
 
