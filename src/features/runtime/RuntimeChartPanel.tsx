@@ -5,6 +5,8 @@ import {
   fetchJournalEvents,
   fetchJournalStrategyInstances,
   LIVE_ENTRY_EVALUATED,
+  TRADE_CYCLE_CLOSED,
+  TRADE_CYCLE_OPENED,
 } from "@/api/journal";
 import { RuntimeCandleChart } from "@/features/runtime/RuntimeCandleChart";
 import {
@@ -16,6 +18,7 @@ import {
 } from "@/features/runtime/runtimeMarket";
 import { buildAppliedOrders, type AppliedOrders } from "@/features/runtime/runtimeAppliedOrders";
 import { buildProjection, type Projection } from "@/features/runtime/runtimeProjection";
+import { buildTradeCycles, type TradeCycles } from "@/features/runtime/runtimeTradeCycles";
 
 const ERROR_TEXT: Record<RuntimeChartErrorKind, string> = {
   unsupported_timeframe: "This timeframe is not supported by the chart",
@@ -27,8 +30,20 @@ type Status = "loading" | "ready" | "error";
 type ProjectionPhase =
   | { kind: "idle" }
   | { kind: "loading" }
-  | { kind: "ready"; projection: Projection; applied: AppliedOrders }
+  | { kind: "ready"; projection: Projection; applied: AppliedOrders; cycles: TradeCycles }
   | { kind: "unavailable" };
+
+/** "2 closed (SL 1, TP 1)": only the reasons that occur. */
+function closedText(cycles: TradeCycles): string {
+  const parts = [
+    ["SL", cycles.closedStopLoss],
+    ["TP", cycles.closedTakeProfit],
+    ["other", cycles.closedOther],
+  ]
+    .filter(([, n]) => (n as number) > 0)
+    .map(([label, n]) => `${label} ${n}`);
+  return parts.length > 0 ? `${cycles.closedCount} closed (${parts.join(", ")})` : `${cycles.closedCount} closed`;
+}
 
 function formatUtc(ms: number): string {
   return `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC`;
@@ -119,10 +134,14 @@ export function RuntimeChartPanel({
         const known = instances.find((i) => i.strategy_instance_id === strategyInstanceId);
         const evaluations = answer.events.filter((e) => e.event_type === LIVE_ENTRY_EVALUATED);
         const applied = answer.events.filter((e) => e.event_type === ENTRY_PACKAGE_APPLIED);
+        const cycleEvents = answer.events.filter(
+          (e) => e.event_type === TRADE_CYCLE_OPENED || e.event_type === TRADE_CYCLE_CLOSED,
+        );
         setPhase({
           kind: "ready",
           projection: buildProjection(data.candles, evaluations, known ? known.first_bar_open_time_ms : null),
           applied: buildAppliedOrders(data.candles, applied),
+          cycles: buildTradeCycles(data.candles, cycleEvents, applied),
         });
       },
       () => {
@@ -137,6 +156,7 @@ export function RuntimeChartPanel({
 
   const projection = useMemo(() => (phase.kind === "ready" ? phase.projection : null), [phase]);
   const applied = useMemo(() => (phase.kind === "ready" ? phase.applied : null), [phase]);
+  const cycles = useMemo(() => (phase.kind === "ready" ? phase.cycles : null), [phase]);
 
   if (symbol === null || timeframe === null) {
     return (
@@ -200,7 +220,7 @@ export function RuntimeChartPanel({
         </div>
       )}
 
-      {data && data.candles.length > 0 && <RuntimeCandleChart candles={data.candles} projection={projection} applied={applied} />}
+      {data && data.candles.length > 0 && <RuntimeCandleChart candles={data.candles} projection={projection} applied={applied} cycles={cycles} />}
 
       {projection && (
         <div className="rt-legend" aria-label="Projection legend">
@@ -221,6 +241,16 @@ export function RuntimeChartPanel({
           )}
           {applied && applied.unreadableCount > 0 && (
             <span className="rt-meta sx-num">{applied.unreadableCount} unreadable applied</span>
+          )}
+          {cycles && cycles.openedCount + cycles.closedCount > 0 && (
+            <>
+              <span className="rt-swatch" data-mark="opened">Opened</span>
+              <span className="rt-meta sx-num">{cycles.openedCount} opened</span>
+              <span className="rt-meta sx-num">{closedText(cycles)}</span>
+            </>
+          )}
+          {cycles && cycles.unreadableCount > 0 && (
+            <span className="rt-meta sx-num">{cycles.unreadableCount} unreadable cycle events</span>
           )}
         </div>
       )}

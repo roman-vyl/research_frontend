@@ -1,8 +1,11 @@
 import {
   CandlestickSeries,
   createChart,
+  createSeriesMarkers,
   type IChartApi,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
+  type SeriesMarker,
   type Time,
 } from "lightweight-charts";
 import { useEffect, useRef } from "react";
@@ -12,6 +15,8 @@ import { AppliedSeriesView, type AppliedSeriesOptions } from "@/features/runtime
 import { ProjectionSeriesView, type ProjectionSeriesOptions } from "@/features/runtime/projectionSeries";
 import type { AppliedOrders } from "@/features/runtime/runtimeAppliedOrders";
 import type { Projection } from "@/features/runtime/runtimeProjection";
+import { closeLabel, closePosition, type TradeCycles } from "@/features/runtime/runtimeTradeCycles";
+import { tradeCycleData, TradeCycleSeriesView, type TradeCycleSeriesOptions } from "@/features/runtime/tradeCycleSeries";
 
 type Palette = { text: string; grid: string; up: string; down: string; muted: string };
 
@@ -45,27 +50,51 @@ function appliedColors(p: Palette): Partial<AppliedSeriesOptions> {
   return { entryColor: p.text, stopColor: p.down, takeColor: p.up };
 }
 
+function cycleColors(p: Palette): Partial<TradeCycleSeriesOptions> {
+  return { entryColor: p.text, stopColor: p.down, takeColor: p.up };
+}
+
+/** Close labels on the candles; SL and TP in the stop and take colours, any other reason muted. */
+function closeMarkers(cycles: TradeCycles | null, p: Palette): SeriesMarker<Time>[] {
+  return (cycles?.closes ?? []).map((mark) => ({
+    time: mark.time as Time,
+    position: closePosition(mark),
+    shape: "square",
+    size: 0.6,
+    color: mark.reason === "stop_loss" ? p.down : mark.reason === "take_profit" ? p.up : p.muted,
+    text: closeLabel(mark.reason),
+  }));
+}
+
 /**
  * One candlestick series plus ONE custom series that draws the three projection lines (entry, stop,
  * take) for the signal bars of `projection`; it breaks the lines wherever bars are not consecutive and
  * draws every point, so a one-bar signal is visible. Bars without a recorded evaluation are left empty.
  * A second custom series draws a ring per price of every applied order in `applied`, in the same
- * colours. The number of series is fixed. Pan and zoom are left to the library.
+ * colours. A third custom series draws trade cycles from `cycles`: a filled arrow at each fill price and,
+for each position period, the entry line and dashed stop and take; close labels are markers on the
+candles, never at a price. The number of series is fixed. Pan and zoom are left to the library.
  */
 export function RuntimeCandleChart({
   candles,
   projection = null,
   applied = null,
+  cycles = null,
 }: {
   candles: readonly ChartBar[];
   projection?: Projection | null;
   applied?: AppliedOrders | null;
+  cycles?: TradeCycles | null;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const projectionRef = useRef<ISeriesApi<"Custom", Time> | null>(null);
   const appliedRef = useRef<ISeriesApi<"Custom", Time> | null>(null);
+  const cyclesRef = useRef<ISeriesApi<"Custom", Time> | null>(null);
+  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const hostPaletteRef = useRef<Palette | null>(null);
+  const cyclesDataRef = useRef<TradeCycles | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -81,10 +110,15 @@ export function RuntimeCandleChart({
     });
     const projectionSeries = chart.addCustomSeries(new ProjectionSeriesView(), projectionColors(palette));
     const appliedSeries = chart.addCustomSeries(new AppliedSeriesView(), appliedColors(palette));
+    const cyclesSeries = chart.addCustomSeries(new TradeCycleSeriesView(), cycleColors(palette));
+    const markers = createSeriesMarkers(series, []);
+    hostPaletteRef.current = palette;
     chartRef.current = chart;
     seriesRef.current = series;
     projectionRef.current = projectionSeries;
     appliedRef.current = appliedSeries;
+    cyclesRef.current = cyclesSeries;
+    markersRef.current = markers;
 
     const resize = new ResizeObserver(() => chart.applyOptions({ width: host.clientWidth, height: host.clientHeight }));
     resize.observe(host);
@@ -95,6 +129,9 @@ export function RuntimeCandleChart({
       series.applyOptions({ upColor: p.up, downColor: p.down, wickUpColor: p.up, wickDownColor: p.down });
       projectionSeries.applyOptions(projectionColors(p));
       appliedSeries.applyOptions(appliedColors(p));
+      cyclesSeries.applyOptions(cycleColors(p));
+      hostPaletteRef.current = p;
+      markers.setMarkers(closeMarkers(cyclesDataRef.current, p));
     };
     scheme.addEventListener("change", restyle);
 
@@ -106,6 +143,9 @@ export function RuntimeCandleChart({
       seriesRef.current = null;
       projectionRef.current = null;
       appliedRef.current = null;
+      cyclesRef.current = null;
+      markersRef.current = null;
+      hostPaletteRef.current = null;
     };
   }, []);
 
@@ -130,6 +170,13 @@ export function RuntimeCandleChart({
   useEffect(() => {
     appliedRef.current?.setData((applied?.bars ?? []).map((b) => ({ time: b.time as Time, rings: b.rings })));
   }, [applied]);
+
+  useEffect(() => {
+    cyclesDataRef.current = cycles;
+    cyclesRef.current?.setData(cycles === null ? [] : tradeCycleData(candles.map((bar) => bar.time), cycles));
+    const palette = hostPaletteRef.current;
+    if (palette !== null) markersRef.current?.setMarkers(closeMarkers(cycles, palette));
+  }, [candles, cycles]);
 
   return <div ref={hostRef} className="rt-chart-host" role="img" aria-label="Candlestick chart" />;
 }
