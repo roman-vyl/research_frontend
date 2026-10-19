@@ -35,10 +35,17 @@ a bar outside the candle window is not drawn and not counted.
 
 ### D3. Cycle grouping and side
 
-Events are grouped by `payload.trade_cycle_id`. The side of a cycle comes from its last
-`entry_package_applied` of the answer (latest `occurred_at`, then greater `event_id`): stop above
-trigger is short, stop below trigger is long. Without a readable applied record the side is
-unknown. The panel does not guess the side from the projection.
+Events are grouped by `payload.trade_cycle_id`. No cycle event carries a side. V1 takes the
+explicit `desired_entry.side` (`long` or `short`) of the `live_entry_evaluated` on the same bar as
+the cycle's last `entry_package_applied` of the answer (latest `occurred_at`, then greater
+`event_id`; for several evaluations of that bar the projection's pick rule). This link is by bar,
+not by `trade_cycle_id`: Runtime journals the evaluation and then applies that same desired entry
+while processing one bar (strategy_runtime c9ad922, `orchestrator.py:117-118`,
+`entry_reconciliation_orchestrator/orchestrator.py:111`). The side is unknown when the cycle has no
+applied record in the answer, the evaluation of its bar is missing (the Runtime write is best
+effort, or the bar is outside the window) or has no `long`/`short` side. The side is never derived
+from prices (stop versus trigger or similar). A later stage replaces this link with an explicit
+`side` on `entry_package_applied` written by Runtime.
 
 ### D4. Open marker
 
@@ -80,4 +87,7 @@ split by reason ("SL k, TP j, other i"), and "N unreadable cycle events" when th
   is not visible.
 - A closure journaled without a bar (pending close recovery) may not be returned by a bar-range
   request; it is then neither drawn nor counted.
+- The side link by bar is a V1 frontend heuristic: if Runtime ever applied an entry that was
+  not the one evaluated on that bar, the arrow would show the wrong direction. Today the code
+  path does not allow it; the explicit Runtime field removes the dependency.
 - The 4 stale BTC instances have no cycle events; nothing changes for them.
