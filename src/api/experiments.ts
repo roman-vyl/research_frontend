@@ -33,6 +33,8 @@ export type ExperimentDimension = {
   values?: number[];
   /** Readable names of discrete values, keyed by the value as text (for example {"60": "1h"}). */
   labels?: Record<string, string>;
+  /** How the workbench shows this control: "buttons" or "slider"; left out, buttons when it has at most a few values. */
+  control?: "buttons" | "slider";
 };
 
 export type ExperimentMetric = {

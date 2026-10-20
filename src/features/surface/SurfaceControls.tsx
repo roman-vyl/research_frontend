@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { ExperimentResultSchema, ExperimentView } from "@/api/experiments";
+import type { ExperimentDimension, ExperimentResultSchema, ExperimentView } from "@/api/experiments";
 import { metricId } from "@/api/experiments";
 import { Segmented } from "@/features/surface/Segmented";
 import {
@@ -27,6 +27,13 @@ type Props = {
 
 /** Controls with at most this many values are a row of buttons; longer ones stay sliders. */
 const BUTTONS_MAX = 6;
+
+/** A dimension's `control` in the manifest wins; otherwise short controls are buttons. */
+function asButtons(dim: ExperimentDimension | undefined, count: number): boolean {
+  if (dim?.control === "buttons") return true;
+  if (dim?.control === "slider") return false;
+  return count <= BUTTONS_MAX;
+}
 const PLAY_MS = 1100;
 
 export function SurfaceControls({ schema, view, state, options, onMetric, onMode, onCompare, onControl }: Omit<Props, "outer">) {
@@ -126,6 +133,7 @@ export function SurfaceSliders({
         const index = Math.max(0, opts.findIndex((o) => o === cur));
         const unit = dim?.grids ? (dim.grids[grid ?? Object.keys(dim.grids)[0]]?.unit ?? "") : (dim?.unit ?? "");
         const ro = typeof cur === "number" ? controlReadout(schema, id, cur, grid, sl) : null;
+        const buttons = asButtons(dim, opts.length);
         if (dim?.optional) {
           const on = cur !== undefined;
           const available = (options[id]?.length ?? 0) > 0;
@@ -141,7 +149,7 @@ export function SurfaceSliders({
                 {dim.label ?? id}
                 {unit && <span className="sx-unit-tag">{unit}</span>}
               </label>
-              {on && opts.length <= BUTTONS_MAX ? (
+              {on && buttons ? (
                 <div className="sx-sl-row">
                   <div className="sx-segmented" role="group" aria-label={dim.label ?? id}>
                     {opts.map((o) => (
@@ -192,7 +200,7 @@ export function SurfaceSliders({
           );
         }
         return (
-          <div className={opts.length <= BUTTONS_MAX ? "sx-control-group sx-btns" : "sx-control-group"} key={id}>
+          <div className={buttons ? "sx-control-group sx-btns" : "sx-control-group"} key={id}>
             <span className="sx-control-label">
               {dim?.label ?? id}
               {unit && <span className="sx-unit-tag">{unit}</span>}
@@ -218,7 +226,7 @@ export function SurfaceSliders({
                   </svg>
                 </button>
               )}
-              {opts.length <= BUTTONS_MAX ? (
+              {buttons ? (
                 <div className="sx-segmented" role="group" aria-label={dim?.label ?? id}>
                   {opts.map((o) => (
                     <button key={o} type="button" aria-pressed={o === cur} onClick={() => onControl(id, o)}>
@@ -242,7 +250,7 @@ export function SurfaceSliders({
                 />
               )}
               <span className="sx-ro">
-                {opts.length <= BUTTONS_MAX ? null : ro?.main}
+                {buttons ? null : ro?.main}
                 {ro?.alt && <small>{ro.alt}</small>}
               </span>
             </div>
