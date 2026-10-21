@@ -135,6 +135,18 @@ export function ChartPanel() {
   chartTabActiveRef.current = activeTab === "chart";
 
   const containerRef = useRef<HTMLDivElement>(null);
+  // Double-click on the chart pane expands it over the whole browser tab; double-click or Esc restores.
+  const [chartExpanded, setChartExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!chartExpanded) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setChartExpanded(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [chartExpanded]);
+
   const panelBodyRef = useRef<HTMLDivElement>(null);
   const asideRef = useRef<HTMLDivElement>(null);
   const { asideWidth, maxAsideWidth, splitHandleProps } = useChartAsideResize(panelBodyRef);
@@ -605,6 +617,8 @@ export function ChartPanel() {
       selectBar(timeSec);
 
     });
+
+    chart.subscribeDblClick(() => setChartExpanded((v) => !v));
 
     const adapter = interactionAdapterRef.current;
 
@@ -1086,7 +1100,7 @@ export function ChartPanel() {
 
   return (
 
-    <section className="panel chart-panel">
+    <section className={chartExpanded ? "panel chart-panel chart-panel--expanded" : "panel chart-panel"}>
 
       <div className="panel__header">
 
@@ -1216,6 +1230,10 @@ export function ChartPanel() {
         <div className="chart-panel__main">
 
           <div ref={containerRef} className="chart-canvas" tabIndex={0} />
+
+          {chartExpanded && (
+            <p className="chart-panel__expanded-hint">Double-click or Esc to restore</p>
+          )}
 
           {selectedTradeId !== null && (
             <ChartTradeFocusNav

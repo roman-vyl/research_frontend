@@ -341,6 +341,35 @@ select {
   gap: 0.5rem;
 }
 
+/* Chart expanded over the whole browser tab (double-click on the chart; double-click or Esc restores). */
+.chart-panel--expanded .chart-panel__body {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  padding: 0.5rem;
+  background: #0f1419;
+}
+
+.chart-panel--expanded .chart-panel__main {
+  position: relative;
+}
+
+.chart-panel--expanded .chart-panel__split,
+.chart-panel--expanded .chart-panel__aside {
+  display: none;
+}
+
+.chart-panel__expanded-hint {
+  position: absolute;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  pointer-events: none;
+}
+
 .chart-panel__split {
   flex: 0 0 auto;
   align-self: stretch;
