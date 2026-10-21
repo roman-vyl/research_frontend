@@ -4,14 +4,15 @@
 Draw the Strategy Runtime desired entry (entry, stop, take) from the Central Journal as projection lines on the Runtime Dashboard candle chart, distinguishing no signal from no recorded evaluation.
 ## Requirements
 ### Requirement: Projection comes from the Central Journal
-The panel SHALL read the selected strategy's `live_entry_evaluated` events from the Central Journal
-(`GET /v1/events`, `event_type=live_entry_evaluated`, no `limit`) with one request for the bars of the candle window and SHALL NOT compute or infer a projection
-itself. It SHALL read only `desired_entry.planned_entry_price`, `initial_stop_price` and
+The panel SHALL read the selected strategy's events from the Central Journal (`GET /v1/events`,
+without `event_type`, no `limit`) with one request for the bars of the candle window and SHALL use
+only its `live_entry_evaluated` events for the projection. It SHALL NOT compute or infer a
+projection itself. It SHALL read only `desired_entry.planned_entry_price`, `initial_stop_price` and
 `initial_take_price` of each event.
 
 #### Scenario: Strategy selected
 - **WHEN** a strategy is selected
-- **THEN** the panel requests that strategy's events for the candle window and draws the lines from them
+- **THEN** the panel requests that strategy's events for the candle window and draws the lines from its `live_entry_evaluated` events
 
 #### Scenario: Unexpectedly truncated answer
 - **WHEN** the events answer has `truncated = true`
