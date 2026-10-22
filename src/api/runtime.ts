@@ -119,7 +119,23 @@ export async function setRuntimeStrategyEnabled(
     throw new RuntimeEnabledError(null);
   }
   if (res.ok) {
-    return (await res.json()) as RuntimeEnabledChanged;
+    // a 2xx counts as a switch only when its body confirms this instance and this value
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      throw new RuntimeEnabledError(null);
+    }
+    const b = body && typeof body === "object" ? (body as Partial<RuntimeEnabledChanged>) : null;
+    if (
+      !b ||
+      b.strategy_instance_id !== strategyInstanceId ||
+      b.enabled !== enabled ||
+      typeof b.cancelled_entry_order !== "boolean"
+    ) {
+      throw new RuntimeEnabledError(null);
+    }
+    return b as RuntimeEnabledChanged;
   }
   let reason: string | null = null;
   try {

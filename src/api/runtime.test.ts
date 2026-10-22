@@ -89,6 +89,25 @@ describe("setRuntimeStrategyEnabled", () => {
     expect(JSON.parse(init.body)).toEqual({ enabled: false });
   });
 
+  it.each([
+    ["wrong instance id", { strategy_instance_id: "s:other", enabled: false, cancelled_entry_order: false }],
+    ["wrong enabled value", { strategy_instance_id: "s:abc", enabled: true, cancelled_entry_order: false }],
+    ["missing cancelled_entry_order", { strategy_instance_id: "s:abc", enabled: false }],
+    ["non-boolean cancelled_entry_order", { strategy_instance_id: "s:abc", enabled: false, cancelled_entry_order: "no" }],
+    ["null body", null],
+    ["array body", []],
+  ])("rejects a 200 with %s", async (_name, body) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(200, JSON.stringify(body))));
+    expect(await reasonOf(setRuntimeStrategyEnabled("s:abc", false))).toBeNull();
+  });
+
+  it("rejects a 200 with a malformed or empty body", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(200, "<html>ok</html>")));
+    expect(await reasonOf(setRuntimeStrategyEnabled("s:abc", false))).toBeNull();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(200, null)));
+    expect(await reasonOf(setRuntimeStrategyEnabled("s:abc", false))).toBeNull();
+  });
+
   it("reads the reason only from an enabled_change_refused body", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(409, JSON.stringify({ status: "enabled_change_refused", reason: "position_open" }))));
     expect(await reasonOf(setRuntimeStrategyEnabled("s:abc", false))).toBe("position_open");
