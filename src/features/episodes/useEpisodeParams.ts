@@ -97,3 +97,11 @@ export function selectEpisodeParams(state: EpisodeParamsState, chosenRef: string
   if (state.refs.length === 1) return state.paramsByRef[state.refs[0]!] ?? null;
   return chosenRef !== null ? (state.paramsByRef[chosenRef] ?? null) : null;
 }
+
+/**
+ * Episode controls exist only for a strategy that declares episodes (or while Engine's plan loads or failed,
+ * so the state is visible). A strategy without `ema_stack_episode` shows no episode control at all.
+ */
+export function showEpisodeControls(state: EpisodeParamsState): boolean {
+  return state.refs.length > 0 || state.status === "loading" || state.status === "error";
+}

@@ -4,7 +4,7 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { selectEpisodeParams, useEpisodeParams } from "@/features/episodes/useEpisodeParams";
+import { selectEpisodeParams, showEpisodeControls, useEpisodeParams } from "@/features/episodes/useEpisodeParams";
 
 const fetchStrategyFeaturePlan = vi.fn();
 vi.mock("@/api/client", () => ({
@@ -54,5 +54,14 @@ describe("useEpisodeParams", () => {
     const { result } = renderHook(() => useEpisodeParams("s3", spec));
     await waitFor(() => expect(result.current.status).toBe("error"));
     expect(selectEpisodeParams(result.current, null)).toBeNull();
+  });
+
+  it("shows episode controls only with refs, or while the plan loads or failed; never for a spec without the section", () => {
+    const base = { refs: [], paramsByRef: {}, status: "ready" as const, error: null };
+    expect(showEpisodeControls({ ...base, status: "idle" })).toBe(false);
+    expect(showEpisodeControls(base)).toBe(false);
+    expect(showEpisodeControls({ ...base, refs: ["trend"] })).toBe(true);
+    expect(showEpisodeControls({ ...base, status: "loading" })).toBe(true);
+    expect(showEpisodeControls({ ...base, status: "error", error: "down" })).toBe(true);
   });
 });

@@ -95,7 +95,7 @@ import {
 import { EpisodeToolbar, type EpisodeSideChoice } from "@/features/episodes/EpisodeToolbar";
 import { EpisodeTouchesTable } from "@/features/episodes/EpisodeTouchesTable";
 import { allEpisodes, episodeAt } from "@/features/episodes/episodeLookup";
-import { selectEpisodeParams, useEpisodeParams } from "@/features/episodes/useEpisodeParams";
+import { selectEpisodeParams, showEpisodeControls, useEpisodeParams } from "@/features/episodes/useEpisodeParams";
 import { useEpisodeHistories } from "@/features/episodes/useEpisodeHistories";
 import { resolveChartTimeframeMs } from "@/features/chart/chartTimeframeMs";
 
@@ -324,9 +324,7 @@ export function ChartPanel() {
       : episodeParamsState.status === "error"
         ? `episode parameters unavailable: ${episodeParamsState.error ?? "error"}`
         : episodeParams === null
-          ? episodeParamsState.refs.length > 1
-            ? "choose an ema_stack_episode ref"
-            : "no anchor_stack or ema_stack_episode in strategy_spec"
+          ? "choose an ema_stack_episode ref"
           : episodeHistories.status === "loading"
         ? "loading episode history…"
         : episodeHistories.status === "error"
@@ -1166,17 +1164,19 @@ export function ChartPanel() {
         onShowTradeManagementExitMarkersChange={setChartShowTradeManagementExitMarkers}
       />
 
-      <EpisodeToolbar
-        layers={episodeLayers}
-        onLayersChange={setEpisodeLayers}
-        side={episodeSide}
-        onSideChange={setEpisodeSide}
-        status={episodeStatus}
-        refs={episodeParamsState.refs}
-        chosenRef={episodeRef}
-        onRefChange={setEpisodeRef}
-        params={episodeParams}
-      />
+      {showEpisodeControls(episodeParamsState) && (
+        <EpisodeToolbar
+          layers={episodeLayers}
+          onLayersChange={setEpisodeLayers}
+          side={episodeSide}
+          onSideChange={setEpisodeSide}
+          status={episodeStatus}
+          refs={episodeParamsState.refs}
+          chosenRef={episodeRef}
+          onRefChange={setEpisodeRef}
+          params={episodeParams}
+        />
+      )}
 
       {chartTradeFocusWarning && (
 
