@@ -29,4 +29,17 @@ describe("Runtime Dashboard static guards", () => {
     const forbidden = /(clearMarketResourceCache|\.reset\s*\()/;
     for (const s of sources) expect({ file: s.file, hit: forbidden.test(s.text) }).toEqual({ file: s.file, hit: false });
   });
+
+  it("sends only GET, and one PUT at the enabled route; never polls", () => {
+    for (const s of sources) {
+      const methods = [...s.text.matchAll(/method:\s*["'](\w+)["']/g)].map((m) => m[1]);
+      for (const m of methods) expect({ file: s.file, m: ["GET", "PUT"].includes(m!) }).toEqual({ file: s.file, m: true });
+      expect({ file: s.file, hit: /(setInterval|setTimeout)\s*\(/.test(s.text) }).toEqual({ file: s.file, hit: false });
+    }
+    const api = readFileSync(join(__dirname, "../../api/runtime.ts"), "utf8");
+    const puts = [...api.matchAll(/method:\s*"PUT"/g)];
+    expect(puts).toHaveLength(1);
+    expect(api).toMatch(/strategy-instances\/\$\{encodeURIComponent\(strategyInstanceId\)\}\/enabled`/);
+    expect(/method:\s*["'](POST|PATCH|DELETE)["']/.test(api)).toBe(false);
+  });
 });

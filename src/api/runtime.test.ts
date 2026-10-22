@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchRuntimeStrategyInstances, RuntimeListError, type RuntimeListErrorKind } from "@/api/runtime";
+import {
+  fetchRuntimeStrategyInstances,
+  RuntimeEnabledError,
+  RuntimeListError,
+  setRuntimeStrategyEnabled,
+  type RuntimeListErrorKind,
+} from "@/api/runtime";
 
 const LIST = {
   scanned_file_count: 0,
@@ -54,5 +60,53 @@ describe("fetchRuntimeStrategyInstances", () => {
   it("maps a network failure to unreachable", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
     expect(await kindOf(fetchRuntimeStrategyInstances())).toBe("unreachable");
+  });
+});
+
+describe("setRuntimeStrategyEnabled", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function reasonOf(promise: Promise<unknown>): Promise<string | null> {
+    try {
+      await promise;
+    } catch (err) {
+      expect(err).toBeInstanceOf(RuntimeEnabledError);
+      return (err as RuntimeEnabledError).reason;
+    }
+    throw new Error("expected a RuntimeEnabledError");
+  }
+
+  it("sends PUT with the enabled body to the instance's enabled route and returns the 200 body", async () => {
+    const ok = { strategy_instance_id: "s:abc", enabled: false, cancelled_entry_order: true };
+    const fetchMock = vi.fn().mockResolvedValue(respond(200, JSON.stringify(ok)));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(setRuntimeStrategyEnabled("s:abc", false)).resolves.toEqual(ok);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("/runtime-api/v1/strategy-instances/s%3Aabc/enabled");
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body)).toEqual({ enabled: false });
+  });
+
+  it("reads the reason only from an enabled_change_refused body", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(409, JSON.stringify({ status: "enabled_change_refused", reason: "position_open" }))));
+    expect(await reasonOf(setRuntimeStrategyEnabled("s:abc", false))).toBe("position_open");
+  });
+
+  it.each([
+    [400, JSON.stringify({ status: "rejected", reason: "invalid_webhook" })],
+    [503, JSON.stringify({ status: "not_ready", reason: "position_open" })],
+    [500, JSON.stringify({ status: "internal_error" })],
+    [502, "<html>bad gateway</html>"],
+    [502, null],
+  ])("gives no reason for a %s answer that is not a refusal", async (status, body) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(status, body)));
+    expect(await reasonOf(setRuntimeStrategyEnabled("s:abc", true))).toBeNull();
+  });
+
+  it("gives no reason on a network failure", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("down")));
+    expect(await reasonOf(setRuntimeStrategyEnabled("s:abc", true))).toBeNull();
   });
 });
