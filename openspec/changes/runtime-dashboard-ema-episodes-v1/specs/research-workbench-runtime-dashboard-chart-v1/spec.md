@@ -16,7 +16,7 @@ When a strategy is selected the panel SHALL request `GET /runtime-api/v1/strateg
 - **THEN** candles and trade layers stay, the line "Chart layers unavailable" and Retry are shown, and no EMA or episode request is sent
 
 ### Requirement: EMA lines of the strategy's stack
-For each entry of `ema_stack` whose `timeframe` equals the chart timeframe the chart SHALL draw one line over the candle window, with values from Research `GET /api/market/indicators/ema` for that `period` and window, coloured by role (fast, anchor, slow). The frontend SHALL NOT compute EMA values. Lines SHALL be stored for the session per symbol, timeframe and period; selecting another strategy of the same market SHALL request only periods not yet loaded, and Refresh SHALL request only the missing tail. An entry on another timeframe SHALL NOT be drawn and SHALL NOT trigger a request; the panel SHALL state this in one line. A control SHALL hide and show all EMA lines.
+For each entry of `ema_stack` whose `timeframe` is `"base"` or equals the chart timeframe, and whose `source` is `close`, the chart SHALL draw one line over the candle window, with values from Research `GET /api/market/indicators/ema` for that `period` and window, coloured by role (fast, anchor, slow). The frontend SHALL NOT compute EMA values. Lines SHALL be stored for the session per symbol, timeframe and period; selecting another strategy of the same market SHALL request only periods not yet loaded, and Refresh SHALL request only the missing tail. An entry on another concrete timeframe or with another source SHALL NOT be drawn and SHALL NOT trigger a request; the panel SHALL state this in one line. A control SHALL hide and show all EMA lines.
 
 #### Scenario: Strategy with a 200/500/1000 stack
 - **WHEN** a strategy of a 5m market with that stack is selected
@@ -34,8 +34,12 @@ For each entry of `ema_stack` whose `timeframe` equals the chart timeframe the c
 - **WHEN** the user presses Refresh and new bars exist
 - **THEN** each loaded line is extended by one request for its missing tail only
 
+#### Scenario: Base timeframe
+- **WHEN** a stack entry has timeframe `"base"` on a 5m chart
+- **THEN** it is drawn from the 5m series
+
 #### Scenario: Other timeframe
-- **WHEN** a stack entry has a timeframe different from the chart's
+- **WHEN** a stack entry has a concrete timeframe different from the chart's, or a source other than `close`
 - **THEN** no request is sent for it, no line is drawn, and one line of text names the entry
 
 #### Scenario: Hide lines
@@ -76,6 +80,44 @@ When `episodes` is not empty the chart SHALL show the Workbench episode layers (
 #### Scenario: Loading
 - **WHEN** the history is loading
 - **THEN** candles and EMA lines are drawn and "Loading episodes…" is shown
+
+### Requirement: History is loaded whole, display stays inside the window, panning loads nothing
+The episode history SHALL be loaded whole, but the chart SHALL draw episode elements and EMA line points only inside the 30-day candle window; nothing SHALL be drawn outside the candle times of the window. Every touch number, wave and false-break value drawn SHALL be the Engine's value; the frontend SHALL NOT recompute it. Panning or zooming the chart SHALL NOT widen the candle window and SHALL NOT send any candle, EMA or episode request.
+
+#### Scenario: Pan to the left edge
+- **WHEN** the user pans to the left edge of the window and beyond
+- **THEN** no candle, EMA or episode request is sent and nothing is drawn outside the window
+
+#### Scenario: Episode crossing the left edge
+- **WHEN** an episode started before the window
+- **THEN** only its part inside the window is drawn and its touch numbers equal the Engine's
+
+#### Scenario: Zoom
+- **WHEN** the user zooms in or out
+- **THEN** no request is sent
+
+### Requirement: Partial results are independent
+Candles and trade layers (projection lines, applied orders, cycles, open-trade lines) SHALL be independent of the EMA lines and episodes: no failure or delay of the layer configuration, any EMA or the episode history SHALL remove or reload them. Each EMA line SHALL load and fail on its own: a failed line SHALL NOT remove the lines already drawn and SHALL show its own error mark. Episodes SHALL load independently of EMA lines. Layers SHALL belong to the strategy that is selected: after selecting another strategy no line or episode of the previous strategy SHALL be visible under the new selection, even while the new layers are loading. Retry SHALL repeat only the data that is missing or failed (the layer configuration, the failed lines, the failed episode pages) and SHALL NOT reload candles or lines already loaded.
+
+#### Scenario: One EMA fails
+- **WHEN** the lines for periods 200 and 500 load and the line for 1000 fails
+- **THEN** lines 200 and 500 and the candles stay, line 1000 shows an error mark, and Retry requests only period 1000
+
+#### Scenario: Slow episodes
+- **WHEN** the episode history is still loading after 14 seconds
+- **THEN** candles and loaded lines stay drawn and "Loading episodes…" is shown
+
+#### Scenario: Episodes fail
+- **WHEN** an episode page request fails
+- **THEN** candles and lines stay, an episode error mark with Retry is shown, and Retry requests only the missing pages
+
+#### Scenario: Switch strategy
+- **WHEN** another strategy of the same market is selected while its layers load
+- **THEN** the previous strategy's lines and episodes are hidden at once and are not shown under the new selection
+
+#### Scenario: Configuration fails
+- **WHEN** the chart-layers request fails
+- **THEN** candles and trade layers stay unchanged and no line or episode of any strategy is shown
 
 ## MODIFIED Requirements
 
