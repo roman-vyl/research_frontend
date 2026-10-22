@@ -92,9 +92,10 @@ export function RuntimeDashboard() {
   const switchRefs = useRef(new Map<string, HTMLButtonElement>());
   const okRef = useRef<HTMLButtonElement | null>(null);
 
-  const load = useCallback(() => {
+  // `keepList`: a refresh after a switch re-reads in place; the cards stay mounted so the page keeps its scroll position
+  const load = useCallback((keepList = false) => {
     const mine = ++generation.current;
-    setPhase({ kind: "loading" });
+    if (!keepList) setPhase({ kind: "loading" });
     // the cards' "Last evaluated" line; a Journal failure leaves the cards as they were
     fetchJournalStrategyInstances().then(
       (rows) => {
@@ -135,7 +136,7 @@ export function RuntimeDashboard() {
       setRuntimeStrategyEnabled(s.strategy_instance_id, !s.enabled).then(
         () => {
           setSwitching((prev) => withoutId(prev, s.strategy_instance_id));
-          load();
+          load(true);
         },
         (err: unknown) => {
           setSwitching((prev) => withoutId(prev, s.strategy_instance_id));
@@ -175,7 +176,7 @@ export function RuntimeDashboard() {
             <h1>Runtime Dashboard</h1>
             <p className="sx-sub">Strategies registered in the Strategy Runtime catalog.</p>
           </div>
-          <button type="button" className="sx-fbtn" onClick={load} disabled={busy}>
+          <button type="button" className="sx-fbtn" onClick={() => load()} disabled={busy}>
             Refresh
           </button>
         </header>
@@ -201,7 +202,7 @@ export function RuntimeDashboard() {
             <p role="alert" className="sx-error">
               {ERROR_TEXT[phase.error]}
             </p>
-            <button type="button" className="sx-fbtn" onClick={load}>
+            <button type="button" className="sx-fbtn" onClick={() => load()}>
               Retry
             </button>
           </div>

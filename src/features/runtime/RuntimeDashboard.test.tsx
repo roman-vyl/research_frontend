@@ -273,6 +273,20 @@ describe("RuntimeDashboard", () => {
       expect(screen.queryByRole("alertdialog")).toBeNull();
     });
 
+    it("keeps the cards on screen while the list is re-read after a switch", async () => {
+      const { a, sw } = await open(true);
+      setRuntimeStrategyEnabled.mockResolvedValue({ strategy_instance_id: a.strategy_instance_id, enabled: false, cancelled_entry_order: false });
+      let release: (l: RuntimeStrategyList) => void = () => {};
+      fetchRuntimeStrategyInstances.mockReturnValue(new Promise<RuntimeStrategyList>((r) => (release = r)));
+      fireEvent.click(sw);
+      await waitFor(() => expect(fetchRuntimeStrategyInstances).toHaveBeenCalledTimes(2));
+      expect(screen.getByLabelText("Strategies")).toBeTruthy();
+      expect(screen.getAllByRole("switch")).toHaveLength(2);
+      expect(screen.queryByText("Loading…")).toBeNull();
+      release(list({ strategy_instances: [instance("a.json", false), instance("b.json", true)] }));
+      await waitFor(() => expect(screen.getByRole("switch", { name: /a$/ }).getAttribute("aria-checked")).toBe("false"));
+    });
+
     it("blocks only the card being switched while its request is in flight", async () => {
       const { sw } = await open(true);
       setRuntimeStrategyEnabled.mockReturnValue(new Promise(() => {}));
