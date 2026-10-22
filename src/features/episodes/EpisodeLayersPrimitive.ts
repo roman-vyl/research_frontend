@@ -427,10 +427,11 @@ class LayerRenderer implements IPrimitivePaneRenderer {
     target.useMediaCoordinateSpace(({ context, mediaSize }) => {
       if (scene.state.clipToCandles) {
         const scale = scene.chart.timeScale();
-        const left = scale.logicalToCoordinate(-0.5 as Logical);
-        const right = scale.logicalToCoordinate((scene.state.times.length - 0.5) as Logical);
-        const from = Math.max(left ?? 0, 0);
-        const to = Math.min(right ?? mediaSize.width, mediaSize.width);
+        const half = scale.options().barSpacing / 2;
+        const first = scale.logicalToCoordinate(0 as Logical);
+        const last = scale.logicalToCoordinate((scene.state.times.length - 1) as Logical);
+        const from = first === null ? 0 : Math.max(first - half, 0);
+        const to = last === null ? mediaSize.width : Math.min(last + half, mediaSize.width);
         context.beginPath();
         context.rect(from, 0, Math.max(to - from, 0), mediaSize.height);
         context.clip();
