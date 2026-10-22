@@ -11,7 +11,6 @@ import {
   type EpisodeHistoryKey,
 } from "@/features/episodes/episodeHistory";
 import {
-  anchorStackEpisodeParams,
   hasEpisodeSection,
   historyParamsFromEffective,
 } from "@/features/episodes/episodeParams";
@@ -139,14 +138,10 @@ describe("episode history loader", () => {
 describe("episode parameters", () => {
   const stack = { anchor_stack: { fast: { period: 200 }, anchor: { period: 500 }, slow: { period: 1000 } } };
 
-  it("falls back to anchor_stack without window keys when the strategy has no section", () => {
+  it("has no parameters for a strategy without the section: nothing is invented from anchor_stack", () => {
     expect(hasEpisodeSection(stack)).toBe(false);
-    expect(anchorStackEpisodeParams(stack)).toEqual({
-      fast_period: 200,
-      anchor_period: 500,
-      slow_period: 1000,
-    });
-    expect(anchorStackEpisodeParams({})).toBeNull();
+    const none: EpisodeParamsState = { refs: [], paramsByRef: {}, status: "ready", error: null };
+    expect(selectEpisodeParams(none, null)).toBeNull();
   });
 
   it("takes Engine's effective parameters of a ref, without history_bars", () => {
@@ -166,8 +161,8 @@ describe("episode parameters", () => {
   it("needs an explicit choice when there are several refs", () => {
     const a = { fast_period: 1, anchor_period: 2, slow_period: 3 };
     const b = { fast_period: 4, anchor_period: 5, slow_period: 6 };
-    const base: EpisodeParamsState = { refs: [], paramsByRef: {}, fallback: null, status: "ready", error: null };
-    expect(selectEpisodeParams({ ...base, fallback: a }, null)).toBe(a);
+    const base: EpisodeParamsState = { refs: [], paramsByRef: {}, status: "ready", error: null };
+    expect(selectEpisodeParams(base, null)).toBeNull();
     expect(selectEpisodeParams({ ...base, refs: ["x"], paramsByRef: { x: a } }, null)).toBe(a);
     const two = { ...base, refs: ["x", "y"], paramsByRef: { x: a, y: b } };
     expect(selectEpisodeParams(two, null)).toBeNull();
