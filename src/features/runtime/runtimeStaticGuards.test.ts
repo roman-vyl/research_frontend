@@ -45,4 +45,23 @@ describe("Runtime Dashboard static guards", () => {
     expect(api).toMatch(/\/v1\/strategy-instances\/\$\{encodeURIComponent\(strategyInstanceId\)\}`, \{\s*method: "DELETE"/);
     expect(/method:\s*["'](POST|PATCH)["']/.test(api)).toBe(false);
   });
+
+  it("does not use the timer-driven episode hook; episode and EMA data come only from the cached loaders", () => {
+    for (const s of sources) {
+      expect({ file: s.file, hit: /useEpisodeHistories/.test(s.text) }).toEqual({ file: s.file, hit: false });
+    }
+    const hook = sources.find((s) => s.file === "useRuntimeChartLayers.ts")!.text;
+    expect(hook).toMatch(/getEpisodeHistory/);
+    expect(hook).toMatch(/refreshCurrent/);
+  });
+
+  it("reads the layer plan with one GET and keeps the series count fixed", () => {
+    const api = readFileSync(join(__dirname, "../../api/runtime.ts"), "utf8");
+    expect([...api.matchAll(/chart-layers`,\s*\{\s*method:\s*"GET"/g)]).toHaveLength(1);
+    const chart = sources.find((s) => s.file === "RuntimeCandleChart.tsx")!.text;
+    expect([...chart.matchAll(/addCustomSeries\(/g)]).toHaveLength(4);
+    expect([...chart.matchAll(/addSeries\(/g)]).toHaveLength(2); // candles, and one line per stack role in a fixed map
+    expect([...chart.matchAll(/attachPrimitive\(/g)]).toHaveLength(1);
+    expect(chart).toMatch(/EMA_ROLES = \["fast", "anchor", "slow"\]/);
+  });
 });

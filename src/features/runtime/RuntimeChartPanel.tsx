@@ -10,6 +10,16 @@ import {
   TRADE_CYCLE_CLOSED,
   TRADE_CYCLE_OPENED,
 } from "@/api/journal";
+import { resolveChartTimeframeMs } from "@/features/chart/chartTimeframeMs";
+import type { EpisodeSide } from "@/api/episodes";
+import {
+  EMPTY_EPISODE_LAYERS_STATE,
+  type EpisodeLayersState,
+  type EpisodeLayerToggles,
+} from "@/features/episodes/EpisodeLayersPrimitive";
+import { EpisodeToolbar, type EpisodeSideChoice } from "@/features/episodes/EpisodeToolbar";
+import { EMA_ROLE_COLORS, selectedEpisode } from "@/features/runtime/runtimeLayers";
+import { useRuntimeChartLayers } from "@/features/runtime/useRuntimeChartLayers";
 import { RuntimeCandleChart } from "@/features/runtime/RuntimeCandleChart";
 import {
   loadRuntimeMarket,
@@ -83,6 +93,10 @@ export function RuntimeChartPanel({
   const [data, setData] = useState<RuntimeMarketData | null>(null);
   const [status, setStatus] = useState<Status>("loading");
   const [errorKind, setErrorKind] = useState<RuntimeChartErrorKind>("candles");
+  const [refreshToken, setRefreshToken] = useState(0);
+  const [emaVisible, setEmaVisible] = useState(true);
+  const [episodeToggles, setEpisodeToggles] = useState<EpisodeLayerToggles>(EMPTY_EPISODE_LAYERS_STATE.layers);
+  const [episodeSide, setEpisodeSide] = useState<EpisodeSideChoice>("both");
   const generation = useRef(0);
   const controller = useRef<AbortController | null>(null);
 
@@ -171,6 +185,37 @@ export function RuntimeChartPanel({
     };
   }, [data, strategyInstanceId, projectionRetry]);
 
+  const candles = useMemo(() => data?.candles ?? [], [data]);
+  const stackLayers = useRuntimeChartLayers({ strategyInstanceId, symbol, timeframe, candles, refreshToken });
+
+  const emaLines = useMemo(
+    () => (emaVisible ? stackLayers.ema.map((line) => ({ role: line.entry.role, points: line.points })) : []),
+    [emaVisible, stackLayers.ema],
+  );
+  const episodeState = useMemo<EpisodeLayersState | null>(() => {
+    if (timeframe === null || Object.keys(stackLayers.episodeHistories).length === 0) return null;
+    let stepSec = 300;
+    try {
+      stepSec = resolveChartTimeframeMs(timeframe) / 1000;
+    } catch {
+      // the chart refuses unsupported timeframes before this
+    }
+    const sides: EpisodeSide[] = episodeSide === "both" ? ["long", "short"] : [episodeSide];
+    return {
+      histories: stackLayers.episodeHistories,
+      sides,
+      layers: episodeToggles,
+      times: candles.map((c) => c.time),
+      stepSec,
+      highlight: null,
+      clipToCandles: true,
+    };
+  }, [stackLayers.episodeHistories, episodeSide, episodeToggles, candles, timeframe]);
+  const layerFailed =
+    stackLayers.configStatus === "error" ||
+    stackLayers.episodeStatus === "error" ||
+    stackLayers.ema.some((line) => line.status === "error");
+
   const projection = useMemo(() => (phase.kind === "ready" ? phase.projection : null), [phase]);
   const applied = useMemo(() => (phase.kind === "ready" ? phase.applied : null), [phase]);
   const cycles = useMemo(() => (phase.kind === "ready" ? phase.cycles : null), [phase]);
@@ -185,7 +230,10 @@ export function RuntimeChartPanel({
     );
   }
 
-  const reload = () => load(symbol, timeframe);
+  const reload = () => {
+    load(symbol, timeframe);
+    setRefreshToken((n) => n + 1);
+  };
   const busy = status === "loading";
 
   return (
@@ -247,7 +295,78 @@ export function RuntimeChartPanel({
           cycles={cycles}
           openTrade={openTrade}
           protection={protection}
+          ema={emaLines}
+          episodes={episodeState}
         />
+      )}
+
+      {strategyInstanceId !== null && (
+        <div className="rt-layers" aria-label="Strategy layers">
+          {stackLayers.configStatus === "loading" && <span className="rt-meta">Loading layers…</span>}
+          {stackLayers.configStatus === "error" && (
+            <p role="alert" className="sx-error">
+              Chart layers unavailable
+            </p>
+          )}
+          {stackLayers.ema.length > 0 && (
+            <>
+              <button
+                type="button"
+                className="sx-fbtn"
+                aria-pressed={emaVisible}
+                aria-label={emaVisible ? "Hide EMA lines" : "Show EMA lines"}
+                onClick={() => setEmaVisible((v) => !v)}
+              >
+                EMA
+              </button>
+              {stackLayers.ema.map((line) => (
+                <span
+                  key={line.entry.role}
+                  className="rt-swatch"
+                  data-ema={line.entry.role}
+                  style={{ ["--rt-ema" as string]: EMA_ROLE_COLORS[line.entry.role] }}
+                >
+                  EMA {line.entry.period}
+                  {line.status === "loading" && " …"}
+                  {line.status === "error" && " (unavailable)"}
+                </span>
+              ))}
+            </>
+          )}
+          {stackLayers.skipped.map((text) => (
+            <span key={text} className="rt-meta">
+              {text}
+            </span>
+          ))}
+          {stackLayers.episodeStatus === "loading" && <span className="rt-meta">Loading episodes…</span>}
+          {stackLayers.episodeStatus === "error" && (
+            <p role="alert" className="sx-error">
+              Episodes unavailable
+            </p>
+          )}
+          {layerFailed && (
+            <button type="button" className="sx-fbtn" aria-label="Retry layers" onClick={stackLayers.retry}>
+              Retry
+            </button>
+          )}
+        </div>
+      )}
+
+      {stackLayers.episodeRefs.length > 0 && (
+        <>
+          <EpisodeToolbar
+            layers={episodeToggles}
+            onLayersChange={setEpisodeToggles}
+            side={episodeSide}
+            onSideChange={setEpisodeSide}
+            status={null}
+            refs={stackLayers.episodeRefs}
+            chosenRef={stackLayers.chosenRef}
+            onRefChange={stackLayers.setChosenRef}
+            params={selectedEpisode(stackLayers.layers, stackLayers.chosenRef)?.params ?? null}
+          />
+          {stackLayers.needsChoice && <p className="sx-note">Choose an episode section</p>}
+        </>
       )}
 
       {projection && (

@@ -213,3 +213,111 @@ export async function deleteRuntimeStrategy(strategyInstanceId: string): Promise
   }
   throw new RuntimeDeleteError(reason);
 }
+
+export type RuntimeEmaStackEntry = {
+  role: "fast" | "anchor" | "slow";
+  /** As Engine's plan states it: the literal "base" (the strategy's base timeframe) or a concrete timeframe. */
+  timeframe: string;
+  period: number;
+  source: string;
+};
+
+export type RuntimeEpisodeEntry = {
+  episode_ref: string;
+  /** Engine's effective episode parameters, unchanged. */
+  params: Record<string, number>;
+};
+
+export type RuntimeChartLayers = {
+  strategy_instance_id: string;
+  ema_stack: RuntimeEmaStackEntry[];
+  episodes: RuntimeEpisodeEntry[];
+};
+
+/** A chart-layers read that did not give a valid answer; `reason` is Runtime's own code when it sent one. */
+export class RuntimeChartLayersError extends Error {
+  readonly reason: string | null;
+
+  constructor(reason: string | null) {
+    super(reason ?? "unexpected_answer");
+    this.name = "RuntimeChartLayersError";
+    this.reason = reason;
+  }
+}
+
+const STACK_ROLES = ["fast", "anchor", "slow"] as const;
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Strict check of a 200 body: anything not exactly the documented shape is not an answer. */
+function parseChartLayers(body: unknown, strategyInstanceId: string): RuntimeChartLayers | null {
+  if (!isObject(body) || body.strategy_instance_id !== strategyInstanceId) return null;
+  const { ema_stack: stack, episodes } = body;
+  if (!Array.isArray(stack) || stack.length !== STACK_ROLES.length || !Array.isArray(episodes)) return null;
+  const emaStack: RuntimeEmaStackEntry[] = [];
+  for (const [index, raw] of stack.entries()) {
+    if (!isObject(raw)) return null;
+    const { role, timeframe, period, source } = raw;
+    if (
+      role !== STACK_ROLES[index] ||
+      typeof timeframe !== "string" ||
+      timeframe === "" ||
+      typeof period !== "number" ||
+      !Number.isInteger(period) ||
+      period < 1 ||
+      typeof source !== "string"
+    ) {
+      return null;
+    }
+    emaStack.push({ role: STACK_ROLES[index]!, timeframe, period, source });
+  }
+  const parsedEpisodes: RuntimeEpisodeEntry[] = [];
+  for (const raw of episodes) {
+    if (!isObject(raw) || typeof raw.episode_ref !== "string" || !isObject(raw.params)) return null;
+    const params: Record<string, number> = {};
+    for (const [key, value] of Object.entries(raw.params)) {
+      if (typeof value !== "number" || !Number.isFinite(value)) return null;
+      params[key] = value;
+    }
+    parsedEpisodes.push({ episode_ref: raw.episode_ref, params });
+  }
+  return { strategy_instance_id: strategyInstanceId, ema_stack: emaStack, episodes: parsedEpisodes };
+}
+
+/**
+ * The EMA stack and the episode parameters one strategy uses, as Engine's feature plan resolves them
+ * (`GET /v1/strategy-instances/{id}/chart-layers`). Read only; sent when a strategy is selected and on Refresh.
+ */
+export async function fetchRuntimeChartLayers(
+  strategyInstanceId: string,
+  signal?: AbortSignal,
+): Promise<RuntimeChartLayers> {
+  let res: Response;
+  try {
+    res = await fetch(
+      `${RUNTIME_API_BASE}/v1/strategy-instances/${encodeURIComponent(strategyInstanceId)}/chart-layers`,
+      { method: "GET", signal },
+    );
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new RuntimeChartLayersError(null);
+  }
+  let body: unknown = null;
+  try {
+    body = await res.json();
+  } catch {
+    // not JSON
+  }
+  if (res.ok) {
+    const layers = parseChartLayers(body, strategyInstanceId);
+    if (layers === null) throw new RuntimeChartLayersError(null);
+    return layers;
+  }
+  let reason: string | null = null;
+  if (isObject(body) && body.status === "chart_layers_refused" && typeof body.reason === "string") {
+    reason = body.reason;
+  }
+  throw new RuntimeChartLayersError(reason);
+}
