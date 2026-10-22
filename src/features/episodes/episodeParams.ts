@@ -1,6 +1,5 @@
 import type { JsonObject } from "@/api/types";
 import type { EpisodeParams } from "@/api/episodes";
-import { anchorStackPeriodsFromStrategySpec } from "@/features/chart/anchorStackFromSpec";
 
 const HISTORY_KEYS = [
   "fast_period",
@@ -17,16 +16,6 @@ function isObject(value: unknown): value is JsonObject {
 /** True when the strategy declares `ema_stack_episode`: its parameters then come from Engine. */
 export function hasEpisodeSection(strategySpec: JsonObject): boolean {
   return isObject(strategySpec.ema_stack_episode);
-}
-
-/** Fallback for a strategy without the episode section: the `anchor_stack` periods, Engine's window. */
-export function anchorStackEpisodeParams(strategySpec: JsonObject): EpisodeParams | null {
-  try {
-    const stack = anchorStackPeriodsFromStrategySpec(strategySpec);
-    return { fast_period: stack.fast, anchor_period: stack.anchor, slow_period: stack.slow };
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -50,18 +39,4 @@ export function episodeParamsKey(params: EpisodeParams): string {
     params.window_bars ?? "",
     params.break_bars ?? "",
   ].join("/");
-}
-
-export type EpisodeWindowOverride = { window_bars?: number; break_bars?: number };
-
-/**
- * The strategy's episode parameters with the window values the user typed in the episode toolbar.
- * Only what the user set is replaced; Engine applies its own defaults to anything still missing.
- */
-export function withEpisodeOverride(
-  params: EpisodeParams | null,
-  override: EpisodeWindowOverride,
-): EpisodeParams | null {
-  if (!params) return null;
-  return { ...params, ...override };
 }

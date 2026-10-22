@@ -96,7 +96,6 @@ import { EpisodeToolbar, type EpisodeSideChoice } from "@/features/episodes/Epis
 import { EpisodeTouchesTable } from "@/features/episodes/EpisodeTouchesTable";
 import { allEpisodes, episodeAt } from "@/features/episodes/episodeLookup";
 import { selectEpisodeParams, useEpisodeParams } from "@/features/episodes/useEpisodeParams";
-import { episodeParamsKey, type EpisodeWindowOverride, withEpisodeOverride } from "@/features/episodes/episodeParams";
 import { useEpisodeHistories } from "@/features/episodes/useEpisodeHistories";
 import { resolveChartTimeframeMs } from "@/features/chart/chartTimeframeMs";
 
@@ -296,17 +295,7 @@ export function ChartPanel() {
     runDetail?.strategy_spec ?? null,
   );
   const strategyEpisodeParams = selectEpisodeParams(episodeParamsState, episodeRef);
-  const episodeStrategyKey = strategyEpisodeParams ? episodeParamsKey(strategyEpisodeParams) : null;
-  // The typed window applies only to the strategy parameters it was typed for (run and ref).
-  const [episodeOverrideEntry, setEpisodeOverrideEntry] = useState<{
-    key: string | null;
-    override: EpisodeWindowOverride;
-  }>({ key: null, override: {} });
-  const episodeOverride =
-    episodeOverrideEntry.key === episodeStrategyKey ? episodeOverrideEntry.override : {};
-  const setEpisodeOverride = (override: EpisodeWindowOverride) =>
-    setEpisodeOverrideEntry({ key: episodeStrategyKey, override });
-  const episodeParams = withEpisodeOverride(strategyEpisodeParams, episodeOverride);
+  const episodeParams = strategyEpisodeParams;
   const episodeTicker = runDetail?.result.strategy_evaluation.market.ticker ?? null;
   const episodeHistories = useEpisodeHistories(episodeTicker, chartTimeframe, episodeParams);
   const episodeSides = useMemo<EpisodeSide[]>(
@@ -1187,8 +1176,6 @@ export function ChartPanel() {
         chosenRef={episodeRef}
         onRefChange={setEpisodeRef}
         params={episodeParams}
-        override={episodeOverride}
-        onOverrideChange={setEpisodeOverride}
       />
 
       {chartTradeFocusWarning && (
