@@ -18,7 +18,7 @@ import {
   type EpisodeLayerToggles,
 } from "@/features/episodes/EpisodeLayersPrimitive";
 import { EpisodeToolbar, type EpisodeSideChoice } from "@/features/episodes/EpisodeToolbar";
-import { EMA_ROLE_COLORS } from "@/features/runtime/runtimeLayers";
+import { EMA_ROLE_COLORS, selectedEpisode } from "@/features/runtime/runtimeLayers";
 import { useRuntimeChartLayers } from "@/features/runtime/useRuntimeChartLayers";
 import { RuntimeCandleChart } from "@/features/runtime/RuntimeCandleChart";
 import {
@@ -363,9 +363,7 @@ export function RuntimeChartPanel({
             refs={stackLayers.episodeRefs}
             chosenRef={stackLayers.chosenRef}
             onRefChange={stackLayers.setChosenRef}
-            params={null}
-            override={{}}
-            onOverrideChange={() => undefined}
+            params={selectedEpisode(stackLayers.layers, stackLayers.chosenRef)?.params ?? null}
           />
           {stackLayers.needsChoice && <p className="sx-note">Choose an episode section</p>}
         </>

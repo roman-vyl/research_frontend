@@ -173,6 +173,10 @@ describe("Runtime chart layers", () => {
     await waitFor(() => expect(screen.getByTestId("chart").getAttribute("data-episode-sides")).toBe("long,short"));
     expect(fetchEmaStackEpisodeHistory).toHaveBeenCalledTimes(2);
     const sent = fetchEmaStackEpisodeHistory.mock.calls.map((c) => c[0] as EpisodeHistoryRequest);
+    expect(screen.getByLabelText("Episode parameters from the strategy").textContent).toBe(
+      "From the strategy: window 24 bars, break 24 bars",
+    );
+    expect(screen.queryByLabelText("Window")).toBeNull();
     expect(sent.every((b) => b.episode.fast_period === 20 && b.episode.window_bars === 24 && !("history_bars" in b.episode))).toBe(true);
   });
 

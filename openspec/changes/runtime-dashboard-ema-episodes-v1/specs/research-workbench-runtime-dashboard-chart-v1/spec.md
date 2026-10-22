@@ -53,6 +53,11 @@ When `episodes` is not empty the chart SHALL show the Workbench episode layers (
 - **WHEN** a strategy whose `episodes` holds one entry is selected
 - **THEN** the history of both sides is requested for that entry's parameters until `next_before_start_ms` is null, and the layers are drawn
 
+#### Scenario: Strategy values are visible
+
+- **WHEN** the chosen entry has `window_bars` 24 and `break_bars` 24
+- **THEN** the episode toolbar SHALL show "From the strategy: window 24 bars, break 24 bars" as read-only text and SHALL have no input that changes them.
+
 #### Scenario: Episode cut by the window
 - **WHEN** the history contains an episode that starts before the 30-day window
 - **THEN** the chart draws the part inside the window and the touch numbers equal the Engine's
