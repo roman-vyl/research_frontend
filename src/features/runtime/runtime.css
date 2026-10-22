@@ -62,3 +62,6 @@
 .sx .rt-trash:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
 .sx .rt-dialog-actions{ display:flex; justify-content:flex-end; gap:8px; }
 .sx .rt-danger{ border-color:currentColor; }
+.sx .rt-layers{ display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; }
+.sx .rt-layers p{ margin:0; font-size:12.5px; }
+.sx .rt-swatch[data-ema]::before{ content:""; display:inline-block; width:14px; height:0; border-top:2px solid var(--rt-ema); margin-right:0; vertical-align:middle; }

@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   deleteRuntimeStrategy,
+  fetchRuntimeChartLayers,
   fetchRuntimeStrategyInstances,
+  RuntimeChartLayersError,
   RuntimeDeleteError,
   RuntimeEnabledError,
   RuntimeListError,
@@ -196,5 +198,50 @@ describe("deleteRuntimeStrategy", () => {
   it("gives no reason on a network failure", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("down")));
     expect(await reasonOf(deleteRuntimeStrategy("s:abc"))).toBeNull();
+  });
+});
+
+describe("fetchRuntimeChartLayers", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const BODY = {
+    strategy_instance_id: "s:abc",
+    ema_stack: [
+      { role: "fast", timeframe: "base", period: 20, source: "close" },
+      { role: "anchor", timeframe: "base", period: 50, source: "close" },
+      { role: "slow", timeframe: "base", period: 200, source: "close" },
+    ],
+    episodes: [{ episode_ref: "e1", params: { fast_period: 20, window_bars: 24 } }],
+  };
+
+  it("sends one GET to the chart-layers path and returns the checked body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(respond(200, JSON.stringify(BODY)));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await fetchRuntimeChartLayers("s:abc")).toEqual(BODY);
+    expect(fetchMock).toHaveBeenCalledWith("/runtime-api/v1/strategy-instances/s%3Aabc/chart-layers", {
+      method: "GET",
+      signal: undefined,
+    });
+  });
+
+  it.each([
+    ["wrong instance", { ...BODY, strategy_instance_id: "other" }],
+    ["two stack entries", { ...BODY, ema_stack: BODY.ema_stack.slice(0, 2) }],
+    ["roles out of order", { ...BODY, ema_stack: [...BODY.ema_stack].reverse() }],
+    ["period zero", { ...BODY, ema_stack: [{ ...BODY.ema_stack[0], period: 0 }, ...BODY.ema_stack.slice(1)] }],
+    ["episodes missing", { ...BODY, episodes: undefined }],
+    ["param not a number", { ...BODY, episodes: [{ episode_ref: "e1", params: { fast_period: "20" } }] }],
+  ])("refuses a 200 body that is not the documented shape: %s", async (_name, body) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(200, JSON.stringify(body))));
+    await expect(fetchRuntimeChartLayers("s:abc")).rejects.toBeInstanceOf(RuntimeChartLayersError);
+  });
+
+  it("carries Runtime's own reason from a refusal body and none from anything else", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(502, JSON.stringify({ status: "chart_layers_refused", reason: "engine_unavailable" }))));
+    await expect(fetchRuntimeChartLayers("s:abc")).rejects.toMatchObject({ reason: "engine_unavailable" });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(502, JSON.stringify({ reason: "x" }))));
+    await expect(fetchRuntimeChartLayers("s:abc")).rejects.toMatchObject({ reason: null });
   });
 });

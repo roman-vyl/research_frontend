@@ -1,6 +1,7 @@
 import {
   CandlestickSeries,
   createChart,
+  LineSeries,
   createSeriesMarkers,
   type IChartApi,
   type ISeriesApi,
@@ -11,6 +12,12 @@ import {
 import { useEffect, useRef } from "react";
 
 import type { ChartBar } from "@/api/types";
+import {
+  EMPTY_EPISODE_LAYERS_STATE,
+  EpisodeLayersPrimitive,
+  type EpisodeLayersState,
+} from "@/features/episodes/EpisodeLayersPrimitive";
+import { EMA_ROLE_COLORS } from "@/features/runtime/runtimeLayers";
 import { AppliedSeriesView, type AppliedSeriesOptions } from "@/features/runtime/appliedSeries";
 import { ProjectionSeriesView, type ProjectionSeriesOptions } from "@/features/runtime/projectionSeries";
 import { OpenTradeSeriesView, type OpenTradeSeriesOptions } from "@/features/runtime/openTradeSeries";
@@ -93,6 +100,11 @@ function ringData(applied: AppliedOrders | null, protection: AppliedProtection |
   return [...byTime.entries()].sort(([a], [b]) => a - b).map(([time, rings]) => ({ time: time as Time, rings }));
 }
 
+const EMA_ROLES = ["fast", "anchor", "slow"] as const;
+export type EmaRole = (typeof EMA_ROLES)[number];
+/** Points of one EMA line of the stack, already inside the candle window. */
+export type EmaLineData = { role: EmaRole; points: readonly { time: number; value: number }[] };
+
 /**
  * One candlestick series plus ONE custom series that draws the three projection lines (entry, stop,
  * take) for the signal bars of `projection`; it breaks the lines wherever bars are not consecutive and
@@ -102,7 +114,9 @@ function ringData(applied: AppliedOrders | null, protection: AppliedProtection |
 for each position period, the entry line and dashed stop and take; close labels are markers on the
 candles, never at a price. A fourth custom series draws Engine's open-position Stop and Take lines from
 `openTrade`, broken between trades; its active close signals are "close" markers on the candles.
-Confirmed protection rings from `protection` join the applied ring series. The number of series is fixed. Pan and zoom are left to the library.
+Confirmed protection rings from `protection` join the applied ring series. Three line series draw the EMA stack
+(one per role, empty when not given) and one primitive on the candles draws the EMA stack episodes, clipped to the candle
+window. The number of series is fixed. Pan and zoom are left to the library.
  */
 export function RuntimeCandleChart({
   candles,
@@ -111,6 +125,8 @@ export function RuntimeCandleChart({
   cycles = null,
   openTrade = null,
   protection = null,
+  ema = [],
+  episodes = null,
 }: {
   candles: readonly ChartBar[];
   projection?: Projection | null;
@@ -118,6 +134,9 @@ export function RuntimeCandleChart({
   cycles?: TradeCycles | null;
   openTrade?: OpenTradeProjection | null;
   protection?: AppliedProtection | null;
+  ema?: readonly EmaLineData[];
+  /** Episode layers state (`clipToCandles` is forced on); null draws nothing. */
+  episodes?: EpisodeLayersState | null;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -126,6 +145,8 @@ export function RuntimeCandleChart({
   const appliedRef = useRef<ISeriesApi<"Custom", Time> | null>(null);
   const cyclesRef = useRef<ISeriesApi<"Custom", Time> | null>(null);
   const openTradeRef = useRef<ISeriesApi<"Custom", Time> | null>(null);
+  const emaSeriesRef = useRef<Record<EmaRole, ISeriesApi<"Line", Time>> | null>(null);
+  const episodesRef = useRef<EpisodeLayersPrimitive | null>(null);
   const openTradeDataRef = useRef<OpenTradeProjection | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const hostPaletteRef = useRef<Palette | null>(null);
@@ -147,7 +168,23 @@ export function RuntimeCandleChart({
     const appliedSeries = chart.addCustomSeries(new AppliedSeriesView(), appliedColors(palette));
     const cyclesSeries = chart.addCustomSeries(new TradeCycleSeriesView(), cycleColors(palette));
     const openTradeSeries = chart.addCustomSeries(new OpenTradeSeriesView(), openTradeColors(palette));
+    const emaSeries = Object.fromEntries(
+      EMA_ROLES.map((role) => [
+        role,
+        chart.addSeries(LineSeries, {
+          color: EMA_ROLE_COLORS[role],
+          lineWidth: 1,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        }),
+      ]),
+    ) as Record<EmaRole, ISeriesApi<"Line", Time>>;
+    const episodesPrimitive = new EpisodeLayersPrimitive();
+    series.attachPrimitive(episodesPrimitive);
     const markers = createSeriesMarkers(series, []);
+    emaSeriesRef.current = emaSeries;
+    episodesRef.current = episodesPrimitive;
     hostPaletteRef.current = palette;
     chartRef.current = chart;
     seriesRef.current = series;
@@ -184,9 +221,24 @@ export function RuntimeCandleChart({
       cyclesRef.current = null;
       openTradeRef.current = null;
       markersRef.current = null;
+      emaSeriesRef.current = null;
+      episodesRef.current = null;
       hostPaletteRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const lines = emaSeriesRef.current;
+    if (lines === null) return;
+    for (const role of EMA_ROLES) {
+      const given = ema.find((line) => line.role === role);
+      lines[role].setData((given?.points ?? []).map((p) => ({ time: p.time as Time, value: p.value })));
+    }
+  }, [ema]);
+
+  useEffect(() => {
+    episodesRef.current?.setState(episodes === null ? EMPTY_EPISODE_LAYERS_STATE : { ...episodes, clipToCandles: true });
+  }, [episodes]);
 
   useEffect(() => {
     seriesRef.current?.setData(
