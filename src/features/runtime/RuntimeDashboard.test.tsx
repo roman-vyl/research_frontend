@@ -4,11 +4,12 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { RuntimeEnabledError, RuntimeListError, type RuntimeStrategyInstance, type RuntimeStrategyList } from "@/api/runtime";
+import { RuntimeDeleteError, RuntimeEnabledError, RuntimeListError, type RuntimeStrategyInstance, type RuntimeStrategyList } from "@/api/runtime";
 import { RuntimeDashboard } from "@/features/runtime/RuntimeDashboard";
 
 const fetchRuntimeStrategyInstances = vi.fn();
 const setRuntimeStrategyEnabled = vi.fn();
+const deleteRuntimeStrategy = vi.fn();
 const fetchJournalEvents = vi.fn();
 const fetchJournalStrategyInstances = vi.fn();
 
@@ -24,6 +25,7 @@ vi.mock("@/api/runtime", async (importOriginal) => {
     ...actual,
     fetchRuntimeStrategyInstances: (...a: unknown[]) => fetchRuntimeStrategyInstances(...a),
     setRuntimeStrategyEnabled: (...a: unknown[]) => setRuntimeStrategyEnabled(...a),
+    deleteRuntimeStrategy: (...a: unknown[]) => deleteRuntimeStrategy(...a),
   };
 });
 
@@ -64,6 +66,7 @@ describe("RuntimeDashboard", () => {
   beforeEach(() => {
     fetchRuntimeStrategyInstances.mockReset();
     setRuntimeStrategyEnabled.mockReset();
+    deleteRuntimeStrategy.mockReset();
     fetchJournalEvents.mockReset();
     fetchJournalStrategyInstances.mockReset();
     fetchJournalStrategyInstances.mockResolvedValue([]);
@@ -217,7 +220,12 @@ describe("RuntimeDashboard", () => {
     await screen.findByLabelText("Strategies");
     const controls = screen
       .getAllByRole("button")
-      .filter((b) => !b.hasAttribute("aria-pressed") && b.getAttribute("role") !== "switch");
+      .filter(
+        (b) =>
+          !b.hasAttribute("aria-pressed") &&
+          b.getAttribute("role") !== "switch" &&
+          !(b.getAttribute("aria-label") ?? "").startsWith("Delete: "),
+      );
     expect(controls.map((b) => b.textContent)).toEqual(["Refresh"]);
     expect(screen.getAllByRole("button", { pressed: false })).toHaveLength(33);
     expect(screen.queryByRole("checkbox")).toBeNull();
@@ -337,6 +345,172 @@ describe("RuntimeDashboard", () => {
       fireEvent.keyDown(dialog, { key: "Escape" });
       expect(screen.queryByRole("alertdialog")).toBeNull();
       expect(document.activeElement).toBe(sw);
+    });
+  });
+
+  describe("delete button", () => {
+    const REASON_TEXT: Record<string, string> = {
+      still_enabled: "This strategy is enabled. Disable it first.",
+      position_open: "This strategy has an open position and cannot be deleted.",
+      recovery_pending: "This strategy is recovering an order or position and cannot be deleted yet.",
+      cycle_not_settled: "This strategy's trade cycle has just ended. Try again after the next bar.",
+      cancel_not_confirmed: "The entry order could not be confirmed cancelled on the exchange. The strategy was not deleted.",
+      abi_unavailable: "The exchange gateway did not answer. The strategy was not deleted.",
+      instance_busy: "The strategy is processing a bar. Try again in a moment.",
+      file_changed: "The strategy file was changed while deleting. Nothing was changed. Try again.",
+      trash_name_taken: "Runtime could not move the strategy file to the trash. Nothing was changed. Try again.",
+      move_failed: "Runtime could not move the strategy file to the trash. Nothing was changed. Try again.",
+      strategy_instance_not_found: "Runtime no longer has this strategy. Refresh the list.",
+      catalog_unavailable: "Runtime cannot read the strategy files. Nothing was changed.",
+      something_new: "Runtime did not answer correctly. Nothing was changed.",
+    };
+
+    async function open() {
+      const a = instance("a.json", false);
+      const b = instance("b.json", true);
+      fetchRuntimeStrategyInstances.mockResolvedValue(list({ strategy_instances: [a, b] }));
+      render(<RuntimeDashboard />);
+      await screen.findByLabelText("Strategies");
+      return { a, b, trash: screen.getByRole("button", { name: "Delete: a" }) as HTMLButtonElement };
+    }
+
+    function confirmDialog() {
+      return screen.findByRole("alertdialog", { name: "Delete strategy" });
+    }
+
+    it("is disabled for an enabled card with the hint, enabled for a disabled one", async () => {
+      const { trash } = await open();
+      const enabledTrash = screen.getByRole("button", { name: "Delete: b" }) as HTMLButtonElement;
+      expect(trash.disabled).toBe(false);
+      expect(enabledTrash.disabled).toBe(true);
+      expect(enabledTrash.getAttribute("title")).toBe("Disable it first.");
+      fireEvent.click(enabledTrash);
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(deleteRuntimeStrategy).not.toHaveBeenCalled();
+    });
+
+    it("sits outside the card's select button", async () => {
+      const { trash } = await open();
+      expect(trash.closest(".rt-card-btn")).toBeNull();
+      fireEvent.click(trash);
+      expect(screen.queryAllByRole("button", { pressed: true })).toHaveLength(0);
+    });
+
+    it("opens a confirmation with Cancel focused and sends nothing yet", async () => {
+      const { trash } = await open();
+      fireEvent.click(trash);
+      const dialog = await confirmDialog();
+      expect(within(dialog).getByText(/Delete a\?/)).toBeTruthy();
+      expect(within(dialog).getAllByRole("button").map((b) => b.textContent)).toEqual(["Cancel", "Delete"]);
+      await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Cancel" })));
+      expect(deleteRuntimeStrategy).not.toHaveBeenCalled();
+    });
+
+    it("Cancel sends nothing and returns focus to the trash button", async () => {
+      const { trash } = await open();
+      fireEvent.click(trash);
+      const dialog = await confirmDialog();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(document.activeElement).toBe(trash);
+      expect(deleteRuntimeStrategy).not.toHaveBeenCalled();
+    });
+
+    it("Esc sends nothing and returns focus to the trash button", async () => {
+      const { trash } = await open();
+      fireEvent.click(trash);
+      fireEvent.keyDown(await confirmDialog(), { key: "Escape" });
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(document.activeElement).toBe(trash);
+      expect(deleteRuntimeStrategy).not.toHaveBeenCalled();
+    });
+
+    it("Delete sends one request, refetches quietly and the card leaves the list", async () => {
+      const { a, trash } = await open();
+      deleteRuntimeStrategy.mockResolvedValue({ strategy_instance_id: a.strategy_instance_id, deleted: true, cancelled_entry_order: false });
+      let release: (l: RuntimeStrategyList) => void = () => {};
+      fetchRuntimeStrategyInstances.mockReturnValue(new Promise<RuntimeStrategyList>((r) => (release = r)));
+      fireEvent.click(trash);
+      fireEvent.click(within(await confirmDialog()).getByRole("button", { name: "Delete" }));
+      await waitFor(() => expect(fetchRuntimeStrategyInstances).toHaveBeenCalledTimes(2));
+      expect(deleteRuntimeStrategy).toHaveBeenCalledTimes(1);
+      expect(deleteRuntimeStrategy).toHaveBeenCalledWith(a.strategy_instance_id);
+      expect(screen.getByLabelText("Strategies")).toBeTruthy();
+      expect(screen.queryByText("Loading…")).toBeNull();
+      release(list({ strategy_instances: [instance("b.json", true)] }));
+      await waitFor(() => expect(screen.queryByRole("switch", { name: "Enabled: a" })).toBeNull());
+      expect(screen.getByRole("switch", { name: "Enabled: b" })).toBeTruthy();
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+    });
+
+    it("clears the selection when the deleted strategy is selected", async () => {
+      const { a, trash } = await open();
+      fireEvent.click(screen.getAllByRole("button", { pressed: false })[0]!);
+      expect(screen.getAllByRole("button", { pressed: true })).toHaveLength(1);
+      deleteRuntimeStrategy.mockResolvedValue({ strategy_instance_id: a.strategy_instance_id, deleted: true, cancelled_entry_order: false });
+      fetchRuntimeStrategyInstances.mockResolvedValue(list({ strategy_instances: [instance("b.json", true)] }));
+      fireEvent.click(trash);
+      fireEvent.click(within(await confirmDialog()).getByRole("button", { name: "Delete" }));
+      await waitFor(() => expect(screen.queryByRole("switch", { name: "Enabled: a" })).toBeNull());
+      expect(screen.queryAllByRole("button", { pressed: true })).toHaveLength(0);
+    });
+
+    it("blocks the card's switch and trash while the request is in flight", async () => {
+      const { trash } = await open();
+      deleteRuntimeStrategy.mockReturnValue(new Promise(() => {}));
+      fireEvent.click(trash);
+      fireEvent.click(within(await confirmDialog()).getByRole("button", { name: "Delete" }));
+      await waitFor(() => expect(trash.disabled).toBe(true));
+      expect((screen.getByRole("switch", { name: "Enabled: a" }) as HTMLButtonElement).disabled).toBe(true);
+      expect(deleteRuntimeStrategy).toHaveBeenCalledTimes(1);
+    });
+
+    it("a running switch request blocks the trash of the same card", async () => {
+      const { trash } = await open();
+      setRuntimeStrategyEnabled.mockReturnValue(new Promise(() => {}));
+      fireEvent.click(screen.getByRole("switch", { name: "Enabled: a" }));
+      await waitFor(() => expect(trash.disabled).toBe(true));
+    });
+
+    it.each(Object.entries(REASON_TEXT))("refusal %s shows its text, keeps the card and does not refetch", async (reason, text) => {
+      const { trash } = await open();
+      deleteRuntimeStrategy.mockRejectedValue(new RuntimeDeleteError(reason));
+      fireEvent.click(trash);
+      fireEvent.click(within(await confirmDialog()).getByRole("button", { name: "Delete" }));
+      const dialog = await screen.findByRole("alertdialog", { name: "Strategy was not deleted" });
+      expect(within(dialog).getByText(text)).toBeTruthy();
+      expect(fetchRuntimeStrategyInstances).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("switch", { name: "Enabled: a" })).toBeTruthy();
+      expect(trash.disabled).toBe(false);
+    });
+
+    it("a network failure or an invalid 200 shows the generic text", async () => {
+      const { trash } = await open();
+      deleteRuntimeStrategy.mockRejectedValue(new RuntimeDeleteError(null));
+      fireEvent.click(trash);
+      fireEvent.click(within(await confirmDialog()).getByRole("button", { name: "Delete" }));
+      const dialog = await screen.findByRole("alertdialog", { name: "Strategy was not deleted" });
+      expect(within(dialog).getByText("Runtime did not answer correctly. Nothing was changed.")).toBeTruthy();
+    });
+
+    it("the refusal dialog has one OK button; OK and Esc return focus to the trash button", async () => {
+      const { trash } = await open();
+      deleteRuntimeStrategy.mockRejectedValue(new RuntimeDeleteError("position_open"));
+      fireEvent.click(trash);
+      fireEvent.click(within(await confirmDialog()).getByRole("button", { name: "Delete" }));
+      const dialog = await screen.findByRole("alertdialog", { name: "Strategy was not deleted" });
+      const buttons = within(dialog).getAllByRole("button");
+      expect(buttons.map((b) => b.textContent)).toEqual(["OK"]);
+      await waitFor(() => expect(document.activeElement).toBe(buttons[0]));
+      fireEvent.click(buttons[0]!);
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(document.activeElement).toBe(trash);
+
+      fireEvent.click(trash);
+      fireEvent.click(within(await confirmDialog()).getByRole("button", { name: "Delete" }));
+      fireEvent.keyDown(await screen.findByRole("alertdialog", { name: "Strategy was not deleted" }), { key: "Escape" });
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(document.activeElement).toBe(trash);
     });
   });
 
