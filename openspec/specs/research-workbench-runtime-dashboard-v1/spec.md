@@ -90,15 +90,6 @@ kind. Refresh and Retry SHALL repeat the request and SHALL be disabled while one
 - **WHEN** the user leaves the tab before a response arrives
 - **THEN** the response is ignored
 
-### Requirement: The tab is read-only
-
-The Runtime Dashboard SHALL send only `GET` requests and SHALL NOT contain a control that
-changes Runtime, including enabling or disabling a strategy, and SHALL NOT poll.
-
-#### Scenario: No mutation
-- **WHEN** the tab is used (open, refresh, retry)
-- **THEN** every request it sends has method `GET`
-
 ### Requirement: Visual language follows the Surface tab
 
 The panel SHALL be built from the Surface design tokens and classes (scoped under `.sx`), and
@@ -107,4 +98,54 @@ SHALL follow the system light and dark theme.
 #### Scenario: Theme
 - **WHEN** the system theme is dark
 - **THEN** the panel uses the dark tokens of the Surface tab and defines no color of its own outside tokens
+
+### Requirement: Each strategy card has an enable switch
+Each card SHALL have a switch, outside the card's select button, whose state is the card's `enabled` value from the list. Activating it SHALL send exactly one `PUT /runtime-api/v1/strategy-instances/{strategy_instance_id}/enabled` with body `{"enabled": <the opposite value>}`.
+
+#### Scenario: Disable an idle strategy
+- **WHEN** the user switches an enabled card off and Runtime answers `200`
+- **THEN** the list is requested again and the card shows DISABLED
+
+#### Scenario: Enable
+- **WHEN** the user switches a disabled card on and Runtime answers `200`
+- **THEN** the list is requested again and the card shows ENABLED
+
+#### Scenario: Busy
+- **WHEN** a request for a card is in flight
+- **THEN** its switch is disabled and further clicks on it send nothing
+- **AND** the other cards' switches stay usable
+
+#### Scenario: Switch is accessible
+- **WHEN** a card is rendered
+- **THEN** its switch has `role="switch"`, `aria-checked` equal to the list value and an accessible name that includes the strategy name
+
+### Requirement: A refusal is explained in a dialog
+When Runtime answers a switch request with anything but `200`, the card SHALL keep its previous state and a dialog SHALL state the reason. A body is read as a reason only when its `status` is `enabled_change_refused`. Exact texts by reason: `position_open` "This strategy has an open position and cannot be disabled."; `recovery_pending` "This strategy is recovering an order or position and cannot be disabled yet."; `cycle_not_settled` "This strategy's trade cycle has just ended. Try again after the next bar."; `cancel_not_confirmed` "The entry order could not be confirmed cancelled on the exchange. The strategy stays enabled."; `abi_unavailable` "The exchange gateway did not answer. The strategy stays enabled."; `instance_busy` "The strategy is processing a bar. Try again in a moment."; `file_changed` "The strategy file was changed while switching. Nothing was changed. Try again."; `write_failed` "Runtime could not write the strategy file. Nothing was changed. Try again."; `strategy_instance_not_found` "Runtime no longer has this strategy. Refresh the list."; `catalog_unavailable` "Runtime cannot read the strategy files. Nothing was changed."; any other answer (including `identity_changed`, a not-ready or internal-error body and a rejected body) or a network failure "Runtime did not answer correctly. Nothing was changed."
+
+#### Scenario: Open position
+- **WHEN** Runtime answers `409` with reason `position_open` to a disable request
+- **THEN** a dialog shows the `position_open` text
+- **AND** the card still shows ENABLED
+- **AND** the list is not requested again
+
+#### Scenario: Dialog behaviour
+- **WHEN** the dialog is shown
+- **THEN** it has `role="alertdialog"` and one OK button, closes on OK or Esc, and returns focus to that card's switch
+
+#### Scenario: File could not be written
+- **WHEN** Runtime answers `500` with reason `write_failed` to a disable request
+- **THEN** a dialog shows the `write_failed` text and the card still shows ENABLED
+- **AND** the same text is shown when an enable request fails this way and the card still shows DISABLED
+- **AND** the list is not requested again
+
+#### Scenario: Unknown reason
+- **WHEN** Runtime answers with a status or reason not in the list, or the request fails at the network
+- **THEN** the dialog shows the generic text and the card keeps its state
+
+### Requirement: The tab changes Runtime only through the enable switch
+The Runtime Dashboard SHALL send `GET` requests and the enable switch's `PUT`, and nothing else, and SHALL NOT poll.
+
+#### Scenario: Only the allowed mutation
+- **WHEN** the tab is used (open, refresh, retry, switch)
+- **THEN** every request has method `GET`, except the switch's `PUT` to `/runtime-api/v1/strategy-instances/{id}/enabled`
 

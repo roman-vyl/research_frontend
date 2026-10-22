@@ -13,5 +13,7 @@
 
 ## 2. Rollout (on owner's word only)
 
-- [ ] 2.1 PR and merge only on the owner's word, after the Runtime route (strategy_runtime #30) and the writable mount (bbb_stack #60) are deployed.
-- [ ] 2.2 On the Mac demo: switch an idle strategy off and on; try an open position and see the dialog.
+- [x] 2.1 PR and merge only on the owner's word, after the Runtime route (strategy_runtime #30) and the writable mount (bbb_stack #60) are deployed.
+  Done: #31 merged and deployed on the Mac dev server on 2026-10-22; follow-up #32 keeps the cards on screen after a switch so the page does not jump to the top.
+- [x] 2.2 On the Mac demo: switch an idle strategy off and on; try an open position and see the dialog.
+  2026-10-22: the owner switched idle strategies off and on and accepted the work after #32. The open-position dialog did not come up in this check; accepted by the owner without it.
