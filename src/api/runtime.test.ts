@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  deleteRuntimeStrategy,
   fetchRuntimeStrategyInstances,
+  RuntimeDeleteError,
   RuntimeEnabledError,
   RuntimeListError,
   setRuntimeStrategyEnabled,
@@ -127,5 +129,72 @@ describe("setRuntimeStrategyEnabled", () => {
   it("gives no reason on a network failure", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("down")));
     expect(await reasonOf(setRuntimeStrategyEnabled("s:abc", true))).toBeNull();
+  });
+});
+
+describe("deleteRuntimeStrategy", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const OK = { strategy_instance_id: "s:abc", deleted: true, cancelled_entry_order: false, trash_file: ".deleted/a.json" };
+
+  async function reasonOf(promise: Promise<unknown>): Promise<string | null> {
+    try {
+      await promise;
+    } catch (err) {
+      expect(err).toBeInstanceOf(RuntimeDeleteError);
+      return (err as RuntimeDeleteError).reason;
+    }
+    throw new Error("expected a RuntimeDeleteError");
+  }
+
+  it("sends one DELETE without a body to the instance path and returns the confirmed body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(respond(200, JSON.stringify(OK)));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await deleteRuntimeStrategy("s:abc")).toEqual(OK);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith("/runtime-api/v1/strategy-instances/s%3Aabc", { method: "DELETE" });
+  });
+
+  it.each([
+    ["wrong instance id", { ...OK, strategy_instance_id: "s:other" }],
+    ["deleted not true", { ...OK, deleted: false }],
+    ["missing deleted", { strategy_instance_id: "s:abc", cancelled_entry_order: false }],
+    ["missing cancelled_entry_order", { strategy_instance_id: "s:abc", deleted: true }],
+    ["non-boolean cancelled_entry_order", { ...OK, cancelled_entry_order: "no" }],
+    ["null body", null],
+    ["array body", []],
+  ])("rejects a 200 with %s", async (_name, body) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(200, JSON.stringify(body))));
+    expect(await reasonOf(deleteRuntimeStrategy("s:abc"))).toBeNull();
+  });
+
+  it("rejects a 200 with a malformed or empty body", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(200, "<html>ok</html>")));
+    expect(await reasonOf(deleteRuntimeStrategy("s:abc"))).toBeNull();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(200, null)));
+    expect(await reasonOf(deleteRuntimeStrategy("s:abc"))).toBeNull();
+  });
+
+  it("reads the reason only from a delete_refused body", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(409, JSON.stringify({ status: "delete_refused", reason: "still_enabled" }))));
+    expect(await reasonOf(deleteRuntimeStrategy("s:abc"))).toBe("still_enabled");
+  });
+
+  it.each([
+    [409, JSON.stringify({ status: "enabled_change_refused", reason: "position_open" })],
+    [503, JSON.stringify({ status: "not_ready", reason: "position_open" })],
+    [500, JSON.stringify({ status: "internal_error" })],
+    [502, "<html>bad gateway</html>"],
+    [502, null],
+  ])("gives no reason for a %s answer that is not a delete refusal", async (status, body) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(status, body)));
+    expect(await reasonOf(deleteRuntimeStrategy("s:abc"))).toBeNull();
+  });
+
+  it("gives no reason on a network failure", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("down")));
+    expect(await reasonOf(deleteRuntimeStrategy("s:abc"))).toBeNull();
   });
 });

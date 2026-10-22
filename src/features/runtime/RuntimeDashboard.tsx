@@ -3,7 +3,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchJournalStrategyInstances, type JournalStrategyInstance } from "@/api/journal";
 import {
   fetchRuntimeStrategyInstances,
+  deleteRuntimeStrategy,
   setRuntimeStrategyEnabled,
+  RuntimeDeleteError,
   RuntimeEnabledError,
   RuntimeListError,
   type RuntimeListErrorKind,
@@ -35,6 +37,28 @@ const REFUSAL_TEXT: Record<string, string> = {
   strategy_instance_not_found: "Runtime no longer has this strategy. Refresh the list.",
   catalog_unavailable: "Runtime cannot read the strategy files. Nothing was changed.",
 };
+
+const DELETE_REFUSAL_TEXT: Record<string, string> = {
+  still_enabled: "This strategy is enabled. Disable it first.",
+  position_open: "This strategy has an open position and cannot be deleted.",
+  recovery_pending: "This strategy is recovering an order or position and cannot be deleted yet.",
+  cycle_not_settled: "This strategy's trade cycle has just ended. Try again after the next bar.",
+  cancel_not_confirmed: "The entry order could not be confirmed cancelled on the exchange. The strategy was not deleted.",
+  abi_unavailable: "The exchange gateway did not answer. The strategy was not deleted.",
+  instance_busy: "The strategy is processing a bar. Try again in a moment.",
+  file_changed: "The strategy file was changed while deleting. Nothing was changed. Try again.",
+  trash_name_taken: "Runtime could not move the strategy file to the trash. Nothing was changed. Try again.",
+  move_failed: "Runtime could not move the strategy file to the trash. Nothing was changed. Try again.",
+  strategy_instance_not_found: "Runtime no longer has this strategy. Refresh the list.",
+  catalog_unavailable: "Runtime cannot read the strategy files. Nothing was changed.",
+};
+
+function deleteRefusalText(reason: string | null): string {
+  return (
+    (reason !== null && Object.hasOwn(DELETE_REFUSAL_TEXT, reason) ? DELETE_REFUSAL_TEXT[reason] : undefined) ??
+    GENERIC_REFUSAL
+  );
+}
 
 function refusalText(reason: string | null): string {
   return (reason !== null && Object.hasOwn(REFUSAL_TEXT, reason) ? REFUSAL_TEXT[reason] : undefined) ?? GENERIC_REFUSAL;
@@ -88,8 +112,11 @@ export function RuntimeDashboard() {
   const [journal, setJournal] = useState<ReadonlyMap<string, JournalStrategyInstance> | null>(null);
   const generation = useRef(0);
   const [switching, setSwitching] = useState<ReadonlySet<string>>(new Set());
-  const [refusal, setRefusal] = useState<{ text: string; instanceId: string } | null>(null);
+  const [refusal, setRefusal] = useState<{ text: string; instanceId: string; kind: "switch" | "delete" } | null>(null);
+  const [confirming, setConfirming] = useState<RuntimeStrategyInstance | null>(null);
   const switchRefs = useRef(new Map<string, HTMLButtonElement>());
+  const trashRefs = useRef(new Map<string, HTMLButtonElement>());
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
   const okRef = useRef<HTMLButtonElement | null>(null);
 
   // `keepList`: a refresh after a switch re-reads in place; the cards stay mounted so the page keeps its scroll position
@@ -143,6 +170,36 @@ export function RuntimeDashboard() {
           setRefusal({
             text: refusalText(err instanceof RuntimeEnabledError ? err.reason : null),
             instanceId: s.strategy_instance_id,
+            kind: "switch",
+          });
+        },
+      );
+    },
+    [load],
+  );
+
+  const closeConfirm = useCallback(() => {
+    setConfirming((cur) => {
+      if (cur) trashRefs.current.get(cur.strategy_instance_id)?.focus();
+      return null;
+    });
+  }, []);
+
+  const confirmDelete = useCallback(
+    (s: RuntimeStrategyInstance) => {
+      setConfirming(null);
+      setSwitching((prev) => new Set(prev).add(s.strategy_instance_id));
+      deleteRuntimeStrategy(s.strategy_instance_id).then(
+        () => {
+          setSwitching((prev) => withoutId(prev, s.strategy_instance_id));
+          load(true);
+        },
+        (err: unknown) => {
+          setSwitching((prev) => withoutId(prev, s.strategy_instance_id));
+          setRefusal({
+            text: deleteRefusalText(err instanceof RuntimeDeleteError ? err.reason : null),
+            instanceId: s.strategy_instance_id,
+            kind: "delete",
           });
         },
       );
@@ -152,7 +209,7 @@ export function RuntimeDashboard() {
 
   const closeRefusal = useCallback(() => {
     setRefusal((cur) => {
-      if (cur) switchRefs.current.get(cur.instanceId)?.focus();
+      if (cur) (cur.kind === "delete" ? trashRefs : switchRefs).current.get(cur.instanceId)?.focus();
       return null;
     });
   }, []);
@@ -160,6 +217,10 @@ export function RuntimeDashboard() {
   useEffect(() => {
     if (refusal) okRef.current?.focus();
   }, [refusal]);
+
+  useEffect(() => {
+    if (confirming) cancelRef.current?.focus();
+  }, [confirming]);
 
   const busy = phase.kind === "loading";
   const list = phase.kind === "ready" ? phase.list : null;
@@ -261,6 +322,22 @@ export function RuntimeDashboard() {
                         >
                           <span className="rt-switch-knob" aria-hidden="true" />
                         </button>
+                        <button
+                          type="button"
+                          className="rt-trash"
+                          aria-label={`Delete: ${cardName(s.source_path)}`}
+                          title={s.enabled ? "Disable it first." : "Delete this strategy"}
+                          disabled={s.enabled || switching.has(s.strategy_instance_id)}
+                          ref={(el) => {
+                            if (el) trashRefs.current.set(s.strategy_instance_id, el);
+                            else trashRefs.current.delete(s.strategy_instance_id);
+                          }}
+                          onClick={() => setConfirming(s)}
+                        >
+                          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6" />
+                          </svg>
+                        </button>
                       </div>
                     </li>
                   );
@@ -277,13 +354,39 @@ export function RuntimeDashboard() {
 
         {list && <Diagnostics list={list} />}
 
+        {confirming && (
+          <div className="rt-dialog-backdrop">
+            <div
+              className="sx-panel rt-dialog"
+              role="alertdialog"
+              aria-modal="true"
+              aria-label="Delete strategy"
+              onKeyDown={(e) => {
+                if (e.key === "Escape") closeConfirm();
+              }}
+            >
+              <p className="rt-dialog-text">
+                Delete {cardName(confirming.source_path)}? Runtime moves its file to the trash folder. Nothing is erased.
+              </p>
+              <div className="rt-dialog-actions">
+                <button type="button" className="sx-fbtn" ref={cancelRef} onClick={closeConfirm}>
+                  Cancel
+                </button>
+                <button type="button" className="sx-fbtn rt-danger" onClick={() => confirmDelete(confirming)}>
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {refusal && (
           <div className="rt-dialog-backdrop">
             <div
               className="sx-panel rt-dialog"
               role="alertdialog"
               aria-modal="true"
-              aria-label="Strategy was not switched"
+              aria-label={refusal.kind === "delete" ? "Strategy was not deleted" : "Strategy was not switched"}
               onKeyDown={(e) => {
                 if (e.key === "Escape") closeRefusal();
               }}

@@ -1,7 +1,8 @@
 /**
  * Strategy Runtime read API, reached through the dev-server proxy `/runtime-api` (Runtime sends no CORS headers):
  * `GET /v1/strategy-instances`, the strategy instances registered in Runtime's deployment catalog, and
- * `PUT /v1/strategy-instances/{id}/enabled`, the only write: it switches a strategy on or off.
+ * `PUT /v1/strategy-instances/{id}/enabled`, which switches a strategy on or off, and
+ * `DELETE /v1/strategy-instances/{id}`, which removes a disabled strategy.
  */
 
 export type RuntimeStrategyInstance = {
@@ -148,4 +149,67 @@ export async function setRuntimeStrategyEnabled(
     // not a Runtime body
   }
   throw new RuntimeEnabledError(reason);
+}
+
+export type RuntimeStrategyDeleted = {
+  strategy_instance_id: string;
+  deleted: true;
+  cancelled_entry_order: boolean;
+  trash_file?: string;
+};
+
+/**
+ * A delete that did not happen. `reason` is Runtime's own refusal code, read only from a body whose status is
+ * `delete_refused`; for any other answer (or none) it is null.
+ */
+export class RuntimeDeleteError extends Error {
+  readonly reason: string | null;
+
+  constructor(reason: string | null) {
+    super(reason ?? "unexpected_answer");
+    this.name = "RuntimeDeleteError";
+    this.reason = reason;
+  }
+}
+
+/** Deletes one strategy through Runtime: a disabled, settled strategy's file moves to Runtime's trash directory. */
+export async function deleteRuntimeStrategy(strategyInstanceId: string): Promise<RuntimeStrategyDeleted> {
+  let res: Response;
+  try {
+    res = await fetch(`${RUNTIME_API_BASE}/v1/strategy-instances/${encodeURIComponent(strategyInstanceId)}`, {
+      method: "DELETE",
+    });
+  } catch {
+    throw new RuntimeDeleteError(null);
+  }
+  if (res.ok) {
+    // a 2xx counts as a delete only when its body confirms this instance
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      throw new RuntimeDeleteError(null);
+    }
+    const b = body && typeof body === "object" ? (body as Partial<RuntimeStrategyDeleted>) : null;
+    if (
+      !b ||
+      b.strategy_instance_id !== strategyInstanceId ||
+      b.deleted !== true ||
+      typeof b.cancelled_entry_order !== "boolean"
+    ) {
+      throw new RuntimeDeleteError(null);
+    }
+    return b as RuntimeStrategyDeleted;
+  }
+  let reason: string | null = null;
+  try {
+    const body: unknown = await res.json();
+    if (body && typeof body === "object") {
+      const b = body as { status?: unknown; reason?: unknown };
+      if (b.status === "delete_refused" && typeof b.reason === "string") reason = b.reason;
+    }
+  } catch {
+    // not a Runtime body
+  }
+  throw new RuntimeDeleteError(reason);
 }
