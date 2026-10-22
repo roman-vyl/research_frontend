@@ -21,7 +21,7 @@ Each card SHALL have a switch, outside the card's select button, whose state is 
 - **THEN** its switch has `role="switch"`, `aria-checked` equal to the list value and an accessible name that includes the strategy name
 
 ### Requirement: A refusal is explained in a dialog
-When Runtime answers a switch request with anything but `200`, the card SHALL keep its previous state and a dialog SHALL state the reason. Exact texts by reason: `position_open` "This strategy has an open position and cannot be disabled."; `recovery_pending` "This strategy is recovering an order or position and cannot be disabled yet."; `cycle_not_settled` "This strategy's trade cycle has just ended. Try again after the next bar."; `cancel_not_confirmed` "The entry order could not be confirmed cancelled on the exchange. The strategy stays enabled."; `abi_unavailable` "The exchange gateway did not answer. The strategy stays enabled."; `instance_busy` "The strategy is processing a bar. Try again in a moment."; any other answer or a network failure "Runtime did not answer correctly. Nothing was changed."
+When Runtime answers a switch request with anything but `200`, the card SHALL keep its previous state and a dialog SHALL state the reason. A body is read as a reason only when its `status` is `enabled_change_refused`. Exact texts by reason: `position_open` "This strategy has an open position and cannot be disabled."; `recovery_pending` "This strategy is recovering an order or position and cannot be disabled yet."; `cycle_not_settled` "This strategy's trade cycle has just ended. Try again after the next bar."; `cancel_not_confirmed` "The entry order could not be confirmed cancelled on the exchange. The strategy stays enabled."; `abi_unavailable` "The exchange gateway did not answer. The strategy stays enabled."; `instance_busy` "The strategy is processing a bar. Try again in a moment."; `file_changed` "The strategy file was changed while switching. Nothing was changed. Try again."; `write_failed` "Runtime could not write the strategy file. The strategy stays enabled. Try again."; `strategy_instance_not_found` "Runtime no longer has this strategy. Refresh the list."; `catalog_unavailable` "Runtime cannot read the strategy files. Nothing was changed."; any other answer (including `identity_changed`, a not-ready or internal-error body and a rejected body) or a network failure "Runtime did not answer correctly. Nothing was changed."
 
 #### Scenario: Open position
 - **WHEN** Runtime answers `409` with reason `position_open` to a disable request
@@ -32,6 +32,11 @@ When Runtime answers a switch request with anything but `200`, the card SHALL ke
 #### Scenario: Dialog behaviour
 - **WHEN** the dialog is shown
 - **THEN** it has `role="alertdialog"` and one OK button, closes on OK or Esc, and returns focus to that card's switch
+
+#### Scenario: File could not be written
+- **WHEN** Runtime answers `500` with reason `write_failed` to a disable request
+- **THEN** a dialog shows the `write_failed` text and the card still shows ENABLED
+- **AND** the list is not requested again
 
 #### Scenario: Unknown reason
 - **WHEN** Runtime answers with a status or reason not in the list, or the request fails at the network
