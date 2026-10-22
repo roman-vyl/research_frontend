@@ -4,10 +4,11 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { RuntimeListError, type RuntimeStrategyInstance, type RuntimeStrategyList } from "@/api/runtime";
+import { RuntimeEnabledError, RuntimeListError, type RuntimeStrategyInstance, type RuntimeStrategyList } from "@/api/runtime";
 import { RuntimeDashboard } from "@/features/runtime/RuntimeDashboard";
 
 const fetchRuntimeStrategyInstances = vi.fn();
+const setRuntimeStrategyEnabled = vi.fn();
 const fetchJournalEvents = vi.fn();
 const fetchJournalStrategyInstances = vi.fn();
 
@@ -19,7 +20,11 @@ vi.mock("@/api/journal", async (importOriginal) => ({
 
 vi.mock("@/api/runtime", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/api/runtime")>();
-  return { ...actual, fetchRuntimeStrategyInstances: (...a: unknown[]) => fetchRuntimeStrategyInstances(...a) };
+  return {
+    ...actual,
+    fetchRuntimeStrategyInstances: (...a: unknown[]) => fetchRuntimeStrategyInstances(...a),
+    setRuntimeStrategyEnabled: (...a: unknown[]) => setRuntimeStrategyEnabled(...a),
+  };
 });
 
 function instance(file: string, enabled: boolean, extra: Partial<RuntimeStrategyInstance> = {}): RuntimeStrategyInstance {
@@ -58,6 +63,7 @@ function realisticList(): RuntimeStrategyList {
 describe("RuntimeDashboard", () => {
   beforeEach(() => {
     fetchRuntimeStrategyInstances.mockReset();
+    setRuntimeStrategyEnabled.mockReset();
     fetchJournalEvents.mockReset();
     fetchJournalStrategyInstances.mockReset();
     fetchJournalStrategyInstances.mockResolvedValue([]);
@@ -205,16 +211,119 @@ describe("RuntimeDashboard", () => {
     errors.mockRestore();
   });
 
-  it("offers no control that changes Runtime", async () => {
+  it("offers one switch per card besides Refresh and the selection buttons", async () => {
     fetchRuntimeStrategyInstances.mockResolvedValue(realisticList());
     render(<RuntimeDashboard />);
     await screen.findByLabelText("Strategies");
-    // the only buttons are Refresh and the selection toggles of the cards (aria-pressed, UI state only)
-    const controls = screen.getAllByRole("button").filter((b) => !b.hasAttribute("aria-pressed"));
+    const controls = screen
+      .getAllByRole("button")
+      .filter((b) => !b.hasAttribute("aria-pressed") && b.getAttribute("role") !== "switch");
     expect(controls.map((b) => b.textContent)).toEqual(["Refresh"]);
     expect(screen.getAllByRole("button", { pressed: false })).toHaveLength(33);
     expect(screen.queryByRole("checkbox")).toBeNull();
-    expect(screen.queryByRole("switch")).toBeNull();
+    expect(screen.getAllByRole("switch")).toHaveLength(33);
+  });
+
+  describe("enabled switch", () => {
+    const REASON_TEXT: Record<string, string> = {
+      position_open: "This strategy has an open position and cannot be disabled.",
+      recovery_pending: "This strategy is recovering an order or position and cannot be disabled yet.",
+      cycle_not_settled: "This strategy's trade cycle has just ended. Try again after the next bar.",
+      cancel_not_confirmed: "The entry order could not be confirmed cancelled on the exchange. The strategy stays enabled.",
+      abi_unavailable: "The exchange gateway did not answer. The strategy stays enabled.",
+      instance_busy: "The strategy is processing a bar. Try again in a moment.",
+      file_changed: "The strategy file was changed while switching. Nothing was changed. Try again.",
+      write_failed: "Runtime could not write the strategy file. Nothing was changed. Try again.",
+      strategy_instance_not_found: "Runtime no longer has this strategy. Refresh the list.",
+      catalog_unavailable: "Runtime cannot read the strategy files. Nothing was changed.",
+      identity_changed: "Runtime did not answer correctly. Nothing was changed.",
+      something_new: "Runtime did not answer correctly. Nothing was changed.",
+    };
+
+    async function open(on: boolean) {
+      const a = instance("a.json", on);
+      const b = instance("b.json", true);
+      fetchRuntimeStrategyInstances.mockResolvedValue(list({ strategy_instances: [a, b] }));
+      render(<RuntimeDashboard />);
+      await screen.findByLabelText("Strategies");
+      return { a, b, sw: screen.getByRole("switch", { name: /a$/ }) };
+    }
+
+    it("is a switch named after the strategy and reflects enabled", async () => {
+      const { sw } = await open(true);
+      expect(sw.getAttribute("aria-checked")).toBe("true");
+      expect(sw.getAttribute("aria-label")).toBe("Enabled: a");
+      expect(screen.getByRole("switch", { name: "Enabled: b" })).toBeTruthy();
+    });
+
+    it.each([
+      [true, false],
+      [false, true],
+    ])("sends one PUT with the opposite value (%s -> %s) and refetches on success", async (from, to) => {
+      const { a, sw } = await open(from);
+      setRuntimeStrategyEnabled.mockResolvedValue({ strategy_instance_id: a.strategy_instance_id, enabled: to, cancelled_entry_order: false });
+      fetchRuntimeStrategyInstances.mockResolvedValue(
+        list({ strategy_instances: [instance("a.json", to), instance("b.json", true)] }),
+      );
+      fireEvent.click(sw);
+      await waitFor(() => expect(fetchRuntimeStrategyInstances).toHaveBeenCalledTimes(2));
+      expect(setRuntimeStrategyEnabled).toHaveBeenCalledTimes(1);
+      expect(setRuntimeStrategyEnabled).toHaveBeenCalledWith(a.strategy_instance_id, to);
+      await waitFor(() => expect(screen.getByRole("switch", { name: /a$/ }).getAttribute("aria-checked")).toBe(String(to)));
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+    });
+
+    it("blocks only the card being switched while its request is in flight", async () => {
+      const { sw } = await open(true);
+      setRuntimeStrategyEnabled.mockReturnValue(new Promise(() => {}));
+      fireEvent.click(sw);
+      await waitFor(() => expect((sw as HTMLButtonElement).disabled).toBe(true));
+      expect((screen.getByRole("switch", { name: "Enabled: b" }) as HTMLButtonElement).disabled).toBe(false);
+      fireEvent.click(sw);
+      expect(setRuntimeStrategyEnabled).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(Object.entries(REASON_TEXT))("refusal %s shows its text, keeps the card and does not refetch", async (reason, text) => {
+      const { sw } = await open(true);
+      setRuntimeStrategyEnabled.mockRejectedValue(new RuntimeEnabledError(reason));
+      fireEvent.click(sw);
+      const dialog = await screen.findByRole("alertdialog");
+      expect(within(dialog).getByText(text)).toBeTruthy();
+      expect(fetchRuntimeStrategyInstances).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("switch", { name: /a$/ }).getAttribute("aria-checked")).toBe("true");
+      expect((sw as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it("a network failure or a non-refusal answer shows the generic text", async () => {
+      const { sw } = await open(true);
+      setRuntimeStrategyEnabled.mockRejectedValue(new RuntimeEnabledError(null));
+      fireEvent.click(sw);
+      const dialog = await screen.findByRole("alertdialog");
+      expect(within(dialog).getByText("Runtime did not answer correctly. Nothing was changed.")).toBeTruthy();
+    });
+
+    it("the dialog has one OK button, takes focus, and OK returns focus to the switch", async () => {
+      const { sw } = await open(true);
+      setRuntimeStrategyEnabled.mockRejectedValue(new RuntimeEnabledError("position_open"));
+      fireEvent.click(sw);
+      const dialog = await screen.findByRole("alertdialog");
+      const buttons = within(dialog).getAllByRole("button");
+      expect(buttons.map((b) => b.textContent)).toEqual(["OK"]);
+      await waitFor(() => expect(document.activeElement).toBe(buttons[0]));
+      fireEvent.click(buttons[0]!);
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(document.activeElement).toBe(sw);
+    });
+
+    it("Esc closes the dialog and returns focus to the switch", async () => {
+      const { sw } = await open(true);
+      setRuntimeStrategyEnabled.mockRejectedValue(new RuntimeEnabledError("write_failed"));
+      fireEvent.click(sw);
+      const dialog = await screen.findByRole("alertdialog");
+      fireEvent.keyDown(dialog, { key: "Escape" });
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(document.activeElement).toBe(sw);
+    });
   });
 
   it("cards show the last evaluated bar from the Journal, or that there are none", async () => {

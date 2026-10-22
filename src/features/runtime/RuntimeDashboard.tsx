@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchJournalStrategyInstances, type JournalStrategyInstance } from "@/api/journal";
 import {
   fetchRuntimeStrategyInstances,
+  setRuntimeStrategyEnabled,
+  RuntimeEnabledError,
   RuntimeListError,
   type RuntimeListErrorKind,
   type RuntimeStrategyInstance,
@@ -18,6 +20,25 @@ const ERROR_TEXT: Record<RuntimeListErrorKind, string> = {
   runtime_error: "Runtime returned an error",
   unreachable: "Runtime is not reachable",
 };
+
+const GENERIC_REFUSAL = "Runtime did not answer correctly. Nothing was changed.";
+
+const REFUSAL_TEXT: Record<string, string> = {
+  position_open: "This strategy has an open position and cannot be disabled.",
+  recovery_pending: "This strategy is recovering an order or position and cannot be disabled yet.",
+  cycle_not_settled: "This strategy's trade cycle has just ended. Try again after the next bar.",
+  cancel_not_confirmed: "The entry order could not be confirmed cancelled on the exchange. The strategy stays enabled.",
+  abi_unavailable: "The exchange gateway did not answer. The strategy stays enabled.",
+  instance_busy: "The strategy is processing a bar. Try again in a moment.",
+  file_changed: "The strategy file was changed while switching. Nothing was changed. Try again.",
+  write_failed: "Runtime could not write the strategy file. Nothing was changed. Try again.",
+  strategy_instance_not_found: "Runtime no longer has this strategy. Refresh the list.",
+  catalog_unavailable: "Runtime cannot read the strategy files. Nothing was changed.",
+};
+
+function refusalText(reason: string | null): string {
+  return (reason !== null && Object.hasOwn(REFUSAL_TEXT, reason) ? REFUSAL_TEXT[reason] : undefined) ?? GENERIC_REFUSAL;
+}
 
 type Phase =
   | { kind: "loading" }
@@ -55,11 +76,21 @@ function Diagnostics({ list }: { list: RuntimeStrategyList }) {
   );
 }
 
+function withoutId(set: ReadonlySet<string>, id: string): ReadonlySet<string> {
+  const next = new Set(set);
+  next.delete(id);
+  return next;
+}
+
 export function RuntimeDashboard() {
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [selected, setSelected] = useState<RuntimeStrategyInstance | null>(null);
   const [journal, setJournal] = useState<ReadonlyMap<string, JournalStrategyInstance> | null>(null);
   const generation = useRef(0);
+  const [switching, setSwitching] = useState<ReadonlySet<string>>(new Set());
+  const [refusal, setRefusal] = useState<{ text: string; instanceId: string } | null>(null);
+  const switchRefs = useRef(new Map<string, HTMLButtonElement>());
+  const okRef = useRef<HTMLButtonElement | null>(null);
 
   const load = useCallback(() => {
     const mine = ++generation.current;
@@ -97,6 +128,37 @@ export function RuntimeDashboard() {
       generation.current += 1; // a response that arrives after the tab was left is ignored
     };
   }, [load]);
+
+  const toggle = useCallback(
+    (s: RuntimeStrategyInstance) => {
+      setSwitching((prev) => new Set(prev).add(s.strategy_instance_id));
+      setRuntimeStrategyEnabled(s.strategy_instance_id, !s.enabled).then(
+        () => {
+          setSwitching((prev) => withoutId(prev, s.strategy_instance_id));
+          load();
+        },
+        (err: unknown) => {
+          setSwitching((prev) => withoutId(prev, s.strategy_instance_id));
+          setRefusal({
+            text: refusalText(err instanceof RuntimeEnabledError ? err.reason : null),
+            instanceId: s.strategy_instance_id,
+          });
+        },
+      );
+    },
+    [load],
+  );
+
+  const closeRefusal = useCallback(() => {
+    setRefusal((cur) => {
+      if (cur) switchRefs.current.get(cur.instanceId)?.focus();
+      return null;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (refusal) okRef.current?.focus();
+  }, [refusal]);
 
   const busy = phase.kind === "loading";
   const list = phase.kind === "ready" ? phase.list : null;
@@ -182,6 +244,23 @@ export function RuntimeDashboard() {
                           </div>
                         )}
                       </button>
+                      <div className="rt-card-foot">
+                        <button
+                          type="button"
+                          role="switch"
+                          className="rt-switch"
+                          aria-checked={s.enabled}
+                          aria-label={`Enabled: ${cardName(s.source_path)}`}
+                          disabled={switching.has(s.strategy_instance_id)}
+                          ref={(el) => {
+                            if (el) switchRefs.current.set(s.strategy_instance_id, el);
+                            else switchRefs.current.delete(s.strategy_instance_id);
+                          }}
+                          onClick={() => toggle(s)}
+                        >
+                          <span className="rt-switch-knob" aria-hidden="true" />
+                        </button>
+                      </div>
                     </li>
                   );
                 })}
@@ -196,6 +275,25 @@ export function RuntimeDashboard() {
         ) : null}
 
         {list && <Diagnostics list={list} />}
+
+        {refusal && (
+          <div className="rt-dialog-backdrop">
+            <div
+              className="sx-panel rt-dialog"
+              role="alertdialog"
+              aria-modal="true"
+              aria-label="Strategy was not switched"
+              onKeyDown={(e) => {
+                if (e.key === "Escape") closeRefusal();
+              }}
+            >
+              <p className="rt-dialog-text">{refusal.text}</p>
+              <button type="button" className="sx-fbtn" ref={okRef} onClick={closeRefusal}>
+                OK
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );

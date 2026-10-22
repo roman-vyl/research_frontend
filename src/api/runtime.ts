@@ -1,6 +1,7 @@
 /**
  * Strategy Runtime read API, reached through the dev-server proxy `/runtime-api` (Runtime sends no CORS headers):
- * `GET /v1/strategy-instances`, the strategy instances registered in Runtime's deployment catalog.
+ * `GET /v1/strategy-instances`, the strategy instances registered in Runtime's deployment catalog, and
+ * `PUT /v1/strategy-instances/{id}/enabled`, the only write: it switches a strategy on or off.
  */
 
 export type RuntimeStrategyInstance = {
@@ -8,7 +9,7 @@ export type RuntimeStrategyInstance = {
   strategy_id: string;
   instrument: string;
   base_timeframe: string;
-  /** The `enabled` value of the spec file in the catalog; not the state of Runtime's processing. */
+  /** The `enabled` value in the deployment file, changed through Runtime's enabled route. */
   enabled: boolean;
   source_path: string;
 };
@@ -80,4 +81,71 @@ export async function fetchRuntimeStrategyInstances(): Promise<RuntimeStrategyLi
     throw new RuntimeListError("unreachable");
   }
   throw new RuntimeListError("runtime_error");
+}
+
+export type RuntimeEnabledChanged = {
+  strategy_instance_id: string;
+  enabled: boolean;
+  cancelled_entry_order: boolean;
+};
+
+/**
+ * A switch that did not happen. `reason` is Runtime's own refusal code, read only from a body whose status is
+ * `enabled_change_refused`; for any other answer (or none) it is null.
+ */
+export class RuntimeEnabledError extends Error {
+  readonly reason: string | null;
+
+  constructor(reason: string | null) {
+    super(reason ?? "unexpected_answer");
+    this.name = "RuntimeEnabledError";
+    this.reason = reason;
+  }
+}
+
+/** Sets `enabled` of one strategy through Runtime; Runtime checks position and order state before it changes the file. */
+export async function setRuntimeStrategyEnabled(
+  strategyInstanceId: string,
+  enabled: boolean,
+): Promise<RuntimeEnabledChanged> {
+  let res: Response;
+  try {
+    res = await fetch(`${RUNTIME_API_BASE}/v1/strategy-instances/${encodeURIComponent(strategyInstanceId)}/enabled`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    });
+  } catch {
+    throw new RuntimeEnabledError(null);
+  }
+  if (res.ok) {
+    // a 2xx counts as a switch only when its body confirms this instance and this value
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      throw new RuntimeEnabledError(null);
+    }
+    const b = body && typeof body === "object" ? (body as Partial<RuntimeEnabledChanged>) : null;
+    if (
+      !b ||
+      b.strategy_instance_id !== strategyInstanceId ||
+      b.enabled !== enabled ||
+      typeof b.cancelled_entry_order !== "boolean"
+    ) {
+      throw new RuntimeEnabledError(null);
+    }
+    return b as RuntimeEnabledChanged;
+  }
+  let reason: string | null = null;
+  try {
+    const body: unknown = await res.json();
+    if (body && typeof body === "object") {
+      const b = body as { status?: unknown; reason?: unknown };
+      if (b.status === "enabled_change_refused" && typeof b.reason === "string") reason = b.reason;
+    }
+  } catch {
+    // not a Runtime body
+  }
+  throw new RuntimeEnabledError(reason);
 }
