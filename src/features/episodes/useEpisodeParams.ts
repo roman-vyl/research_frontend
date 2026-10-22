@@ -4,17 +4,14 @@ import { fetchStrategyFeaturePlan } from "@/api/client";
 import type { EpisodeParams } from "@/api/episodes";
 import type { JsonObject } from "@/api/types";
 import {
-  anchorStackEpisodeParams,
   hasEpisodeSection,
   historyParamsFromEffective,
 } from "@/features/episodes/episodeParams";
 
 export type EpisodeParamsState = {
-  /** `ema_stack_episode` refs in Engine's order; empty for the `anchor_stack` fallback. */
+  /** `ema_stack_episode` refs in Engine's order; empty when the strategy declares none (then no episodes). */
   refs: string[];
   paramsByRef: Record<string, EpisodeParams>;
-  /** Parameters when the strategy has no episode section. */
-  fallback: EpisodeParams | null;
   status: "idle" | "loading" | "ready" | "error";
   error: string | null;
 };
@@ -41,42 +38,34 @@ function effectiveParams(strategyId: string, rawSpec: JsonObject): Promise<Recor
 
 /**
  * Episode parameters of the run's strategy: Engine's effective `episode_params_by_ref` when the
- * strategy declares `ema_stack_episode`, otherwise the `anchor_stack` fallback.
+ * strategy declares `ema_stack_episode`. Without the section there are none: nothing is invented here.
  */
 export function useEpisodeParams(strategyId: string | null, strategySpec: JsonObject | null): EpisodeParamsState {
   const [state, setState] = useState<EpisodeParamsState>({
     refs: [],
     paramsByRef: {},
-    fallback: null,
     status: "idle",
     error: null,
   });
 
   useEffect(() => {
     if (!strategyId || !strategySpec) {
-      setState({ refs: [], paramsByRef: {}, fallback: null, status: "idle", error: null });
+      setState({ refs: [], paramsByRef: {}, status: "idle", error: null });
       return;
     }
     if (!hasEpisodeSection(strategySpec)) {
-      setState({
-        refs: [],
-        paramsByRef: {},
-        fallback: anchorStackEpisodeParams(strategySpec),
-        status: "ready",
-        error: null,
-      });
+      setState({ refs: [], paramsByRef: {}, status: "ready", error: null });
       return;
     }
     let cancelled = false;
-    setState({ refs: [], paramsByRef: {}, fallback: null, status: "loading", error: null });
+    setState({ refs: [], paramsByRef: {}, status: "loading", error: null });
     effectiveParams(strategyId, strategySpec)
       .then((paramsByRef) => {
         if (!cancelled) {
           setState({
             refs: Object.keys(paramsByRef),
             paramsByRef,
-            fallback: null,
-            status: "ready",
+                status: "ready",
             error: null,
           });
         }
@@ -86,8 +75,7 @@ export function useEpisodeParams(strategyId: string | null, strategySpec: JsonOb
           setState({
             refs: [],
             paramsByRef: {},
-            fallback: null,
-            status: "error",
+                status: "error",
             error: error instanceof Error ? error.message : String(error),
           });
         }
@@ -101,11 +89,19 @@ export function useEpisodeParams(strategyId: string | null, strategySpec: JsonOb
 }
 
 /**
- * The parameters to show: the fallback, the only ref, or the ref the user chose. With several refs
+ * The parameters to show: the only ref, or the ref the user chose. With several refs
  * and no choice there are none: the Workbench asks for an explicit choice.
  */
 export function selectEpisodeParams(state: EpisodeParamsState, chosenRef: string | null): EpisodeParams | null {
-  if (state.refs.length === 0) return state.fallback;
+  if (state.refs.length === 0) return null;
   if (state.refs.length === 1) return state.paramsByRef[state.refs[0]!] ?? null;
   return chosenRef !== null ? (state.paramsByRef[chosenRef] ?? null) : null;
+}
+
+/**
+ * Episode controls exist only for a strategy that declares episodes (or while Engine's plan loads or failed,
+ * so the state is visible). A strategy without `ema_stack_episode` shows no episode control at all.
+ */
+export function showEpisodeControls(state: EpisodeParamsState): boolean {
+  return state.refs.length > 0 || state.status === "loading" || state.status === "error";
 }
