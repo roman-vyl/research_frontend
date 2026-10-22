@@ -8,5 +8,7 @@
 
 ## 2. Rollout (on owner's word only)
 
-- [ ] 2.1 PR and merge only on the owner's word, deploy after the Runtime change (`strategy_runtime`, `runtime-strategy-delete-v1`) is deployed.
+- [x] 2.1 PR and merge only on the owner's word, deploy after the Runtime change (`strategy_runtime`, `runtime-strategy-delete-v1`) is deployed.
+  Done 2026-10-22: PR #35 squash-merged (638a0ec) after Runtime #33 was deployed.
 - [ ] 2.2 On the Mac demo: delete a disabled idle strategy through the button; try with an open position and see the dialog.
+  Observed 2026-10-22 16:49 UTC: the owner deleted a disabled strategy through the button and the file landed in `.deleted/`. Not yet checked by hand: the dialog for an open position.
