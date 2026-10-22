@@ -22,7 +22,9 @@ const EFFECTIVE = {
 };
 
 describe("useEpisodeParams", () => {
-  beforeEach(() => fetchStrategyFeaturePlan.mockReset());
+  beforeEach(() => {
+    fetchStrategyFeaturePlan.mockReset();
+  });
 
   it("a spec without ema_stack_episode gives no parameters and asks Engine for nothing", async () => {
     const { result } = renderHook(() => useEpisodeParams("s1", STACK));
@@ -47,7 +49,7 @@ describe("useEpisodeParams", () => {
   });
 
   it("a failed plan gives an error and no parameters", async () => {
-    fetchStrategyFeaturePlan.mockRejectedValue(new Error("down"));
+    fetchStrategyFeaturePlan.mockImplementation(() => Promise.reject(new Error("down")));
     const spec = { ...STACK, ema_stack_episode: { trend: { window_bars: 12 } } };
     const { result } = renderHook(() => useEpisodeParams("s3", spec));
     await waitFor(() => expect(result.current.status).toBe("error"));
