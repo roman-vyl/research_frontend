@@ -27,27 +27,28 @@ import type { Projection } from "@/features/runtime/runtimeProjection";
 import { closeLabel, closePosition, type TradeCycles } from "@/features/runtime/runtimeTradeCycles";
 import { tradeCycleData, TradeCycleSeriesView, type TradeCycleSeriesOptions } from "@/features/runtime/tradeCycleSeries";
 
-type Palette = { text: string; grid: string; up: string; down: string; muted: string };
+type Palette = { background: string; text: string; grid: string; border: string; up: string; down: string; muted: string };
 
-/** Colours come from the Surface tokens of the element, so the chart follows light and dark. */
-function readPalette(el: HTMLElement): Palette {
-  const css = getComputedStyle(el);
-  const token = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
-  return {
-    text: token("--ink-2", "#52514e"),
-    grid: token("--hair", "#e1e0d9"),
-    up: token("--pos-500", "#2f9e44"),
-    down: token("--neg-500", "#d75352"),
-    muted: token("--ink-muted", "#8a8984"),
-  };
-}
+/**
+ * The fixed palette of the Research backtest chart (`features/chart/ChartPanel.tsx`): the canvas does not
+ * follow the light and dark theme, so the Workbench episode layers stay visible on it.
+ */
+export const RESEARCH_CHART_PALETTE: Palette = {
+  background: "#0f1419",
+  text: "#c8d0dc",
+  grid: "#1e2836",
+  border: "#2a3544",
+  up: "#22c55e",
+  down: "#ef4444",
+  muted: "#8b949e",
+};
 
 function chartOptions(p: Palette) {
   return {
-    layout: { background: { color: "transparent" }, textColor: p.text },
+    layout: { background: { color: p.background }, textColor: p.text },
     grid: { vertLines: { color: p.grid }, horzLines: { color: p.grid } },
-    rightPriceScale: { borderColor: p.grid },
-    timeScale: { borderColor: p.grid, timeVisible: true, secondsVisible: false },
+    rightPriceScale: { borderColor: p.border },
+    timeScale: { borderColor: p.border, timeVisible: true, secondsVisible: false },
   };
 }
 
@@ -149,13 +150,12 @@ export function RuntimeCandleChart({
   const episodesRef = useRef<EpisodeLayersPrimitive | null>(null);
   const openTradeDataRef = useRef<OpenTradeProjection | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
-  const hostPaletteRef = useRef<Palette | null>(null);
   const cyclesDataRef = useRef<TradeCycles | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    const palette = readPalette(host);
+    const palette = RESEARCH_CHART_PALETTE;
     const chart = createChart(host, { ...chartOptions(palette), width: host.clientWidth, height: host.clientHeight });
     const series = chart.addSeries(CandlestickSeries, {
       upColor: palette.up,
@@ -185,7 +185,6 @@ export function RuntimeCandleChart({
     const markers = createSeriesMarkers(series, []);
     emaSeriesRef.current = emaSeries;
     episodesRef.current = episodesPrimitive;
-    hostPaletteRef.current = palette;
     chartRef.current = chart;
     seriesRef.current = series;
     projectionRef.current = projectionSeries;
@@ -196,22 +195,7 @@ export function RuntimeCandleChart({
 
     const resize = new ResizeObserver(() => chart.applyOptions({ width: host.clientWidth, height: host.clientHeight }));
     resize.observe(host);
-    const scheme = window.matchMedia("(prefers-color-scheme: dark)");
-    const restyle = () => {
-      const p = readPalette(host);
-      chart.applyOptions(chartOptions(p));
-      series.applyOptions({ upColor: p.up, downColor: p.down, wickUpColor: p.up, wickDownColor: p.down });
-      projectionSeries.applyOptions(projectionColors(p));
-      appliedSeries.applyOptions(appliedColors(p));
-      cyclesSeries.applyOptions(cycleColors(p));
-      openTradeSeries.applyOptions(openTradeColors(p));
-      hostPaletteRef.current = p;
-      markers.setMarkers(closeMarkers(cyclesDataRef.current, openTradeDataRef.current, p));
-    };
-    scheme.addEventListener("change", restyle);
-
     return () => {
-      scheme.removeEventListener("change", restyle);
       resize.disconnect();
       chart.remove();
       chartRef.current = null;
@@ -223,7 +207,6 @@ export function RuntimeCandleChart({
       markersRef.current = null;
       emaSeriesRef.current = null;
       episodesRef.current = null;
-      hostPaletteRef.current = null;
     };
   }, []);
 
@@ -269,8 +252,7 @@ export function RuntimeCandleChart({
     openTradeRef.current?.setData(
       (openTrade?.points ?? []).map((p) => ({ time: p.time as Time, segment: p.segment, stop: p.stop, take: p.take })),
     );
-    const palette = hostPaletteRef.current;
-    if (palette !== null) markersRef.current?.setMarkers(closeMarkers(cycles, openTrade, palette));
+    markersRef.current?.setMarkers(closeMarkers(cycles, openTrade, RESEARCH_CHART_PALETTE));
   }, [candles, cycles, openTrade]);
 
   return <div ref={hostRef} className="rt-chart-host" role="img" aria-label="Candlestick chart" />;
