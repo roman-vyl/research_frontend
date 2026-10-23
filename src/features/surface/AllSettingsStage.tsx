@@ -141,7 +141,14 @@ export function AllSettingsStage({ schema, view, snap, result, metric, mode, equ
           <div className="sx-axis-caption">
             Top {result.top.length} of {result.matched.toLocaleString("en-US")} matches by {m.label} · click a row to open it on the surface
           </div>
-          <table className="sx-pt-tbl" aria-label="Top matches">
+          <div className="sx-pt-scroll">
+          <table className="sx-pt-tbl sx-pt-top" aria-label="Top matches">
+            <colgroup>
+              <col className="sx-pt-cell" />
+              <col />
+              <col className="sx-pt-num" />
+              {extra.map((id) => <col key={id} className="sx-pt-num" />)}
+            </colgroup>
             <thead>
               <tr>
                 <th>Cell</th>
@@ -157,7 +164,7 @@ export function AllSettingsStage({ schema, view, snap, result, metric, mode, equ
                 return (
                   <tr key={t.index} style={{ cursor: "pointer" }} onClick={() => onOpen(r)}>
                     <th>{`${yd?.label ?? view.y} ${dimValue(schema, r, view.y, grid)} · ${xd?.label ?? view.x} ${dimValue(schema, r, view.x, grid)}`}</th>
-                    <td style={{ textAlign: "left" }}>{settingText(schema, view, r)}</td>
+                    <td className="sx-pt-setting" title={settingText(schema, view, r)}>{settingText(schema, view, r)}</td>
                     <td className={t.value !== null && t.value < 0 ? "sx-neg" : "sx-pos"}>{formatCell(m, t.value, delta)}</td>
                     {extra.map((id) => {
                       const em = metricById(schema, id);
@@ -169,6 +176,7 @@ export function AllSettingsStage({ schema, view, snap, result, metric, mode, equ
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </>
