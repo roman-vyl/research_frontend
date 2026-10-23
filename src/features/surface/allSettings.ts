@@ -379,10 +379,11 @@ export function neededMetrics(schema: ExperimentResultSchema, metric: string, fi
   return [...out];
 }
 
-/** Extra metrics of the matches table: Net PnL when the Experiment has it, and the first count metric. */
+/** Extra metrics of the matches table: Net PnL and Win rate when the Experiment has them, and the first count metric. */
 export function tableMetrics(schema: ExperimentResultSchema): string[] {
   const out: string[] = [];
   if (metricById(schema, "net_pnl")) out.push("net_pnl");
+  if (metricById(schema, "win_rate")) out.push("win_rate");
   const count = schema.metrics.find((m) => m.format === "integer");
   if (count) out.push(metricId(count));
   return out;
