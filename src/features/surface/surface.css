@@ -189,16 +189,18 @@
 .sx .sx-cand-table th.sx-num-h{ text-align:right; }
 .sx .sx-cand-table td.sx-num{ text-align:right; white-space:nowrap; padding-top:14px; }
 .sx .sx-cand-table tbody tr:hover > td{ background:var(--surface-2); }
-.sx .sx-cand-table tbody tr:last-child > td{ border-bottom:none; }
+.sx .sx-cand-table tbody:last-child tr:last-child > td{ border-bottom:none; }
 .sx .sx-cand-table td.sx-loss{ color:var(--neg-500); }
 .sx .sx-cand-check{ margin:0 4px 0 0; vertical-align:middle; cursor:pointer; accent-color:var(--accent); }
 .sx .sx-cand-bulk{ display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:10px 0; }
 .sx .sx-cand-all{ display:inline-flex; align-items:center; gap:2px; font-size:12px; color:var(--ink-2); margin-right:6px; cursor:pointer; }
 .sx .sx-cand-layout{ display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start; }
-.sx .sx-cand-groups{ flex:999 1 640px; min-width:0; display:flex; flex-direction:column; gap:14px; }
-.sx .sx-cand-group{ padding:0; overflow:hidden; }
-.sx .sx-cand-ghead{ display:flex; flex-wrap:wrap; align-items:baseline; gap:10px; padding:12px 14px; border-bottom:1px solid var(--hair); }
-.sx .sx-cand-gtitle{ font-weight:600; font-size:13.5px; color:var(--ink); }
+.sx .sx-cand-groups{ flex:999 1 640px; min-width:0; padding:0; overflow:hidden; }
+.sx .sx-cand-table tr.sx-cand-ghead > td{ background:var(--mid); border-top:1px solid var(--axis); padding-top:10px; padding-bottom:8px; }
+.sx .sx-cand-table tr.sx-cand-ghead > td.sx-cand-coordhead{ font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-2); white-space:nowrap; }
+.sx .sx-cand-table tr.sx-cand-ghead:hover > td{ background:var(--mid); }
+.sx .sx-cand-gcell{ white-space:nowrap; }
+.sx .sx-cand-gtitle{ font-weight:600; font-size:13px; color:var(--ink); margin-right:10px; }
 .sx .sx-cand-table th.sx-cand-checkcol,.sx .sx-cand-table td.sx-cand-checkcol{ width:24px; padding-right:0; }
 .sx .sx-cand-table .sx-cand-coord{ background:var(--surface-2); font-family:"IBM Plex Mono",monospace; }
 .sx .sx-cand-table thead th.sx-cand-coord{ background:var(--surface-2); }

@@ -202,6 +202,12 @@ function coordValue(c: Candidate, id: string): string {
   return v === null || v === undefined ? "—" : v;
 }
 
+/** The Experiment's coordinate columns padded with empty slots up to the shared table's width. */
+const pad = (columns: CoordColumn[], slots: number): (CoordColumn | null)[] => [
+  ...columns,
+  ...Array.from({ length: slots - columns.length }, () => null),
+];
+
 type Sort = { metric: string; dir: "desc" | "asc" };
 
 const SORT_KEY = "candidates.sort";
@@ -228,7 +234,7 @@ function sortRows<T extends { s: Shown }>(rows: T[], sort: Sort | null): T[] {
     .map((x) => x.r);
 }
 
-/** The shortlist of starred Surface points: one block per Experiment, the point's actions in a side panel. */
+/** The shortlist of starred Surface points: one table, a section per Experiment, the point's actions in a side panel. */
 export function CandidatesPanel() {
   const { setSelectedRunId } = useWorkbenchReport();
   const { setActiveTab } = useWorkbenchShell();
@@ -261,6 +267,9 @@ export function CandidatesPanel() {
     () => groupByExperiment(visible).map((g) => ({ ...g, rows: sortRows(g.rows, sort) })),
     [visible, sort],
   );
+
+  /** Coordinate slots of the shared table: as many as the widest Experiment has. */
+  const slots = Math.max(1, ...groups.map((g) => g.columns.length));
 
   /** Selected rows that are still in the list and pass the filters: hidden rows are never removed. */
   const selected = useMemo(() => visible.filter((x) => picked.has(x.c.candidate_id)).map((x) => x.c.candidate_id), [visible, picked]);
@@ -416,7 +425,7 @@ export function CandidatesPanel() {
           <div className="sx-eyebrow">Research · Shortlist</div>
           <h1>Candidates</h1>
           <p className="sx-sub">
-            Points starred on the Surface, one block per Experiment. Click a row for its details and actions. A changed row
+            Points starred on the Surface, one section per Experiment. Click a row for its details and actions. A changed row
             shows the value at the time of the star on hover.
           </p>
         </header>
@@ -462,102 +471,104 @@ export function CandidatesPanel() {
               )}
             </div>
             <div className={`sx-cand-layout${focus ? " sx-cand-layout-open" : ""}`}>
-              <div className="sx-cand-groups">
-                {groups.map((g) => (
-                  <div key={g.experimentId} className="sx-panel sx-cand-group">
-                    <div className="sx-cand-ghead">
-                      <span className="sx-cand-gtitle">{g.title}</span>
-                      <span className="sx-note">
-                        {g.sub ? `${g.sub} · ` : ""}
-                        {g.rows.length} {g.rows.length === 1 ? "point" : "points"}
-                      </span>
-                    </div>
-                    <div className="sx-cand-scroll">
-                      <table className="sx-cand-table" aria-label={`Candidates · ${g.title}`}>
-                        <thead>
-                          <tr>
-                            <th className="sx-cand-checkcol">
-                              <input
-                                type="checkbox"
-                                className="sx-cand-check"
-                                aria-label="Select all in this experiment"
-                                checked={g.rows.every((r) => picked.has(r.c.candidate_id))}
-                                onChange={() => pickGroup(g)}
-                              />
+              <div className="sx-panel sx-cand-groups">
+                <div className="sx-cand-scroll">
+                  <table className="sx-cand-table" aria-label="Candidates">
+                    <thead>
+                      <tr>
+                        <th className="sx-cand-checkcol" aria-label="select" />
+                        <th colSpan={slots} className="sx-cand-coord">Point</th>
+                        {ids.map((id) => {
+                          const m = metricInfo(id, defs);
+                          const on = sort?.metric === id;
+                          return (
+                            <th
+                              key={id}
+                              className="sx-num-h"
+                              aria-sort={on ? (sort.dir === "desc" ? "descending" : "ascending") : "none"}
+                            >
+                              <button type="button" className={`sx-sort${on ? " sx-sort-on" : ""}`} onClick={() => sortBy(id)}>
+                                {m.label}{m.unit ? ` ${m.unit}` : ""}
+                                <span aria-hidden="true">{on ? (sort.dir === "desc" ? " ↓" : " ↑") : ""}</span>
+                              </button>
                             </th>
-                            {g.columns.map((k) => (
-                              <th key={k.id} className="sx-num-h sx-cand-coord">{k.head}</th>
-                            ))}
-                            {ids.map((id) => {
-                              const m = metricInfo(id, defs);
-                              const on = sort?.metric === id;
-                              return (
-                                <th
-                                  key={id}
-                                  className="sx-num-h"
-                                  aria-sort={on ? (sort.dir === "desc" ? "descending" : "ascending") : "none"}
-                                >
-                                  <button type="button" className={`sx-sort${on ? " sx-sort-on" : ""}`} onClick={() => sortBy(id)}>
-                                    {m.label}{m.unit ? ` ${m.unit}` : ""}
-                                    <span aria-hidden="true">{on ? (sort.dir === "desc" ? " ↓" : " ↑") : ""}</span>
-                                  </button>
-                                </th>
-                              );
-                            })}
-                            <th>State</th>
-                            <th>Picked</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {g.rows.map(({ c, s }) => {
-                            const rowState = c.current?.row_state ?? "missing";
-                            const origin = originBadge(c);
-                            const open = focus?.candidate_id === c.candidate_id;
-                            const [day, time] = c.picked_at.replace("T", " ").slice(0, 16).split(" ");
-                            return (
-                              <tr
-                                key={c.candidate_id}
-                                className={`sx-cand-row${open ? " sx-cand-open" : ""}${picked.has(c.candidate_id) ? " sx-cand-picked-row" : ""}`}
-                                tabIndex={0}
-                                aria-selected={open}
-                                title={meaningLine(c)}
-                                onClick={() => setFocused(open ? null : c.candidate_id)}
-                                onKeyDown={(e) => {
-                                  if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
-                                  e.preventDefault();
-                                  setFocused(open ? null : c.candidate_id);
-                                }}
-                              >
-                                <td className="sx-cand-checkcol" onClick={(e) => e.stopPropagation()}>
-                                  <input
-                                    type="checkbox"
-                                    className="sx-cand-check"
-                                    aria-label="Select candidate"
-                                    checked={picked.has(c.candidate_id)}
-                                    onChange={() => pick(c.candidate_id)}
-                                  />
-                                </td>
-                                {g.columns.map((k) => (
-                                  <td key={k.id} className="sx-num sx-cand-coord">{coordValue(c, k.id)}</td>
-                                ))}
-                                {ids.map((id) => cell(id, s, rowState === "changed"))}
-                                <td className="sx-cand-state">
-                                  {origin && <span className="sx-badge">{origin}</span>}
-                                  {rowState !== "same" && <span className="sx-badge sx-badge-warn">{rowState}</span>}
-                                  <CatalogMark c={c} />
-                                </td>
-                                <td className="sx-num sx-cand-picked">
-                                  <span>{day}</span>
-                                  <span className="sx-cand-time">{time}</span>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                ))}
+                          );
+                        })}
+                        <th>State</th>
+                        <th>Picked</th>
+                      </tr>
+                    </thead>
+                    {groups.map((g) => (
+                      <tbody key={g.experimentId} className="sx-cand-group" aria-label={`Candidates · ${g.title}`}>
+                        <tr className="sx-cand-ghead">
+                          <td className="sx-cand-checkcol">
+                            <input
+                              type="checkbox"
+                              className="sx-cand-check"
+                              aria-label="Select all in this experiment"
+                              checked={g.rows.every((r) => picked.has(r.c.candidate_id))}
+                              onChange={() => pickGroup(g)}
+                            />
+                          </td>
+                          {pad(g.columns, slots).map((k, i) => (
+                            <td key={k?.id ?? `pad${i}`} className="sx-num sx-cand-coord sx-cand-coordhead">{k?.head ?? ""}</td>
+                          ))}
+                          <td colSpan={ids.length + 2} className="sx-cand-gcell">
+                            <span className="sx-cand-gtitle">{g.title}</span>
+                            <span className="sx-note">
+                              {g.sub ? `${g.sub} · ` : ""}
+                              {g.rows.length} {g.rows.length === 1 ? "point" : "points"}
+                            </span>
+                          </td>
+                        </tr>
+                        {g.rows.map(({ c, s }) => {
+                          const rowState = c.current?.row_state ?? "missing";
+                          const origin = originBadge(c);
+                          const open = focus?.candidate_id === c.candidate_id;
+                          const [day, time] = c.picked_at.replace("T", " ").slice(0, 16).split(" ");
+                          return (
+                            <tr
+                              key={c.candidate_id}
+                              className={`sx-cand-row${open ? " sx-cand-open" : ""}${picked.has(c.candidate_id) ? " sx-cand-picked-row" : ""}`}
+                              tabIndex={0}
+                              aria-selected={open}
+                              title={meaningLine(c)}
+                              onClick={() => setFocused(open ? null : c.candidate_id)}
+                              onKeyDown={(e) => {
+                                if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+                                e.preventDefault();
+                                setFocused(open ? null : c.candidate_id);
+                              }}
+                            >
+                              <td className="sx-cand-checkcol" onClick={(e) => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  className="sx-cand-check"
+                                  aria-label="Select candidate"
+                                  checked={picked.has(c.candidate_id)}
+                                  onChange={() => pick(c.candidate_id)}
+                                />
+                              </td>
+                              {pad(g.columns, slots).map((k, i) => (
+                                <td key={k?.id ?? `pad${i}`} className="sx-num sx-cand-coord">{k ? coordValue(c, k.id) : ""}</td>
+                              ))}
+                              {ids.map((id) => cell(id, s, rowState === "changed"))}
+                              <td className="sx-cand-state">
+                                {origin && <span className="sx-badge">{origin}</span>}
+                                {rowState !== "same" && <span className="sx-badge sx-badge-warn">{rowState}</span>}
+                                <CatalogMark c={c} />
+                              </td>
+                              <td className="sx-num sx-cand-picked">
+                                <span>{day}</span>
+                                <span className="sx-cand-time">{time}</span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    ))}
+                  </table>
+                </div>
               </div>
               {focus && side(focus)}
             </div>
