@@ -56,6 +56,18 @@ export async function unstarPoint(candidateId: string): Promise<void> {
 }
 
 /**
+ * Removes several candidates one by one, then reloads the list once (also after a failure).
+ * Rejects with the first error; the ids before it are already removed.
+ */
+export async function unstarPoints(candidateIds: readonly string[]): Promise<void> {
+  try {
+    for (const id of candidateIds) await unstarCandidate(id);
+  } finally {
+    await loadCandidates();
+  }
+}
+
+/**
  * Exports the stored spec snapshot to the Runtime catalog (a new file, switched off) and reloads the list.
  * When the service reports that the file or its identity is already there, the list is reloaded too, so the row shows it.
  */

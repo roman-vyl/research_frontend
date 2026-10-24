@@ -16,7 +16,7 @@ import {
   shownMetrics,
   type Shown,
 } from "@/features/candidates/metrics";
-import { loadCandidates, unstarPoint, useCandidates } from "@/features/candidates/store";
+import { loadCandidates, unstarPoint, unstarPoints, useCandidates } from "@/features/candidates/store";
 import { FiltersPanel } from "@/features/surface/FiltersPanel";
 import { formatMetric, makePasses, type Condition } from "@/features/surface/model";
 import { useWorkbenchReport, useWorkbenchShell } from "@/shared/context/WorkbenchContext";
@@ -166,6 +166,8 @@ export function CandidatesPanel() {
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const [actionError, setActionError] = useState<string | null>(null);
   const [exporting, setExporting] = useState<string | null>(null);
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  const [removing, setRemoving] = useState(false);
 
   useEffect(() => {
     void loadCandidates();
@@ -182,6 +184,34 @@ export function CandidatesPanel() {
     const pass = makePasses(schema, rows, depthConditions(filters), () => new Map());
     return candidates.map((c, i) => ({ c, s: shown[i], ok: pass(rows[i]) })).filter((x) => x.ok);
   }, [candidates, shown, schema, filters]);
+
+  /** Selected rows that are still in the list and pass the filters: hidden rows are never removed. */
+  const selected = useMemo(() => visible.filter((x) => picked.has(x.c.candidate_id)).map((x) => x.c.candidate_id), [visible, picked]);
+  const allPicked = visible.length > 0 && selected.length === visible.length;
+
+  const pick = (id: string) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const pickAll = () => setPicked(allPicked ? new Set() : new Set(visible.map((x) => x.c.candidate_id)));
+
+  const removeSelected = async () => {
+    if (selected.length === 0) return;
+    setActionError(null);
+    setRemoving(true);
+    try {
+      await unstarPoints(selected);
+      setPicked(new Set());
+    } catch (e) {
+      setActionError(errorText(e));
+    } finally {
+      setRemoving(false);
+    }
+  };
 
   const exportCandidate = exporting === null ? null : (candidates.find((c) => c.candidate_id === exporting) ?? null);
 
@@ -248,11 +278,35 @@ export function CandidatesPanel() {
               onChange={update}
               label="Filters · all conditions must hold (AND) · candidates that fail are hidden · Max DD compares depth"
             />
+            <div className="sx-cand-bulk">
+              <button
+                type="button"
+                className="sx-act sx-act-danger"
+                disabled={selected.length === 0 || removing}
+                onClick={removeSelected}
+              >
+                {removing ? "Deleting…" : `Delete selected (${selected.length})`}
+              </button>
+              {selected.length > 0 && !removing && (
+                <button type="button" className="sx-act" onClick={() => setPicked(new Set())}>
+                  Clear selection
+                </button>
+              )}
+            </div>
             <div className="sx-panel sx-cand-scroll">
               <table className="sx-cand-table" aria-label="Candidates">
                 <thead>
                   <tr>
-                    <th className="sx-cand-starcol" aria-label="star" />
+                    <th className="sx-cand-starcol">
+                      <input
+                        type="checkbox"
+                        className="sx-cand-check"
+                        aria-label="Select all shown candidates"
+                        checked={allPicked}
+                        disabled={visible.length === 0}
+                        onChange={pickAll}
+                      />
+                    </th>
                     <th className="sx-cand-point">Point</th>
                     {ids.map((id) => {
                       const m = metricInfo(id, defs);
@@ -276,6 +330,13 @@ export function CandidatesPanel() {
                       <Fragment key={c.candidate_id}>
                         <tr className={expanded ? "sx-cand-open" : undefined}>
                           <td className="sx-cand-starcol">
+                            <input
+                              type="checkbox"
+                              className="sx-cand-check"
+                              aria-label="Select candidate"
+                              checked={picked.has(c.candidate_id)}
+                              onChange={() => pick(c.candidate_id)}
+                            />
                             <button type="button" className="sx-cand-star" aria-label="Unstar candidate" title="Remove from candidates" onClick={() => unstar(c)}>★</button>
                           </td>
                           <td className="sx-cand-point">

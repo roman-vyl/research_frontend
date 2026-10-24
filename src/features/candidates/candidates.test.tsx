@@ -220,6 +220,41 @@ describe("Candidates tab", () => {
 
   const rowOf = async (title: RegExp): Promise<HTMLElement> => (await screen.findByText(title)).closest("tr") as HTMLElement;
 
+  it("deletes the selected rows in one go and reloads the list once", async () => {
+    shortlist = [
+      candidate("cand_1", R_COORDS),
+      candidate("cand_2", { ...R_COORDS, sl: "10" }),
+      candidate("cand_3", { ...R_COORDS, tp_ratio: "6" }),
+    ];
+    unstarCandidate.mockImplementation(async (id: string) => {
+      shortlist = shortlist.filter((c) => c.candidate_id !== id);
+      return { removed: true };
+    });
+    render(<CandidatesPanel />);
+    const boxes = await screen.findAllByRole("checkbox", { name: "Select candidate" });
+    expect(boxes.length).toBe(3);
+    const del = screen.getByRole("button", { name: "Delete selected (0)" }) as HTMLButtonElement;
+    expect(del.disabled).toBe(true);
+    fireEvent.click(boxes[0]);
+    fireEvent.click(boxes[2]);
+    listCandidates.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Delete selected (2)" }));
+    await waitFor(() => expect(screen.getAllByRole("checkbox", { name: "Select candidate" }).length).toBe(1));
+    expect(unstarCandidate.mock.calls.map((c) => c[0])).toEqual(["cand_1", "cand_3"]);
+    expect(listCandidates).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Delete selected (0)" })).toBeTruthy();
+  });
+
+  it("select all picks every shown row", async () => {
+    shortlist = [candidate("cand_1", R_COORDS), candidate("cand_2", { ...R_COORDS, sl: "10" })];
+    unstarCandidate.mockResolvedValue({ removed: true });
+    render(<CandidatesPanel />);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select all shown candidates" }));
+    expect(screen.getByRole("button", { name: "Delete selected (2)" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+    expect(screen.getByRole("button", { name: "Delete selected (0)" })).toBeTruthy();
+  });
+
   it("Net PnL is the return times the initial equity, first among the metrics", async () => {
     shortlist = [candidate("cand_1", R_COORDS)];
     render(<CandidatesPanel />);
