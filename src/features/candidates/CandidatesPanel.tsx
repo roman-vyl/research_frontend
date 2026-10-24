@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { ApiError, fetchExperimentManifest } from "@/api/client";
 import type { Candidate, CandidateMeaning } from "@/api/candidates";
@@ -157,13 +157,85 @@ function Details({ c, meaning }: { c: Candidate; meaning: CandidateMeaning | nul
   );
 }
 
-/** The shortlist of starred Surface points: current metrics, row state, and the two ways to open a point. */
+/** A coordinate column of an Experiment block: the manifest's label and unit, or the stored id when no row is found. */
+type CoordColumn = { id: string; head: string };
+
+type Group = { experimentId: string; title: string; sub: string; columns: CoordColumn[]; rows: { c: Candidate; s: Shown }[] };
+
+/** Visible candidates grouped by Experiment, in the order the Experiments first appear in the list. */
+function groupByExperiment(rows: { c: Candidate; s: Shown }[]): Group[] {
+  const groups = new Map<string, Group>();
+  for (const row of rows) {
+    const id = row.c.experiment_id;
+    let g = groups.get(id);
+    if (!g) {
+      g = { experimentId: id, title: id, sub: "", columns: [], rows: [] };
+      groups.set(id, g);
+    }
+    g.rows.push(row);
+  }
+  for (const g of groups.values()) {
+    const meanings = g.rows.map((r) => r.c.current?.meaning).filter((m): m is CandidateMeaning => !!m);
+    const first = meanings[0];
+    if (first) {
+      g.title = first.title;
+      g.sub = [first.ticker, first.anchor].filter(Boolean).join(" · ");
+    }
+    const seen = new Map<string, string>();
+    for (const m of meanings) {
+      for (const x of m.coords) if (!seen.has(x.id)) seen.set(x.id, `${x.label}${x.unit ? ` ${x.unit}` : ""}`);
+    }
+    if (seen.size === 0) for (const r of g.rows) for (const k of Object.keys(r.c.coords)) if (!seen.has(k)) seen.set(k, k);
+    g.columns = [...seen].map(([id, head]) => ({ id, head }));
+  }
+  return [...groups.values()];
+}
+
+/** The coordinate value shown in a column: the current meaning's value, else the stored coordinate. */
+function coordValue(c: Candidate, id: string): string {
+  const meaning = c.current?.meaning;
+  if (meaning) {
+    const x = meaning.coords.find((k) => k.id === id);
+    return x && x.value !== null ? String(x.value) : "—";
+  }
+  const v = c.coords[id];
+  return v === null || v === undefined ? "—" : v;
+}
+
+type Sort = { metric: string; dir: "desc" | "asc" };
+
+const SORT_KEY = "candidates.sort";
+
+function loadSort(): Sort | null {
+  const raw = readSession<unknown>(SORT_KEY);
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Partial<Sort>;
+  return typeof r.metric === "string" && (r.dir === "desc" || r.dir === "asc") ? { metric: r.metric, dir: r.dir } : null;
+}
+
+/** Rows ordered by one metric; rows without a value stay at the end in their list order. */
+function sortRows<T extends { s: Shown }>(rows: T[], sort: Sort | null): T[] {
+  if (!sort) return rows;
+  const sign = sort.dir === "desc" ? -1 : 1;
+  return rows
+    .map((r, i) => ({ r, i, v: r.s.metrics[sort.metric] }))
+    .sort((a, b) => {
+      const av = typeof a.v === "number" ? a.v : null;
+      const bv = typeof b.v === "number" ? b.v : null;
+      if (av === null || bv === null) return av === bv ? a.i - b.i : av === null ? 1 : -1;
+      return av === bv ? a.i - b.i : (av - bv) * sign;
+    })
+    .map((x) => x.r);
+}
+
+/** The shortlist of starred Surface points: one block per Experiment, the point's actions in a side panel. */
 export function CandidatesPanel() {
   const { setSelectedRunId } = useWorkbenchReport();
   const { setActiveTab } = useWorkbenchShell();
   const { candidates, status, error } = useCandidates();
   const [filters, setFilters] = useState<Condition[]>(loadFilters);
-  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  const [sort, setSort] = useState<Sort | null>(loadSort);
+  const [focused, setFocused] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [exporting, setExporting] = useState<string | null>(null);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
@@ -185,9 +257,29 @@ export function CandidatesPanel() {
     return candidates.map((c, i) => ({ c, s: shown[i], ok: pass(rows[i]) })).filter((x) => x.ok);
   }, [candidates, shown, schema, filters]);
 
+  const groups = useMemo(
+    () => groupByExperiment(visible).map((g) => ({ ...g, rows: sortRows(g.rows, sort) })),
+    [visible, sort],
+  );
+
   /** Selected rows that are still in the list and pass the filters: hidden rows are never removed. */
   const selected = useMemo(() => visible.filter((x) => picked.has(x.c.candidate_id)).map((x) => x.c.candidate_id), [visible, picked]);
   const allPicked = visible.length > 0 && selected.length === visible.length;
+
+  const focus = focused === null ? null : (visible.find((x) => x.c.candidate_id === focused)?.c ?? null);
+  const exportCandidate = exporting === null ? null : (candidates.find((c) => c.candidate_id === exporting) ?? null);
+
+  const update = (next: Condition[]) => {
+    setFilters(next);
+    writeSession(FILTERS_KEY, next);
+  };
+
+  /** First click sorts by the metric from high to low, the next one flips the order. */
+  const sortBy = (metric: string) => {
+    const next: Sort = sort?.metric === metric && sort.dir === "desc" ? { metric, dir: "asc" } : { metric, dir: "desc" };
+    setSort(next);
+    writeSession(SORT_KEY, next);
+  };
 
   const pick = (id: string) =>
     setPicked((prev) => {
@@ -198,6 +290,17 @@ export function CandidatesPanel() {
     });
 
   const pickAll = () => setPicked(allPicked ? new Set() : new Set(visible.map((x) => x.c.candidate_id)));
+
+  const pickGroup = (g: Group) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      const all = g.rows.every((r) => next.has(r.c.candidate_id));
+      for (const r of g.rows) {
+        if (all) next.delete(r.c.candidate_id);
+        else next.add(r.c.candidate_id);
+      }
+      return next;
+    });
 
   const removeSelected = async () => {
     if (selected.length === 0) return;
@@ -213,25 +316,11 @@ export function CandidatesPanel() {
     }
   };
 
-  const exportCandidate = exporting === null ? null : (candidates.find((c) => c.candidate_id === exporting) ?? null);
-
-  const update = (next: Condition[]) => {
-    setFilters(next);
-    writeSession(FILTERS_KEY, next);
-  };
-
-  const toggle = (id: string) =>
-    setOpen((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-
   const unstar = async (c: Candidate) => {
     setActionError(null);
     try {
       await unstarPoint(c.candidate_id);
+      setFocused(null);
     } catch (e) {
       setActionError(errorText(e));
     }
@@ -252,6 +341,74 @@ export function CandidatesPanel() {
     );
   };
 
+  const side = (c: Candidate) => {
+    const rowState = c.current?.row_state ?? "missing";
+    const runId = c.current?.run_id ?? null;
+    const origin = originBadge(c);
+    const hint = STATE_HINT[rowState];
+    const toRuntime = exportRule(c);
+    return (
+      <aside className="sx-panel sx-cand-side" aria-label="Candidate details">
+        <div className="sx-cand-side-head">
+          <div>
+            <div className="sx-cand-title">{c.current?.meaning?.title ?? c.experiment_id}</div>
+            <p className="sx-note">{meaningLine(c) || "—"}</p>
+          </div>
+          <button type="button" className="sx-cand-close" aria-label="Close details" onClick={() => setFocused(null)}>×</button>
+        </div>
+        {(origin || rowState !== "same" || c.current?.runtime?.present) && (
+          <div className="sx-cand-badges">
+            {origin && <span className="sx-badge">{origin}</span>}
+            {rowState !== "same" && <span className="sx-badge sx-badge-warn">{rowState}</span>}
+            <CatalogMark c={c} />
+          </div>
+        )}
+        <div className="sx-cand-actions">
+          <button
+            type="button"
+            className="sx-act"
+            disabled={!runId}
+            title={runId ? "Open the run on the Chart" : "no full run"}
+            onClick={() => {
+              if (!runId) return;
+              setSelectedRunId(runId);
+              setActiveTab("chart");
+            }}
+          >
+            Chart
+          </button>
+          <button
+            type="button"
+            className="sx-act"
+            disabled={hint !== undefined}
+            title={hint ?? "Show this point on the Surface"}
+            onClick={() => {
+              if (hint !== undefined) return;
+              emitFocus({ experimentId: c.experiment_id, coords: c.coords });
+              setActiveTab("surface");
+            }}
+          >
+            On Surface
+          </button>
+          <button
+            type="button"
+            className="sx-act"
+            disabled={!toRuntime.canExport}
+            title={toRuntime.hint}
+            onClick={() => toRuntime.canExport && setExporting(c.candidate_id)}
+          >
+            To Runtime
+          </button>
+        </div>
+        {hint && <div className="sx-note">{hint}</div>}
+        <Details c={c} meaning={c.current?.meaning ?? null} />
+        <button type="button" className="sx-act sx-act-danger sx-cand-remove" onClick={() => unstar(c)}>
+          Remove from candidates
+        </button>
+      </aside>
+    );
+  };
+
   return (
     <section className="sx" aria-label="Candidates">
       <div className="sx-wrap sx-wrap-wide">
@@ -259,8 +416,8 @@ export function CandidatesPanel() {
           <div className="sx-eyebrow">Research · Shortlist</div>
           <h1>Candidates</h1>
           <p className="sx-sub">
-            Points starred on the Surface. Metrics are those of the point's row now; a changed row shows the value at the
-            time of the star on hover.
+            Points starred on the Surface, one block per Experiment. Click a row for its details and actions. A changed row
+            shows the value at the time of the star on hover.
           </p>
         </header>
         {(error || actionError) && <p role="alert" className="sx-error">{actionError ?? error}</p>}
@@ -279,6 +436,17 @@ export function CandidatesPanel() {
               label="Filters · all conditions must hold (AND) · candidates that fail are hidden · Max DD compares depth"
             />
             <div className="sx-cand-bulk">
+              <label className="sx-cand-all">
+                <input
+                  type="checkbox"
+                  className="sx-cand-check"
+                  aria-label="Select all shown candidates"
+                  checked={allPicked}
+                  disabled={visible.length === 0}
+                  onChange={pickAll}
+                />
+                All shown
+              </label>
               <button
                 type="button"
                 className="sx-act sx-act-danger"
@@ -293,131 +461,105 @@ export function CandidatesPanel() {
                 </button>
               )}
             </div>
-            <div className="sx-panel sx-cand-scroll">
-              <table className="sx-cand-table" aria-label="Candidates">
-                <thead>
-                  <tr>
-                    <th className="sx-cand-starcol">
-                      <input
-                        type="checkbox"
-                        className="sx-cand-check"
-                        aria-label="Select all shown candidates"
-                        checked={allPicked}
-                        disabled={visible.length === 0}
-                        onChange={pickAll}
-                      />
-                    </th>
-                    <th className="sx-cand-point">Point</th>
-                    {ids.map((id) => {
-                      const m = metricInfo(id, defs);
-                      return <th key={id} className="sx-num-h">{m.label}{m.unit ? ` ${m.unit}` : ""}</th>;
-                    })}
-                    <th>Picked</th>
-                    <th className="sx-cand-actcol">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visible.map(({ c, s }) => {
-                    const rowState = c.current?.row_state ?? "missing";
-                    const runId = c.current?.run_id ?? null;
-                    const origin = originBadge(c);
-                    const hint = STATE_HINT[rowState];
-                    const toRuntime = exportRule(c);
-                    const hasMark = c.current?.runtime != null && c.current.runtime.present;
-                    const expanded = open.has(c.candidate_id);
-                    const [day, time] = c.picked_at.replace("T", " ").slice(0, 16).split(" ");
-                    return (
-                      <Fragment key={c.candidate_id}>
-                        <tr className={expanded ? "sx-cand-open" : undefined}>
-                          <td className="sx-cand-starcol">
-                            <input
-                              type="checkbox"
-                              className="sx-cand-check"
-                              aria-label="Select candidate"
-                              checked={picked.has(c.candidate_id)}
-                              onChange={() => pick(c.candidate_id)}
-                            />
-                            <button type="button" className="sx-cand-star" aria-label="Unstar candidate" title="Remove from candidates" onClick={() => unstar(c)}>★</button>
-                          </td>
-                          <td className="sx-cand-point">
-                            <div className="sx-cand-title">{c.current?.meaning?.title ?? c.experiment_id}</div>
-                            <div className="sx-cand-chips" title={meaningLine(c)}>
-                              {meaningParts(c).map((p, i) => <span key={i} className="sx-chip">{p}</span>)}
-                            </div>
-                            {(origin || rowState !== "same" || hasMark) && (
-                              <div className="sx-cand-badges">
-                                {origin && <span className="sx-badge">{origin}</span>}
-                                {rowState !== "same" && <span className="sx-badge sx-badge-warn">{rowState}</span>}
-                                <CatalogMark c={c} />
-                              </div>
-                            )}
-                          </td>
-                          {ids.map((id) => cell(id, s, rowState === "changed"))}
-                          <td className="sx-num sx-cand-picked">
-                            <span>{day}</span>
-                            <span className="sx-cand-time">{time}</span>
-                          </td>
-                          <td className="sx-cand-actcol">
-                            <div className="sx-cand-actions">
-                              <button
-                                type="button"
-                                className="sx-act sx-act-toggle"
-                                onClick={() => toggle(c.candidate_id)}
-                                aria-expanded={expanded}
-                              >
-                                Details<span aria-hidden="true" className="sx-chev">›</span>
-                              </button>
-                              <button
-                                type="button"
-                                className="sx-act"
-                                disabled={!runId}
-                                title={runId ? "Open the run on the Chart" : "no full run"}
-                                onClick={() => {
-                                  if (!runId) return;
-                                  setSelectedRunId(runId);
-                                  setActiveTab("chart");
-                                }}
-                              >
-                                Chart
-                              </button>
-                              <button
-                                type="button"
-                                className="sx-act"
-                                disabled={hint !== undefined}
-                                title={hint ?? "Show this point on the Surface"}
-                                onClick={() => {
-                                  if (hint !== undefined) return;
-                                  emitFocus({ experimentId: c.experiment_id, coords: c.coords });
-                                  setActiveTab("surface");
-                                }}
-                              >
-                                On Surface
-                              </button>
-                              <button
-                                type="button"
-                                className="sx-act"
-                                disabled={!toRuntime.canExport}
-                                title={toRuntime.hint}
-                                onClick={() => toRuntime.canExport && setExporting(c.candidate_id)}
-                              >
-                                To Runtime
-                              </button>
-                            </div>
-                            {hint && <div className="sx-note">{hint}</div>}
-                          </td>
-                        </tr>
-                        {expanded && (
-                          <tr className="sx-cand-detailrow">
-                            <td colSpan={ids.length + 4}>
-                              <Details c={c} meaning={c.current?.meaning ?? null} />
-                            </td>
+            <div className={`sx-cand-layout${focus ? " sx-cand-layout-open" : ""}`}>
+              <div className="sx-cand-groups">
+                {groups.map((g) => (
+                  <div key={g.experimentId} className="sx-panel sx-cand-group">
+                    <div className="sx-cand-ghead">
+                      <span className="sx-cand-gtitle">{g.title}</span>
+                      <span className="sx-note">
+                        {g.sub ? `${g.sub} · ` : ""}
+                        {g.rows.length} {g.rows.length === 1 ? "point" : "points"}
+                      </span>
+                    </div>
+                    <div className="sx-cand-scroll">
+                      <table className="sx-cand-table" aria-label={`Candidates · ${g.title}`}>
+                        <thead>
+                          <tr>
+                            <th className="sx-cand-checkcol">
+                              <input
+                                type="checkbox"
+                                className="sx-cand-check"
+                                aria-label="Select all in this experiment"
+                                checked={g.rows.every((r) => picked.has(r.c.candidate_id))}
+                                onChange={() => pickGroup(g)}
+                              />
+                            </th>
+                            {g.columns.map((k) => (
+                              <th key={k.id} className="sx-num-h sx-cand-coord">{k.head}</th>
+                            ))}
+                            {ids.map((id) => {
+                              const m = metricInfo(id, defs);
+                              const on = sort?.metric === id;
+                              return (
+                                <th
+                                  key={id}
+                                  className="sx-num-h"
+                                  aria-sort={on ? (sort.dir === "desc" ? "descending" : "ascending") : "none"}
+                                >
+                                  <button type="button" className={`sx-sort${on ? " sx-sort-on" : ""}`} onClick={() => sortBy(id)}>
+                                    {m.label}{m.unit ? ` ${m.unit}` : ""}
+                                    <span aria-hidden="true">{on ? (sort.dir === "desc" ? " ↓" : " ↑") : ""}</span>
+                                  </button>
+                                </th>
+                              );
+                            })}
+                            <th>State</th>
+                            <th>Picked</th>
                           </tr>
-                        )}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
+                        </thead>
+                        <tbody>
+                          {g.rows.map(({ c, s }) => {
+                            const rowState = c.current?.row_state ?? "missing";
+                            const origin = originBadge(c);
+                            const open = focus?.candidate_id === c.candidate_id;
+                            const [day, time] = c.picked_at.replace("T", " ").slice(0, 16).split(" ");
+                            return (
+                              <tr
+                                key={c.candidate_id}
+                                className={`sx-cand-row${open ? " sx-cand-open" : ""}${picked.has(c.candidate_id) ? " sx-cand-picked-row" : ""}`}
+                                tabIndex={0}
+                                aria-selected={open}
+                                title={meaningLine(c)}
+                                onClick={() => setFocused(open ? null : c.candidate_id)}
+                                onKeyDown={(e) => {
+                                  if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+                                  e.preventDefault();
+                                  setFocused(open ? null : c.candidate_id);
+                                }}
+                              >
+                                <td className="sx-cand-checkcol" onClick={(e) => e.stopPropagation()}>
+                                  <input
+                                    type="checkbox"
+                                    className="sx-cand-check"
+                                    aria-label="Select candidate"
+                                    checked={picked.has(c.candidate_id)}
+                                    onChange={() => pick(c.candidate_id)}
+                                  />
+                                </td>
+                                {g.columns.map((k) => (
+                                  <td key={k.id} className="sx-num sx-cand-coord">{coordValue(c, k.id)}</td>
+                                ))}
+                                {ids.map((id) => cell(id, s, rowState === "changed"))}
+                                <td className="sx-cand-state">
+                                  {origin && <span className="sx-badge">{origin}</span>}
+                                  {rowState !== "same" && <span className="sx-badge sx-badge-warn">{rowState}</span>}
+                                  <CatalogMark c={c} />
+                                </td>
+                                <td className="sx-num sx-cand-picked">
+                                  <span>{day}</span>
+                                  <span className="sx-cand-time">{time}</span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {focus && side(focus)}
             </div>
           </>
         )}
