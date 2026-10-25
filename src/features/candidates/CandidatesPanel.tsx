@@ -23,6 +23,15 @@ import { useWorkbenchReport, useWorkbenchShell } from "@/shared/context/Workbenc
 import { readSession, writeSession } from "@/shared/session/storage";
 
 const FILTERS_KEY = "candidates.filters";
+const COLUMNS_KEY = "candidates.columns";
+
+/** Metric columns shown until the viewer picks their own: the usual ones, or all when none of them is present. */
+const DEFAULT_COLUMNS = ["net_pnl", "return_pct", "profit_factor", "max_drawdown_pct", "win_rate", "realised_trade_count", "cumulative_net_r"];
+
+function loadColumns(): string[] | null {
+  const raw = readSession<unknown>(COLUMNS_KEY);
+  return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : null;
+}
 
 /** Result schemas of the candidates' Experiments, for metric labels and formats; a failed manifest is skipped. */
 function useResultSchemas(experimentIds: string[]): ExperimentResultSchema[] {
@@ -216,6 +225,8 @@ export function CandidatesPanel() {
   const [exporting, setExporting] = useState<string | null>(null);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [removing, setRemoving] = useState(false);
+  const [columns, setColumns] = useState<string[] | null>(loadColumns);
+  const [picking, setPicking] = useState(false);
 
   useEffect(() => {
     void loadCandidates();
@@ -224,8 +235,14 @@ export function CandidatesPanel() {
   const schemas = useResultSchemas(candidates.map((c) => c.experiment_id));
   const defs = useMemo(() => metricDefs(schemas), [schemas]);
   const shown = useMemo(() => candidates.map(shownMetrics), [candidates]);
-  const ids = useMemo(() => metricIds(shown), [shown]);
-  const schema = useMemo(() => filterSchema(ids, defs), [ids, defs]);
+  const allIds = useMemo(() => metricIds(shown), [shown]);
+  /** Metric columns of the table: the viewer's pick from the run table's metrics; filters and sorting still see all. */
+  const ids = useMemo(() => {
+    if (columns) return allIds.filter((id) => columns.includes(id));
+    const usual = allIds.filter((id) => DEFAULT_COLUMNS.includes(id));
+    return usual.length > 0 ? usual : allIds;
+  }, [allIds, columns]);
+  const schema = useMemo(() => filterSchema(allIds, defs), [allIds, defs]);
 
   const visible = useMemo(() => {
     const rows = shown.map((s) => depthRow(s.metrics));
@@ -242,6 +259,20 @@ export function CandidatesPanel() {
 
   const focus = focused === null ? null : (visible.find((x) => x.c.candidate_id === focused)?.c ?? null);
   const exportCandidate = exporting === null ? null : (candidates.find((c) => c.candidate_id === exporting) ?? null);
+
+  const toggleColumn = (id: string) => {
+    const now = new Set(ids);
+    if (now.has(id)) now.delete(id);
+    else now.add(id);
+    const next = allIds.filter((x) => now.has(x));
+    setColumns(next);
+    writeSession(COLUMNS_KEY, next);
+  };
+
+  const setAllColumns = (next: string[] | null) => {
+    setColumns(next);
+    writeSession(COLUMNS_KEY, next);
+  };
 
   const update = (next: Condition[]) => {
     setFilters(next);
@@ -402,6 +433,44 @@ export function CandidatesPanel() {
               <span className="sx-cand-summary">
                 Profitable: <b className="sx-gain">{visible.length ? Math.round((profitable / visible.length) * 100) : 0}%</b> ({profitable} of {visible.length})
               </span>
+              <div className="sx-cand-colpick">
+                <button
+                  type="button"
+                  className="sx-act"
+                  aria-expanded={picking}
+                  onClick={() => setPicking((v) => !v)}
+                >
+                  Columns ({ids.length}/{allIds.length})
+                </button>
+                {picking && (
+                  <div className="sx-panel sx-cand-colmenu" role="group" aria-label="Columns from the run table">
+                    <div className="sx-cand-colmenu-head">
+                      <span className="sx-note">Columns from the run table</span>
+                      <button type="button" className="sx-cand-close" aria-label="Close columns" onClick={() => setPicking(false)}>×</button>
+                    </div>
+                    <div className="sx-cand-colmenu-list">
+                      {allIds.map((id) => {
+                        const m = metricInfo(id, defs);
+                        return (
+                          <label key={id} className="sx-cand-colitem">
+                            <input
+                              type="checkbox"
+                              className="sx-cand-check"
+                              checked={ids.includes(id)}
+                              onChange={() => toggleColumn(id)}
+                            />
+                            {m.label}{m.unit ? ` ${m.unit}` : ""}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <div className="sx-cand-colmenu-foot">
+                      <button type="button" className="sx-act" onClick={() => setAllColumns([...allIds])}>All</button>
+                      <button type="button" className="sx-act" onClick={() => setAllColumns(null)}>Default</button>
+                    </div>
+                  </div>
+                )}
+              </div>
               <label className="sx-cand-all">
                 <input
                   type="checkbox"

@@ -305,6 +305,23 @@ describe("Candidates tab", () => {
     expect(within(row).getByText("missing")).toBeTruthy();
   });
 
+  it("Columns picks which run-table metrics the table shows; the usual ones by default", async () => {
+    shortlist = [candidate("cand_1", R_COORDS, { current: CURRENT({ metrics: { return_pct: 0.25, years_up: 5, worst_year: -0.1 } }) })];
+    render(<CandidatesPanel />);
+    const table = await screen.findByRole("table", { name: "Candidates" });
+    const heads = () => within(table).getAllByRole("columnheader").map((h) => h.textContent);
+    expect(heads()).toContain("Return");
+    expect(heads()).not.toContain("Years up");
+    fireEvent.click(screen.getByRole("button", { name: "Columns (2/4)" }));
+    const menu = screen.getByRole("group", { name: "Columns from the run table" });
+    fireEvent.click(within(menu).getByRole("checkbox", { name: "Years up" }));
+    fireEvent.click(within(menu).getByRole("checkbox", { name: "Return" }));
+    expect(heads()).toContain("Years up");
+    expect(heads()).not.toContain("Return");
+    fireEvent.click(within(menu).getByRole("button", { name: "All" }));
+    expect(heads()).toEqual(expect.arrayContaining(["Net PnL USDT", "Return", "Years up", "Worst year"]));
+  });
+
   it("a metric header sorts rows high to low, the next click low to high", async () => {
     const at = (id: string, r: number) =>
       candidate(id, { ...R_COORDS, width: id }, { current: CURRENT({ metrics: { return_pct: r } }) });

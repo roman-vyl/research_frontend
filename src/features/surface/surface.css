@@ -199,6 +199,15 @@
 /* Candidates: dark dashboard look (flat table, tags, coloured values), always dark whatever the system theme */
 .sx.sx-cand-dark{ --page:#0b0f17; --surface:#111722; --surface-2:#182030; --ink:#e6e9ef; --ink-2:#b4bccb; --ink-muted:#8b94a6; --hair:#232c3b; --axis:#2f3a4d; --accent:#5b9cf6; --accent-ink:#fff; --mid:#1a2232; --ring:rgba(255,255,255,0.10); --pos-500:#4ade80; --neg-500:#f87171; color-scheme:dark; }
 .sx.sx-cand-dark .sx-panel{ background:var(--surface); border-color:var(--hair); }
+.sx .sx-cand-colpick{ position:relative; }
+.sx .sx-cand-colpick > .sx-act{ border:1px solid var(--hair); border-radius:7px; }
+.sx .sx-cand-colmenu{ position:absolute; right:0; top:calc(100% + 6px); z-index:20; width:300px; padding:12px; display:flex; flex-direction:column; gap:8px; box-shadow:0 12px 32px rgba(0,0,0,.45); }
+.sx .sx-cand-colmenu-head{ display:flex; justify-content:space-between; align-items:center; }
+.sx .sx-cand-colmenu-list{ display:flex; flex-direction:column; gap:2px; max-height:360px; overflow-y:auto; }
+.sx .sx-cand-colitem{ display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--ink); padding:4px 2px; border-radius:5px; cursor:pointer; }
+.sx .sx-cand-colitem:hover{ background:var(--surface-2); }
+.sx .sx-cand-colmenu-foot{ display:flex; gap:8px; }
+.sx .sx-cand-colmenu-foot .sx-act{ border:1px solid var(--hair); border-radius:7px; }
 .sx .sx-cand-summary{ font-size:13px; color:var(--ink-2); margin-right:auto; }
 .sx .sx-cand-summary b{ font-weight:600; }
 .sx .sx-cand-table td.sx-gain,.sx b.sx-gain{ color:var(--pos-500); }
