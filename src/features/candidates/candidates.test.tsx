@@ -277,38 +277,49 @@ describe("Candidates tab", () => {
     expect(screen.getByRole("button", { name: "Delete selected (0)" })).toBeTruthy();
   });
 
-  it("one block per Experiment: coordinate columns from the meaning, then Net PnL (return times equity)", async () => {
+  it("one flat row per point: title, ticker and anchor tags, point coordinates, Net PnL (return times equity)", async () => {
     shortlist = [candidate("cand_1", R_COORDS)];
     render(<CandidatesPanel />);
     const table = await screen.findByRole("table", { name: "Candidates" });
     const heads = within(table).getAllByRole("columnheader").map((h) => h.textContent);
-    expect(heads.slice(1, 4)).toEqual(["Point", "Net PnL USDT", "Return"]);
-    const section = within(table).getByRole("rowgroup", { name: "Candidates · EMA500 · fixed SL × TP ratio" });
-    const labels = [...section.querySelectorAll("td.sx-cand-coordhead")].map((el) => el.textContent);
-    expect(labels).toEqual(["Initial SL ATR", "TP / SL R"]);
+    expect(heads.slice(1, 7)).toEqual(["Picked", "Experiment", "Ticker", "Point", "Net PnL USDT", "Return"]);
     const row = await firstRow();
-    const coords = [...row.querySelectorAll("td.sx-cand-coord")].map((el) => el.textContent);
-    expect(coords).toEqual(["5", "5"]);
-    expect(within(row).getByText("2,500")).toBeTruthy(); // 0.25 × 10000
+    expect(within(row).getByText("EMA500 · fixed SL × TP ratio")).toBeTruthy();
+    const tags = [...row.querySelectorAll(".sx-tag")].map((el) => el.textContent);
+    expect(tags).toEqual(["BTCUSDT.P", "EMA500"]);
+    expect(within(row).getByText("Initial SL 5 ATR · TP / SL 5 R")).toBeTruthy();
+    expect(within(row).getByText("2,500").className).toContain("sx-gain"); // 0.25 × 10000
     expect(within(row).getByText("25.0%")).toBeTruthy();
-    expect(screen.getByText("BTCUSDT.P · EMA500 · 1 point")).toBeTruthy();
+    expect(screen.getByText("(1 of 1)", { exact: false })).toBeTruthy();
     expect(fetchRunSummaries).not.toHaveBeenCalled();
   });
 
-  it("groups candidates by Experiment and keeps stored coordinates for a missing row", async () => {
+  it("a row whose table row is gone shows the Experiment id and its stored coordinates", async () => {
     shortlist = [
-      candidate("cand_1", R_COORDS),
       candidate("cand_t", { width: "4", lookback: "30" }, { experiment_id: TRAILING, current: CURRENT({ row_state: "missing", metrics: null, meaning: null }) }),
     ];
     render(<CandidatesPanel />);
+    const row = await firstRow();
+    expect(within(row).getByText(TRAILING)).toBeTruthy();
+    expect(within(row).getByText("width 4 · lookback 30")).toBeTruthy();
+    expect(within(row).getByText("missing")).toBeTruthy();
+  });
+
+  it("Columns picks which run-table metrics the table shows; the usual ones by default", async () => {
+    shortlist = [candidate("cand_1", R_COORDS, { current: CURRENT({ metrics: { return_pct: 0.25, years_up: 5, worst_year: -0.1 } }) })];
+    render(<CandidatesPanel />);
     const table = await screen.findByRole("table", { name: "Candidates" });
-    expect(within(table).getByRole("rowgroup", { name: "Candidates · EMA500 · fixed SL × TP ratio" })).toBeTruthy();
-    const other = within(table).getByRole("rowgroup", { name: `Candidates · ${TRAILING}` });
-    const labels = [...other.querySelectorAll("td.sx-cand-coordhead")].map((el) => el.textContent);
-    expect(labels).toEqual(["width", "lookback"]);
-    const row = within(other).getByRole("checkbox", { name: "Select candidate" }).closest("tr")!;
-    const coords = [...row.querySelectorAll("td.sx-cand-coord")].map((el) => el.textContent);
-    expect(coords).toEqual(["4", "30"]);
+    const heads = () => within(table).getAllByRole("columnheader").map((h) => h.textContent);
+    expect(heads()).toContain("Return");
+    expect(heads()).not.toContain("Years up");
+    fireEvent.click(screen.getByRole("button", { name: "Columns (2/4)" }));
+    const menu = screen.getByRole("group", { name: "Columns from the run table" });
+    fireEvent.click(within(menu).getByRole("checkbox", { name: "Years up" }));
+    fireEvent.click(within(menu).getByRole("checkbox", { name: "Return" }));
+    expect(heads()).toContain("Years up");
+    expect(heads()).not.toContain("Return");
+    fireEvent.click(within(menu).getByRole("button", { name: "All" }));
+    expect(heads()).toEqual(expect.arrayContaining(["Net PnL USDT", "Return", "Years up", "Worst year"]));
   });
 
   it("a metric header sorts rows high to low, the next click low to high", async () => {

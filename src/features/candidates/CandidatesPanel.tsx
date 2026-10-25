@@ -23,6 +23,15 @@ import { useWorkbenchReport, useWorkbenchShell } from "@/shared/context/Workbenc
 import { readSession, writeSession } from "@/shared/session/storage";
 
 const FILTERS_KEY = "candidates.filters";
+const COLUMNS_KEY = "candidates.columns";
+
+/** Metric columns shown until the viewer picks their own: the usual ones, or all when none of them is present. */
+const DEFAULT_COLUMNS = ["net_pnl", "return_pct", "profit_factor", "max_drawdown_pct", "win_rate", "realised_trade_count", "cumulative_net_r"];
+
+function loadColumns(): string[] | null {
+  const raw = readSession<unknown>(COLUMNS_KEY);
+  return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : null;
+}
 
 /** Result schemas of the candidates' Experiments, for metric labels and formats; a failed manifest is skipped. */
 function useResultSchemas(experimentIds: string[]): ExperimentResultSchema[] {
@@ -157,56 +166,26 @@ function Details({ c, meaning }: { c: Candidate; meaning: CandidateMeaning | nul
   );
 }
 
-/** A coordinate column of an Experiment block: the manifest's label and unit, or the stored id when no row is found. */
-type CoordColumn = { id: string; head: string };
-
-type Group = { experimentId: string; title: string; sub: string; columns: CoordColumn[]; rows: { c: Candidate; s: Shown }[] };
-
-/** Visible candidates grouped by Experiment, in the order the Experiments first appear in the list. */
-function groupByExperiment(rows: { c: Candidate; s: Shown }[]): Group[] {
-  const groups = new Map<string, Group>();
-  for (const row of rows) {
-    const id = row.c.experiment_id;
-    let g = groups.get(id);
-    if (!g) {
-      g = { experimentId: id, title: id, sub: "", columns: [], rows: [] };
-      groups.set(id, g);
-    }
-    g.rows.push(row);
-  }
-  for (const g of groups.values()) {
-    const meanings = g.rows.map((r) => r.c.current?.meaning).filter((m): m is CandidateMeaning => !!m);
-    const first = meanings[0];
-    if (first) {
-      g.title = first.title;
-      g.sub = [first.ticker, first.anchor].filter(Boolean).join(" · ");
-    }
-    const seen = new Map<string, string>();
-    for (const m of meanings) {
-      for (const x of m.coords) if (!seen.has(x.id)) seen.set(x.id, `${x.label}${x.unit ? ` ${x.unit}` : ""}`);
-    }
-    if (seen.size === 0) for (const r of g.rows) for (const k of Object.keys(r.c.coords)) if (!seen.has(k)) seen.set(k, k);
-    g.columns = [...seen].map(([id, head]) => ({ id, head }));
-  }
-  return [...groups.values()];
+/** The point's own coordinates (`<label> <value> <unit>`), without the anchor and the fee shown elsewhere. */
+function pointParts(c: Candidate): string[] {
+  const m = c.current?.meaning;
+  if (!m) return Object.entries(c.coords).filter(([, v]) => v !== null).map(([k, v]) => `${k} ${v}`);
+  return m.coords.filter((x) => x.value !== null).map((x) => `${x.label} ${x.value}${x.unit ? ` ${x.unit}` : ""}`);
 }
 
-/** The coordinate value shown in a column: the current meaning's value, else the stored coordinate. */
-function coordValue(c: Candidate, id: string): string {
-  const meaning = c.current?.meaning;
-  if (meaning) {
-    const x = meaning.coords.find((k) => k.id === id);
-    return x && x.value !== null ? String(x.value) : "—";
-  }
-  const v = c.coords[id];
-  return v === null || v === undefined ? "—" : v;
+/** Ticker and anchor of the row; the Experiment id stands in for the title when the row is not found. */
+function identity(c: Candidate): { title: string; ticker: string; anchor: string } {
+  const m = c.current?.meaning;
+  return { title: m?.title ?? c.experiment_id, ticker: m?.ticker ?? "", anchor: m?.anchor ?? "" };
 }
 
-/** The Experiment's coordinate columns padded with empty slots up to the shared table's width. */
-const pad = (columns: CoordColumn[], slots: number): (CoordColumn | null)[] => [
-  ...columns,
-  ...Array.from({ length: slots - columns.length }, () => null),
-];
+/** Value colour of a metric cell: profit and loss by sign, drawdown always in the loss ink. */
+function tone(id: string, v: number | null | undefined): string {
+  if (typeof v !== "number") return "";
+  if (id === "max_drawdown_pct") return v !== 0 ? " sx-loss" : "";
+  if (SIGNED.has(id) || id === "cumulative_net_r") return v > 0 ? " sx-gain" : v < 0 ? " sx-loss" : "";
+  return "";
+}
 
 type Sort = { metric: string; dir: "desc" | "asc" };
 
@@ -234,7 +213,7 @@ function sortRows<T extends { s: Shown }>(rows: T[], sort: Sort | null): T[] {
     .map((x) => x.r);
 }
 
-/** The shortlist of starred Surface points: one table, a section per Experiment, the point's actions in a side panel. */
+/** The shortlist of starred Surface points: one flat table, a row per point, the point's actions in a side panel. */
 export function CandidatesPanel() {
   const { setSelectedRunId } = useWorkbenchReport();
   const { setActiveTab } = useWorkbenchShell();
@@ -246,6 +225,8 @@ export function CandidatesPanel() {
   const [exporting, setExporting] = useState<string | null>(null);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [removing, setRemoving] = useState(false);
+  const [columns, setColumns] = useState<string[] | null>(loadColumns);
+  const [picking, setPicking] = useState(false);
 
   useEffect(() => {
     void loadCandidates();
@@ -254,8 +235,14 @@ export function CandidatesPanel() {
   const schemas = useResultSchemas(candidates.map((c) => c.experiment_id));
   const defs = useMemo(() => metricDefs(schemas), [schemas]);
   const shown = useMemo(() => candidates.map(shownMetrics), [candidates]);
-  const ids = useMemo(() => metricIds(shown), [shown]);
-  const schema = useMemo(() => filterSchema(ids, defs), [ids, defs]);
+  const allIds = useMemo(() => metricIds(shown), [shown]);
+  /** Metric columns of the table: the viewer's pick from the run table's metrics; filters and sorting still see all. */
+  const ids = useMemo(() => {
+    if (columns) return allIds.filter((id) => columns.includes(id));
+    const usual = allIds.filter((id) => DEFAULT_COLUMNS.includes(id));
+    return usual.length > 0 ? usual : allIds;
+  }, [allIds, columns]);
+  const schema = useMemo(() => filterSchema(allIds, defs), [allIds, defs]);
 
   const visible = useMemo(() => {
     const rows = shown.map((s) => depthRow(s.metrics));
@@ -263,13 +250,8 @@ export function CandidatesPanel() {
     return candidates.map((c, i) => ({ c, s: shown[i], ok: pass(rows[i]) })).filter((x) => x.ok);
   }, [candidates, shown, schema, filters]);
 
-  const groups = useMemo(
-    () => groupByExperiment(visible).map((g) => ({ ...g, rows: sortRows(g.rows, sort) })),
-    [visible, sort],
-  );
-
-  /** Coordinate slots of the shared table: as many as the widest Experiment has. */
-  const slots = Math.max(1, ...groups.map((g) => g.columns.length));
+  const rows = useMemo(() => sortRows(visible, sort), [visible, sort]);
+  const profitable = visible.filter((x) => typeof x.s.metrics.net_pnl === "number" && x.s.metrics.net_pnl > 0).length;
 
   /** Selected rows that are still in the list and pass the filters: hidden rows are never removed. */
   const selected = useMemo(() => visible.filter((x) => picked.has(x.c.candidate_id)).map((x) => x.c.candidate_id), [visible, picked]);
@@ -277,6 +259,20 @@ export function CandidatesPanel() {
 
   const focus = focused === null ? null : (visible.find((x) => x.c.candidate_id === focused)?.c ?? null);
   const exportCandidate = exporting === null ? null : (candidates.find((c) => c.candidate_id === exporting) ?? null);
+
+  const toggleColumn = (id: string) => {
+    const now = new Set(ids);
+    if (now.has(id)) now.delete(id);
+    else now.add(id);
+    const next = allIds.filter((x) => now.has(x));
+    setColumns(next);
+    writeSession(COLUMNS_KEY, next);
+  };
+
+  const setAllColumns = (next: string[] | null) => {
+    setColumns(next);
+    writeSession(COLUMNS_KEY, next);
+  };
 
   const update = (next: Condition[]) => {
     setFilters(next);
@@ -299,17 +295,6 @@ export function CandidatesPanel() {
     });
 
   const pickAll = () => setPicked(allPicked ? new Set() : new Set(visible.map((x) => x.c.candidate_id)));
-
-  const pickGroup = (g: Group) =>
-    setPicked((prev) => {
-      const next = new Set(prev);
-      const all = g.rows.every((r) => next.has(r.c.candidate_id));
-      for (const r of g.rows) {
-        if (all) next.delete(r.c.candidate_id);
-        else next.add(r.c.candidate_id);
-      }
-      return next;
-    });
 
   const removeSelected = async () => {
     if (selected.length === 0) return;
@@ -342,7 +327,7 @@ export function CandidatesPanel() {
     return (
       <td
         key={id}
-        className={`sx-num${s.stale ? " sx-stale" : ""}${SIGNED.has(id) && typeof v === "number" && v < 0 ? " sx-loss" : ""}`}
+        className={`sx-num${s.stale ? " sx-stale" : tone(id, v)}`}
         title={s.stale ? "row not found: value at the time of the star" : changed ? `at the time of the star: ${formatMetric(m, typeof was === "number" ? was : null)}` : undefined}
       >
         {formatMetric(m, typeof v === "number" ? v : null)}
@@ -419,13 +404,13 @@ export function CandidatesPanel() {
   };
 
   return (
-    <section className="sx" aria-label="Candidates">
+    <section className="sx sx-cand-dark" aria-label="Candidates">
       <div className="sx-wrap sx-wrap-wide">
         <header>
           <div className="sx-eyebrow">Research · Shortlist</div>
           <h1>Candidates</h1>
           <p className="sx-sub">
-            Points starred on the Surface, one section per Experiment. Click a row for its details and actions. A changed row
+            Points starred on the Surface. Click a row for its details and actions. A changed row
             shows the value at the time of the star on hover.
           </p>
         </header>
@@ -445,6 +430,47 @@ export function CandidatesPanel() {
               label="Filters · all conditions must hold (AND) · candidates that fail are hidden · Max DD compares depth"
             />
             <div className="sx-cand-bulk">
+              <span className="sx-cand-summary">
+                Profitable: <b className="sx-gain">{visible.length ? Math.round((profitable / visible.length) * 100) : 0}%</b> ({profitable} of {visible.length})
+              </span>
+              <div className="sx-cand-colpick">
+                <button
+                  type="button"
+                  className="sx-act"
+                  aria-expanded={picking}
+                  onClick={() => setPicking((v) => !v)}
+                >
+                  Columns ({ids.length}/{allIds.length})
+                </button>
+                {picking && (
+                  <div className="sx-panel sx-cand-colmenu" role="group" aria-label="Columns from the run table">
+                    <div className="sx-cand-colmenu-head">
+                      <span className="sx-note">Columns from the run table</span>
+                      <button type="button" className="sx-cand-close" aria-label="Close columns" onClick={() => setPicking(false)}>×</button>
+                    </div>
+                    <div className="sx-cand-colmenu-list">
+                      {allIds.map((id) => {
+                        const m = metricInfo(id, defs);
+                        return (
+                          <label key={id} className="sx-cand-colitem">
+                            <input
+                              type="checkbox"
+                              className="sx-cand-check"
+                              checked={ids.includes(id)}
+                              onChange={() => toggleColumn(id)}
+                            />
+                            {m.label}{m.unit ? ` ${m.unit}` : ""}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <div className="sx-cand-colmenu-foot">
+                      <button type="button" className="sx-act" onClick={() => setAllColumns([...allIds])}>All</button>
+                      <button type="button" className="sx-act" onClick={() => setAllColumns(null)}>Default</button>
+                    </div>
+                  </div>
+                )}
+              </div>
               <label className="sx-cand-all">
                 <input
                   type="checkbox"
@@ -477,7 +503,10 @@ export function CandidatesPanel() {
                     <thead>
                       <tr>
                         <th className="sx-cand-checkcol" aria-label="select" />
-                        <th colSpan={slots} className="sx-cand-coord">Point</th>
+                        <th>Picked</th>
+                        <th>Experiment</th>
+                        <th>Ticker</th>
+                        <th>Point</th>
                         {ids.map((id) => {
                           const m = metricInfo(id, defs);
                           const on = sort?.metric === id;
@@ -494,79 +523,63 @@ export function CandidatesPanel() {
                             </th>
                           );
                         })}
-                        <th>State</th>
-                        <th>Picked</th>
+                        <th>Run</th>
                       </tr>
                     </thead>
-                    {groups.map((g) => (
-                      <tbody key={g.experimentId} className="sx-cand-group" aria-label={`Candidates · ${g.title}`}>
-                        <tr className="sx-cand-ghead">
-                          <td className="sx-cand-checkcol">
-                            <input
-                              type="checkbox"
-                              className="sx-cand-check"
-                              aria-label="Select all in this experiment"
-                              checked={g.rows.every((r) => picked.has(r.c.candidate_id))}
-                              onChange={() => pickGroup(g)}
-                            />
-                          </td>
-                          {pad(g.columns, slots).map((k, i) => (
-                            <td key={k?.id ?? `pad${i}`} className="sx-num sx-cand-coord sx-cand-coordhead">{k?.head ?? ""}</td>
-                          ))}
-                          <td colSpan={ids.length + 2} className="sx-cand-gcell">
-                            <span className="sx-cand-gtitle">{g.title}</span>
-                            <span className="sx-note">
-                              {g.sub ? `${g.sub} · ` : ""}
-                              {g.rows.length} {g.rows.length === 1 ? "point" : "points"}
-                            </span>
-                          </td>
-                        </tr>
-                        {g.rows.map(({ c, s }) => {
-                          const rowState = c.current?.row_state ?? "missing";
-                          const origin = originBadge(c);
-                          const open = focus?.candidate_id === c.candidate_id;
-                          const [day, time] = c.picked_at.replace("T", " ").slice(0, 16).split(" ");
-                          return (
-                            <tr
-                              key={c.candidate_id}
-                              className={`sx-cand-row${open ? " sx-cand-open" : ""}${picked.has(c.candidate_id) ? " sx-cand-picked-row" : ""}`}
-                              tabIndex={0}
-                              aria-selected={open}
-                              title={meaningLine(c)}
-                              onClick={() => setFocused(open ? null : c.candidate_id)}
-                              onKeyDown={(e) => {
-                                if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
-                                e.preventDefault();
-                                setFocused(open ? null : c.candidate_id);
-                              }}
-                            >
-                              <td className="sx-cand-checkcol" onClick={(e) => e.stopPropagation()}>
-                                <input
-                                  type="checkbox"
-                                  className="sx-cand-check"
-                                  aria-label="Select candidate"
-                                  checked={picked.has(c.candidate_id)}
-                                  onChange={() => pick(c.candidate_id)}
-                                />
-                              </td>
-                              {pad(g.columns, slots).map((k, i) => (
-                                <td key={k?.id ?? `pad${i}`} className="sx-num sx-cand-coord">{k ? coordValue(c, k.id) : ""}</td>
-                              ))}
-                              {ids.map((id) => cell(id, s, rowState === "changed"))}
-                              <td className="sx-cand-state">
-                                {origin && <span className="sx-badge">{origin}</span>}
-                                {rowState !== "same" && <span className="sx-badge sx-badge-warn">{rowState}</span>}
-                                <CatalogMark c={c} />
-                              </td>
-                              <td className="sx-num sx-cand-picked">
-                                <span>{day}</span>
-                                <span className="sx-cand-time">{time}</span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    ))}
+                    <tbody>
+                      {rows.map(({ c, s }) => {
+                        const rowState = c.current?.row_state ?? "missing";
+                        const origin = originBadge(c);
+                        const open = focus?.candidate_id === c.candidate_id;
+                        const who = identity(c);
+                        const point = pointParts(c);
+                        const [day, time] = c.picked_at.replace("T", " ").slice(0, 16).split(" ");
+                        return (
+                          <tr
+                            key={c.candidate_id}
+                            className={`sx-cand-row${open ? " sx-cand-open" : ""}${picked.has(c.candidate_id) ? " sx-cand-picked-row" : ""}`}
+                            tabIndex={0}
+                            aria-selected={open}
+                            onClick={() => setFocused(open ? null : c.candidate_id)}
+                            onKeyDown={(e) => {
+                              if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+                              e.preventDefault();
+                              setFocused(open ? null : c.candidate_id);
+                            }}
+                          >
+                            <td className="sx-cand-checkcol" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                className="sx-cand-check"
+                                aria-label="Select candidate"
+                                checked={picked.has(c.candidate_id)}
+                                onChange={() => pick(c.candidate_id)}
+                              />
+                            </td>
+                            <td className="sx-cand-picked">
+                              <span>{day}</span>
+                              <span className="sx-cand-time">{time}</span>
+                            </td>
+                            <td className="sx-cand-exp">
+                              <span className="sx-cand-clamp" title={who.title}>{who.title}</span>
+                            </td>
+                            <td className="sx-cand-tags">
+                              {who.ticker && <span className="sx-tag">{who.ticker}</span>}
+                              {who.anchor && <span className="sx-tag">{who.anchor}</span>}
+                            </td>
+                            <td className="sx-cand-pt" title={meaningLine(c)}>
+                              <span className="sx-cand-clamp">{point.join(" · ") || "—"}</span>
+                            </td>
+                            {ids.map((id) => cell(id, s, rowState === "changed"))}
+                            <td className="sx-cand-state">
+                              {origin && <span className={`sx-badge${c.current?.run_id ? " sx-badge-ok" : ""}`}>{origin}</span>}
+                              {rowState !== "same" && <span className="sx-badge sx-badge-warn">{rowState}</span>}
+                              <CatalogMark c={c} />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
                   </table>
                 </div>
               </div>
