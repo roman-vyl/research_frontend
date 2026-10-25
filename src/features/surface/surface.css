@@ -220,7 +220,11 @@
 .sx .sx-cand-table td,.sx .sx-cand-table th{ vertical-align:middle; }
 .sx .sx-cand-clamp{ display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; line-height:1.3; }
 .sx .sx-cand-table th.sx-cand-checkcol,.sx .sx-cand-table td.sx-cand-checkcol{ width:24px; padding-right:0; }
-.sx .sx-cand-row{ cursor:default; }
+.sx .sx-cand-row{ cursor:pointer; }
+.sx .sx-cand-objbar{ position:sticky; left:0; display:flex; align-items:center; flex-wrap:wrap; gap:10px 14px; padding:10px 14px; border-bottom:1px solid var(--hair); background:var(--surface-2); }
+.sx .sx-cand-objname{ display:flex; align-items:center; flex-wrap:wrap; gap:6px; min-width:0; flex:1 1 320px; }
+.sx .sx-cand-objname b{ color:var(--accent); font-weight:600; }
+.sx .sx-cand-objpt{ color:var(--muted, inherit); font-size:12.5px; }
 .sx .sx-cand-row:focus-visible{ outline:2px solid var(--accent); outline-offset:-2px; }
 .sx tr.sx-cand-picked-row > td{ background:color-mix(in srgb, var(--accent) 6%, var(--surface)); }
 .sx .sx-cand-state{ white-space:nowrap; }
@@ -256,10 +260,6 @@
 .sx .sx-act-toggle[aria-expanded="true"] .sx-chev{ transform:rotate(90deg); }
 .sx tr.sx-cand-open > td{ background:var(--surface-2); border-bottom-color:transparent; }
 .sx tr.sx-cand-open > td:first-child{ box-shadow:inset 3px 0 0 var(--accent); }
-.sx .sx-cand-table .sx-cand-actcol{ position:sticky; right:0; z-index:1; background:var(--surface); white-space:nowrap; box-shadow:inset 1px 0 0 var(--hair); }
-.sx .sx-cand-table thead .sx-cand-actcol{ z-index:3; }
-.sx .sx-cand-table tr.sx-cand-open > td.sx-cand-actcol,.sx .sx-cand-table tbody tr:hover > td.sx-cand-actcol{ background:var(--surface-2); }
-.sx .sx-cand-actcol .sx-note{ margin-top:4px; white-space:normal; }
 .sx tr.sx-cand-detailrow > td{ padding:0; background:var(--surface-2); }
 .sx .sx-cand-detailwrap{ position:sticky; left:0; width:min(100%, 1100px); max-width:calc(100vw - 80px); display:flex; flex-direction:column; gap:12px; padding:14px 16px 18px 44px; box-sizing:border-box; }
 .sx .sx-cand-detailwrap .sx-cand-details{ display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px; align-items:start; }

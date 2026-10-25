@@ -213,7 +213,7 @@ function sortRows<T extends { s: Shown }>(rows: T[], sort: Sort | null): T[] {
     .map((x) => x.r);
 }
 
-/** The shortlist of starred Surface points: one flat table, a row per point, the point's actions in a side panel. */
+/** The shortlist of starred Surface points: one flat table, a row per point, object controls above it for the clicked row. */
 export function CandidatesPanel() {
   const { setSelectedRunId } = useWorkbenchReport();
   const { setActiveTab } = useWorkbenchShell();
@@ -221,6 +221,7 @@ export function CandidatesPanel() {
   const [filters, setFilters] = useState<Condition[]>(loadFilters);
   const [sort, setSort] = useState<Sort | null>(loadSort);
   const [focused, setFocused] = useState<string | null>(null);
+  const [details, setDetails] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [exporting, setExporting] = useState<string | null>(null);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
@@ -251,7 +252,6 @@ export function CandidatesPanel() {
   }, [candidates, shown, schema, filters]);
 
   const rows = useMemo(() => sortRows(visible, sort), [visible, sort]);
-  const profitable = visible.filter((x) => typeof x.s.metrics.net_pnl === "number" && x.s.metrics.net_pnl > 0).length;
 
   /** Selected rows that are still in the list and pass the filters: hidden rows are never removed. */
   const selected = useMemo(() => visible.filter((x) => picked.has(x.c.candidate_id)).map((x) => x.c.candidate_id), [visible, picked]);
@@ -335,14 +335,27 @@ export function CandidatesPanel() {
     );
   };
 
-  /** The row's own actions: Chart, On Surface, To Runtime, and Details that opens the point under the row. */
-  const actions = (c: Candidate, open: boolean) => {
-    const rowState = c.current?.row_state ?? "missing";
-    const runId = c.current?.run_id ?? null;
-    const hint = STATE_HINT[rowState];
-    const toRuntime = exportRule(c);
+  /** Object controls above the table: they act on the row clicked last. */
+  const toolbar = (c: Candidate | null) => {
+    const rowState = c?.current?.row_state ?? "missing";
+    const runId = c?.current?.run_id ?? null;
+    const hint = c ? STATE_HINT[rowState] : undefined;
+    const toRuntime = c ? exportRule(c) : null;
+    const who = c ? identity(c) : null;
     return (
-      <td className="sx-cand-actcol">
+      <div className="sx-cand-objbar" role="toolbar" aria-label="Selected candidate">
+        <span className="sx-cand-objname">
+          {c && who ? (
+            <>
+              <b>{who.title}</b>
+              {who.ticker && <span className="sx-tag">{who.ticker}</span>}
+              {who.anchor && <span className="sx-tag">{who.anchor}</span>}
+              <span className="sx-cand-objpt">{pointParts(c).join(" · ")}</span>
+            </>
+          ) : (
+            <span className="sx-note">Click a row to pick the strategy</span>
+          )}
+        </span>
         <div className="sx-cand-actions">
           <button
             type="button"
@@ -360,10 +373,10 @@ export function CandidatesPanel() {
           <button
             type="button"
             className="sx-act"
-            disabled={hint !== undefined}
+            disabled={!c || hint !== undefined}
             title={hint ?? "Show this point on the Surface"}
             onClick={() => {
-              if (hint !== undefined) return;
+              if (!c || hint !== undefined) return;
               emitFocus({ experimentId: c.experiment_id, coords: c.coords });
               setActiveTab("surface");
             }}
@@ -373,23 +386,27 @@ export function CandidatesPanel() {
           <button
             type="button"
             className="sx-act"
-            disabled={!toRuntime.canExport}
-            title={toRuntime.hint}
-            onClick={() => toRuntime.canExport && setExporting(c.candidate_id)}
+            disabled={!c || !toRuntime?.canExport}
+            title={toRuntime?.hint}
+            onClick={() => c && toRuntime?.canExport && setExporting(c.candidate_id)}
           >
             To Runtime
           </button>
           <button
             type="button"
             className="sx-act sx-act-toggle"
-            aria-expanded={open}
-            onClick={() => setFocused(open ? null : c.candidate_id)}
+            disabled={!c}
+            aria-expanded={details}
+            onClick={() => setDetails((v) => !v)}
           >
             Details<span aria-hidden="true" className="sx-chev">›</span>
           </button>
+          <button type="button" className="sx-act sx-act-danger" disabled={!c} onClick={() => c && unstar(c)}>
+            Remove
+          </button>
         </div>
-        {hint && <div className="sx-note">{hint}</div>}
-      </td>
+        {hint && <span className="sx-note">{hint}</span>}
+      </div>
     );
   };
 
@@ -400,7 +417,7 @@ export function CandidatesPanel() {
           <div className="sx-eyebrow">Research · Shortlist</div>
           <h1>Candidates</h1>
           <p className="sx-sub">
-            Points starred on the Surface. Details opens the point under its row. A changed row
+            Points starred on the Surface. Click a row, then use the buttons above the table. A changed row
             shows the value at the time of the star on hover.
           </p>
         </header>
@@ -420,9 +437,6 @@ export function CandidatesPanel() {
               label="Filters · all conditions must hold (AND) · candidates that fail are hidden · Max DD compares depth"
             />
             <div className="sx-cand-bulk">
-              <span className="sx-cand-summary">
-                Profitable: <b className="sx-gain">{visible.length ? Math.round((profitable / visible.length) * 100) : 0}%</b> ({profitable} of {visible.length})
-              </span>
               <div className="sx-cand-colpick">
                 <button
                   type="button"
@@ -486,8 +500,8 @@ export function CandidatesPanel() {
                 </button>
               )}
             </div>
-            <div className={`sx-cand-layout${focus ? " sx-cand-layout-open" : ""}`}>
-              <div className="sx-panel sx-cand-groups">
+            <div className="sx-panel sx-cand-groups">
+              {toolbar(focus)}
                 <div className="sx-cand-scroll">
                   <table className="sx-cand-table" aria-label="Candidates">
                     <thead>
@@ -514,7 +528,6 @@ export function CandidatesPanel() {
                           );
                         })}
                         <th>Run</th>
-                        <th className="sx-cand-actcol">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -522,6 +535,9 @@ export function CandidatesPanel() {
                         const rowState = c.current?.row_state ?? "missing";
                         const origin = originBadge(c);
                         const open = focus?.candidate_id === c.candidate_id;
+                        const choose = () => {
+                          if (!open) setFocused(c.candidate_id);
+                        };
                         const who = identity(c);
                         const point = pointParts(c);
                         const [day, time] = c.picked_at.replace("T", " ").slice(0, 16).split(" ");
@@ -529,8 +545,10 @@ export function CandidatesPanel() {
                           <Fragment key={c.candidate_id}>
                           <tr
                             className={`sx-cand-row${open ? " sx-cand-open" : ""}${picked.has(c.candidate_id) ? " sx-cand-picked-row" : ""}`}
+                            aria-selected={open}
+                            onClick={choose}
                           >
-                            <td className="sx-cand-checkcol">
+                            <td className="sx-cand-checkcol" onClick={(e) => e.stopPropagation()}>
                               <input
                                 type="checkbox"
                                 className="sx-cand-check"
@@ -559,16 +577,12 @@ export function CandidatesPanel() {
                               {rowState !== "same" && <span className="sx-badge sx-badge-warn">{rowState}</span>}
                               <CatalogMark c={c} />
                             </td>
-                            {actions(c, open)}
                           </tr>
-                          {open && (
+                          {open && details && (
                             <tr className="sx-cand-detailrow">
-                              <td colSpan={ids.length + 7}>
+                              <td colSpan={ids.length + 6}>
                                 <div className="sx-cand-detailwrap">
                                   <Details c={c} meaning={c.current?.meaning ?? null} />
-                                  <button type="button" className="sx-act sx-act-danger sx-cand-remove" onClick={() => unstar(c)}>
-                                    Remove from candidates
-                                  </button>
                                 </div>
                               </td>
                             </tr>
@@ -579,7 +593,6 @@ export function CandidatesPanel() {
                     </tbody>
                   </table>
                 </div>
-              </div>
             </div>
           </>
         )}
