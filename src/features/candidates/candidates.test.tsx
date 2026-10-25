@@ -221,9 +221,10 @@ describe("Candidates tab", () => {
   const rowsShown = async (): Promise<HTMLElement[]> =>
     (await screen.findAllByRole("checkbox", { name: "Select candidate" })).map((b) => b.closest("tr") as HTMLElement);
   const firstRow = async (): Promise<HTMLElement> => (await rowsShown())[0];
+  /** Clicking a row picks it; the object buttons above the table act on it. */
   const openRow = async (i = 0): Promise<HTMLElement> => {
     fireEvent.click((await rowsShown())[i]);
-    return screen.findByRole("complementary", { name: "Candidate details" });
+    return screen.getByRole("toolbar", { name: "Selected candidate" });
   };
 
   it("deletes the selected rows in one go and reloads the list once", async () => {
@@ -251,20 +252,27 @@ describe("Candidates tab", () => {
     expect(screen.getByRole("button", { name: "Delete selected (0)" })).toBeTruthy();
   });
 
-  it("a row click opens the side panel; the checkbox does not; Remove unstars that point", async () => {
+  it("object buttons sit above the table and act on the clicked row; Details opens it under the row; Remove unstars it", async () => {
     shortlist = [candidate("cand_1", R_COORDS)];
     unstarCandidate.mockImplementation(async () => {
       shortlist = [];
       return { removed: true };
     });
     render(<CandidatesPanel />);
-    fireEvent.click(await screen.findByRole("checkbox", { name: "Select candidate" }));
-    expect(screen.queryByRole("complementary", { name: "Candidate details" })).toBeNull();
-    const panel = await openRow();
-    expect(within(panel).getByText("EMA500 · Initial SL 5 ATR · TP / SL 5 R · fee 0.1% per side")).toBeTruthy();
-    fireEvent.click(within(panel).getByRole("button", { name: "Remove from candidates" }));
+    const row = await firstRow();
+    expect(within(row).queryAllByRole("button").length).toBe(0);
+    const bar = screen.getByRole("toolbar", { name: "Selected candidate" });
+    for (const name of ["Chart", "On Surface", "To Runtime", "Details", "Remove"])
+      expect((within(bar).getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(within(row).getByRole("checkbox", { name: "Select candidate" }));
+    expect((within(bar).getByRole("button", { name: "Details" }) as HTMLButtonElement).disabled).toBe(true);
+    await openRow(0);
+    expect(within(bar).getByText("EMA500 · fixed SL × TP ratio")).toBeTruthy();
+    expect(document.querySelector(".sx-cand-detailrow")).toBeNull();
+    fireEvent.click(within(bar).getByRole("button", { name: "Details" }));
+    expect(document.querySelector(".sx-cand-detailrow")).not.toBeNull();
+    fireEvent.click(within(bar).getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(unstarCandidate).toHaveBeenCalledWith("cand_1"));
-    await waitFor(() => expect(screen.queryByRole("complementary", { name: "Candidate details" })).toBeNull());
   });
 
   it("select all picks every shown row", async () => {
@@ -290,7 +298,7 @@ describe("Candidates tab", () => {
     expect(within(row).getByText("Initial SL 5 ATR · TP / SL 5 R")).toBeTruthy();
     expect(within(row).getByText("2,500").className).toContain("sx-gain"); // 0.25 × 10000
     expect(within(row).getByText("25.0%")).toBeTruthy();
-    expect(screen.getByText("(1 of 1)", { exact: false })).toBeTruthy();
+    expect(screen.queryByText(/Profitable/)).toBeNull();
     expect(fetchRunSummaries).not.toHaveBeenCalled();
   });
 
@@ -420,7 +428,8 @@ describe("Candidates tab", () => {
       }),
     ];
     render(<CandidatesPanel />);
-    await openRow();
+    await openRow(0);
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
     expect(screen.getByText(/as it was when this point was starred/)).toBeTruthy();
     expect(screen.getByText(/not the current spec of this point/)).toBeTruthy();
     expect(screen.getByLabelText("Historical strategy spec").textContent).toContain("ema_bounce");
@@ -461,8 +470,8 @@ describe("On Surface", () => {
     );
     await openExperiment(/trailing geometry/); // the Surface shows another experiment
     await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
-    fireEvent.click((await screen.findAllByRole("checkbox", { name: "Select candidate" }))[0].closest("tr")!);
-    fireEvent.click(await screen.findByRole("button", { name: "On Surface" }));
+    fireEvent.click((await screen.findAllByRole("checkbox", { name: "Select candidate" }))[0].closest("tr") as HTMLElement);
+    fireEvent.click(screen.getByRole("button", { name: "On Surface" }));
     expect(setActiveTab).toHaveBeenCalledWith("surface");
     const details = await screen.findByLabelText("Point details");
     await waitFor(() => expect(within(details).getByText("10 ATR")).toBeTruthy());
@@ -487,8 +496,8 @@ describe("On Surface", () => {
     fireEvent.click(within(surfaceFilters).getByText("+ add condition"));
     fireEvent.change(within(surfaceFilters).getByLabelText("threshold"), { target: { value: "100000" } });
     await waitFor(() => expect(document.querySelectorAll(".sx-off").length).toBeGreaterThan(0));
-    fireEvent.click((await screen.findAllByRole("checkbox", { name: "Select candidate" }))[0].closest("tr")!);
-    fireEvent.click(await screen.findByRole("button", { name: "On Surface" }));
+    fireEvent.click((await screen.findAllByRole("checkbox", { name: "Select candidate" }))[0].closest("tr") as HTMLElement);
+    fireEvent.click(screen.getByRole("button", { name: "On Surface" }));
     expect(await screen.findByText("This point is hidden by the active filters.")).toBeTruthy();
     expect(document.querySelectorAll(".sx-cell.sx-sel").length).toBe(1);
   });
@@ -499,10 +508,8 @@ describe("To Runtime", () => {
   const withRuntime = (runtime: CandidateCurrent["runtime"], spec: Candidate["strategy_spec_snapshot"] = SPEC) =>
     candidate("cand_1", R_COORDS, { strategy_spec_snapshot: spec, current: CURRENT({ runtime }) });
   const button = async () => {
-    if (!screen.queryByRole("complementary", { name: "Candidate details" })) {
-      fireEvent.click((await screen.findAllByRole("checkbox", { name: "Select candidate" }))[0].closest("tr")!);
-    }
-    return (await screen.findByRole("button", { name: "To Runtime" })) as HTMLButtonElement;
+    fireEvent.click((await screen.findAllByRole("checkbox", { name: "Select candidate" }))[0].closest("tr") as HTMLElement);
+    return screen.getByRole("button", { name: "To Runtime" }) as HTMLButtonElement;
   };
   const RESULT = { candidate_id: "cand_1", file: "btcusdt_p-cand_1.json", strategy_instance_id: "x:1", enabled: false, journal: "ok" };
 
