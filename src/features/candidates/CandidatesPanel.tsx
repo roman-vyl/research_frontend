@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
 import { ApiError, fetchExperimentManifest } from "@/api/client";
 import type { Candidate, CandidateMeaning } from "@/api/candidates";
@@ -335,28 +335,14 @@ export function CandidatesPanel() {
     );
   };
 
-  const side = (c: Candidate) => {
+  /** The row's own actions: Chart, On Surface, To Runtime, and Details that opens the point under the row. */
+  const actions = (c: Candidate, open: boolean) => {
     const rowState = c.current?.row_state ?? "missing";
     const runId = c.current?.run_id ?? null;
-    const origin = originBadge(c);
     const hint = STATE_HINT[rowState];
     const toRuntime = exportRule(c);
     return (
-      <aside className="sx-panel sx-cand-side" aria-label="Candidate details">
-        <div className="sx-cand-side-head">
-          <div>
-            <div className="sx-cand-title">{c.current?.meaning?.title ?? c.experiment_id}</div>
-            <p className="sx-note">{meaningLine(c) || "—"}</p>
-          </div>
-          <button type="button" className="sx-cand-close" aria-label="Close details" onClick={() => setFocused(null)}>×</button>
-        </div>
-        {(origin || rowState !== "same" || c.current?.runtime?.present) && (
-          <div className="sx-cand-badges">
-            {origin && <span className="sx-badge">{origin}</span>}
-            {rowState !== "same" && <span className="sx-badge sx-badge-warn">{rowState}</span>}
-            <CatalogMark c={c} />
-          </div>
-        )}
+      <td className="sx-cand-actcol">
         <div className="sx-cand-actions">
           <button
             type="button"
@@ -393,13 +379,17 @@ export function CandidatesPanel() {
           >
             To Runtime
           </button>
+          <button
+            type="button"
+            className="sx-act sx-act-toggle"
+            aria-expanded={open}
+            onClick={() => setFocused(open ? null : c.candidate_id)}
+          >
+            Details<span aria-hidden="true" className="sx-chev">›</span>
+          </button>
         </div>
         {hint && <div className="sx-note">{hint}</div>}
-        <Details c={c} meaning={c.current?.meaning ?? null} />
-        <button type="button" className="sx-act sx-act-danger sx-cand-remove" onClick={() => unstar(c)}>
-          Remove from candidates
-        </button>
-      </aside>
+      </td>
     );
   };
 
@@ -410,7 +400,7 @@ export function CandidatesPanel() {
           <div className="sx-eyebrow">Research · Shortlist</div>
           <h1>Candidates</h1>
           <p className="sx-sub">
-            Points starred on the Surface. Click a row for its details and actions. A changed row
+            Points starred on the Surface. Details opens the point under its row. A changed row
             shows the value at the time of the star on hover.
           </p>
         </header>
@@ -524,6 +514,7 @@ export function CandidatesPanel() {
                           );
                         })}
                         <th>Run</th>
+                        <th className="sx-cand-actcol">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -535,19 +526,11 @@ export function CandidatesPanel() {
                         const point = pointParts(c);
                         const [day, time] = c.picked_at.replace("T", " ").slice(0, 16).split(" ");
                         return (
+                          <Fragment key={c.candidate_id}>
                           <tr
-                            key={c.candidate_id}
                             className={`sx-cand-row${open ? " sx-cand-open" : ""}${picked.has(c.candidate_id) ? " sx-cand-picked-row" : ""}`}
-                            tabIndex={0}
-                            aria-selected={open}
-                            onClick={() => setFocused(open ? null : c.candidate_id)}
-                            onKeyDown={(e) => {
-                              if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
-                              e.preventDefault();
-                              setFocused(open ? null : c.candidate_id);
-                            }}
                           >
-                            <td className="sx-cand-checkcol" onClick={(e) => e.stopPropagation()}>
+                            <td className="sx-cand-checkcol">
                               <input
                                 type="checkbox"
                                 className="sx-cand-check"
@@ -576,14 +559,27 @@ export function CandidatesPanel() {
                               {rowState !== "same" && <span className="sx-badge sx-badge-warn">{rowState}</span>}
                               <CatalogMark c={c} />
                             </td>
+                            {actions(c, open)}
                           </tr>
+                          {open && (
+                            <tr className="sx-cand-detailrow">
+                              <td colSpan={ids.length + 7}>
+                                <div className="sx-cand-detailwrap">
+                                  <Details c={c} meaning={c.current?.meaning ?? null} />
+                                  <button type="button" className="sx-act sx-act-danger sx-cand-remove" onClick={() => unstar(c)}>
+                                    Remove from candidates
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                          </Fragment>
                         );
                       })}
                     </tbody>
                   </table>
                 </div>
               </div>
-              {focus && side(focus)}
             </div>
           </>
         )}

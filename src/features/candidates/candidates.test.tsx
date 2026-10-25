@@ -221,10 +221,8 @@ describe("Candidates tab", () => {
   const rowsShown = async (): Promise<HTMLElement[]> =>
     (await screen.findAllByRole("checkbox", { name: "Select candidate" })).map((b) => b.closest("tr") as HTMLElement);
   const firstRow = async (): Promise<HTMLElement> => (await rowsShown())[0];
-  const openRow = async (i = 0): Promise<HTMLElement> => {
-    fireEvent.click((await rowsShown())[i]);
-    return screen.findByRole("complementary", { name: "Candidate details" });
-  };
+  /** The row's own actions live in the row itself. */
+  const openRow = async (i = 0): Promise<HTMLElement> => (await rowsShown())[i];
 
   it("deletes the selected rows in one go and reloads the list once", async () => {
     shortlist = [
@@ -251,20 +249,21 @@ describe("Candidates tab", () => {
     expect(screen.getByRole("button", { name: "Delete selected (0)" })).toBeTruthy();
   });
 
-  it("a row click opens the side panel; the checkbox does not; Remove unstars that point", async () => {
+  it("every row carries Chart, On Surface, To Runtime; Details opens the point under it; Remove unstars it", async () => {
     shortlist = [candidate("cand_1", R_COORDS)];
     unstarCandidate.mockImplementation(async () => {
       shortlist = [];
       return { removed: true };
     });
     render(<CandidatesPanel />);
-    fireEvent.click(await screen.findByRole("checkbox", { name: "Select candidate" }));
-    expect(screen.queryByRole("complementary", { name: "Candidate details" })).toBeNull();
-    const panel = await openRow();
-    expect(within(panel).getByText("EMA500 · Initial SL 5 ATR · TP / SL 5 R · fee 0.1% per side")).toBeTruthy();
-    fireEvent.click(within(panel).getByRole("button", { name: "Remove from candidates" }));
+    const row = await firstRow();
+    for (const name of ["Chart", "On Surface", "To Runtime", "Details"]) expect(within(row).getByRole("button", { name })).toBeTruthy();
+    fireEvent.click(within(row).getByRole("checkbox", { name: "Select candidate" }));
+    expect(screen.queryByRole("button", { name: "Remove from candidates" })).toBeNull();
+    fireEvent.click(within(row).getByRole("button", { name: "Details" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Remove from candidates" }));
     await waitFor(() => expect(unstarCandidate).toHaveBeenCalledWith("cand_1"));
-    await waitFor(() => expect(screen.queryByRole("complementary", { name: "Candidate details" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Remove from candidates" })).toBeNull());
   });
 
   it("select all picks every shown row", async () => {
@@ -420,7 +419,7 @@ describe("Candidates tab", () => {
       }),
     ];
     render(<CandidatesPanel />);
-    await openRow();
+    fireEvent.click(await screen.findByRole("button", { name: "Details" }));
     expect(screen.getByText(/as it was when this point was starred/)).toBeTruthy();
     expect(screen.getByText(/not the current spec of this point/)).toBeTruthy();
     expect(screen.getByLabelText("Historical strategy spec").textContent).toContain("ema_bounce");
@@ -461,7 +460,6 @@ describe("On Surface", () => {
     );
     await openExperiment(/trailing geometry/); // the Surface shows another experiment
     await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
-    fireEvent.click((await screen.findAllByRole("checkbox", { name: "Select candidate" }))[0].closest("tr")!);
     fireEvent.click(await screen.findByRole("button", { name: "On Surface" }));
     expect(setActiveTab).toHaveBeenCalledWith("surface");
     const details = await screen.findByLabelText("Point details");
@@ -487,7 +485,6 @@ describe("On Surface", () => {
     fireEvent.click(within(surfaceFilters).getByText("+ add condition"));
     fireEvent.change(within(surfaceFilters).getByLabelText("threshold"), { target: { value: "100000" } });
     await waitFor(() => expect(document.querySelectorAll(".sx-off").length).toBeGreaterThan(0));
-    fireEvent.click((await screen.findAllByRole("checkbox", { name: "Select candidate" }))[0].closest("tr")!);
     fireEvent.click(await screen.findByRole("button", { name: "On Surface" }));
     expect(await screen.findByText("This point is hidden by the active filters.")).toBeTruthy();
     expect(document.querySelectorAll(".sx-cell.sx-sel").length).toBe(1);
@@ -498,12 +495,7 @@ describe("To Runtime", () => {
   const SPEC = { source: "run_request" as const, run_id: "run_old", spec: { strategy_id: "ema_bounce" } };
   const withRuntime = (runtime: CandidateCurrent["runtime"], spec: Candidate["strategy_spec_snapshot"] = SPEC) =>
     candidate("cand_1", R_COORDS, { strategy_spec_snapshot: spec, current: CURRENT({ runtime }) });
-  const button = async () => {
-    if (!screen.queryByRole("complementary", { name: "Candidate details" })) {
-      fireEvent.click((await screen.findAllByRole("checkbox", { name: "Select candidate" }))[0].closest("tr")!);
-    }
-    return (await screen.findByRole("button", { name: "To Runtime" })) as HTMLButtonElement;
-  };
+  const button = async () => (await screen.findByRole("button", { name: "To Runtime" })) as HTMLButtonElement;
   const RESULT = { candidate_id: "cand_1", file: "btcusdt_p-cand_1.json", strategy_instance_id: "x:1", enabled: false, journal: "ok" };
 
   beforeEach(() => {
