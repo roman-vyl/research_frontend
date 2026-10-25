@@ -280,9 +280,12 @@ describe("Candidates tab", () => {
   it("one block per Experiment: coordinate columns from the meaning, then Net PnL (return times equity)", async () => {
     shortlist = [candidate("cand_1", R_COORDS)];
     render(<CandidatesPanel />);
-    const table = await screen.findByRole("table", { name: "Candidates · EMA500 · fixed SL × TP ratio" });
+    const table = await screen.findByRole("table", { name: "Candidates" });
     const heads = within(table).getAllByRole("columnheader").map((h) => h.textContent);
-    expect(heads.slice(1, 5)).toEqual(["Initial SL ATR", "TP / SL R", "Net PnL USDT", "Return"]);
+    expect(heads.slice(1, 4)).toEqual(["Point", "Net PnL USDT", "Return"]);
+    const section = within(table).getByRole("rowgroup", { name: "Candidates · EMA500 · fixed SL × TP ratio" });
+    const labels = [...section.querySelectorAll("td.sx-cand-coordhead")].map((el) => el.textContent);
+    expect(labels).toEqual(["Initial SL ATR", "TP / SL R"]);
     const row = await firstRow();
     const coords = [...row.querySelectorAll("td.sx-cand-coord")].map((el) => el.textContent);
     expect(coords).toEqual(["5", "5"]);
@@ -298,11 +301,13 @@ describe("Candidates tab", () => {
       candidate("cand_t", { width: "4", lookback: "30" }, { experiment_id: TRAILING, current: CURRENT({ row_state: "missing", metrics: null, meaning: null }) }),
     ];
     render(<CandidatesPanel />);
-    await screen.findByRole("table", { name: "Candidates · EMA500 · fixed SL × TP ratio" });
-    const other = screen.getByRole("table", { name: `Candidates · ${TRAILING}` });
-    const heads = within(other).getAllByRole("columnheader").map((h) => h.textContent);
-    expect(heads.slice(1, 3)).toEqual(["width", "lookback"]);
-    const coords = [...other.querySelectorAll("td.sx-cand-coord")].map((el) => el.textContent);
+    const table = await screen.findByRole("table", { name: "Candidates" });
+    expect(within(table).getByRole("rowgroup", { name: "Candidates · EMA500 · fixed SL × TP ratio" })).toBeTruthy();
+    const other = within(table).getByRole("rowgroup", { name: `Candidates · ${TRAILING}` });
+    const labels = [...other.querySelectorAll("td.sx-cand-coordhead")].map((el) => el.textContent);
+    expect(labels).toEqual(["width", "lookback"]);
+    const row = within(other).getByRole("checkbox", { name: "Select candidate" }).closest("tr")!;
+    const coords = [...row.querySelectorAll("td.sx-cand-coord")].map((el) => el.textContent);
     expect(coords).toEqual(["4", "30"]);
   });
 
@@ -330,7 +335,7 @@ describe("Candidates tab", () => {
       },
     }));
     render(<CandidatesPanel />);
-    const table = await screen.findByRole("table", { name: /^Candidates · / });
+    const table = await screen.findByRole("table", { name: "Candidates" });
     await waitFor(() =>
       expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toContain("Closed trades"),
     );
