@@ -477,7 +477,6 @@ export function CandidatesPanel() {
                     <thead>
                       <tr>
                         <th className="sx-cand-checkcol" aria-label="select" />
-                        <th colSpan={slots} className="sx-cand-coord">Point</th>
                         {ids.map((id) => {
                           const m = metricInfo(id, defs);
                           const on = sort?.metric === id;
@@ -496,6 +495,7 @@ export function CandidatesPanel() {
                         })}
                         <th>State</th>
                         <th>Picked</th>
+                        <th colSpan={slots} className="sx-cand-coord">Point parameters</th>
                       </tr>
                     </thead>
                     {groups.map((g) => (
@@ -510,16 +510,18 @@ export function CandidatesPanel() {
                               onChange={() => pickGroup(g)}
                             />
                           </td>
-                          {pad(g.columns, slots).map((k, i) => (
-                            <td key={k?.id ?? `pad${i}`} className="sx-num sx-cand-coord sx-cand-coordhead">{k?.head ?? ""}</td>
-                          ))}
                           <td colSpan={ids.length + 2} className="sx-cand-gcell">
-                            <span className="sx-cand-gtitle">{g.title}</span>
-                            <span className="sx-note">
+                            <div className="sx-cand-gtitle">{g.title}</div>
+                            <div className="sx-note">
                               {g.sub ? `${g.sub} · ` : ""}
                               {g.rows.length} {g.rows.length === 1 ? "point" : "points"}
-                            </span>
+                            </div>
                           </td>
+                          {pad(g.columns, slots).map((k, i) => (
+                            <td key={k?.id ?? `pad${i}`} className="sx-num sx-cand-coord sx-cand-coordhead" title={k?.head}>
+                              <span className="sx-cand-clamp">{k?.head ?? ""}</span>
+                            </td>
+                          ))}
                         </tr>
                         {g.rows.map(({ c, s }) => {
                           const rowState = c.current?.row_state ?? "missing";
@@ -549,9 +551,6 @@ export function CandidatesPanel() {
                                   onChange={() => pick(c.candidate_id)}
                                 />
                               </td>
-                              {pad(g.columns, slots).map((k, i) => (
-                                <td key={k?.id ?? `pad${i}`} className="sx-num sx-cand-coord">{k ? coordValue(c, k.id) : ""}</td>
-                              ))}
                               {ids.map((id) => cell(id, s, rowState === "changed"))}
                               <td className="sx-cand-state">
                                 {origin && <span className="sx-badge">{origin}</span>}
@@ -562,6 +561,9 @@ export function CandidatesPanel() {
                                 <span>{day}</span>
                                 <span className="sx-cand-time">{time}</span>
                               </td>
+                              {pad(g.columns, slots).map((k, i) => (
+                                <td key={k?.id ?? `pad${i}`} className="sx-num sx-cand-coord">{k ? coordValue(c, k.id) : ""}</td>
+                              ))}
                             </tr>
                           );
                         })}

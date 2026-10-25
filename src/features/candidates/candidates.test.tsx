@@ -277,12 +277,13 @@ describe("Candidates tab", () => {
     expect(screen.getByRole("button", { name: "Delete selected (0)" })).toBeTruthy();
   });
 
-  it("one block per Experiment: coordinate columns from the meaning, then Net PnL (return times equity)", async () => {
+  it("one table, a section per Experiment: Net PnL (return times equity) first, coordinates from the meaning last", async () => {
     shortlist = [candidate("cand_1", R_COORDS)];
     render(<CandidatesPanel />);
     const table = await screen.findByRole("table", { name: "Candidates" });
     const heads = within(table).getAllByRole("columnheader").map((h) => h.textContent);
-    expect(heads.slice(1, 4)).toEqual(["Point", "Net PnL USDT", "Return"]);
+    expect(heads.slice(1, 3)).toEqual(["Net PnL USDT", "Return"]);
+    expect(heads[heads.length - 1]).toBe("Point parameters");
     const section = within(table).getByRole("rowgroup", { name: "Candidates · EMA500 · fixed SL × TP ratio" });
     const labels = [...section.querySelectorAll("td.sx-cand-coordhead")].map((el) => el.textContent);
     expect(labels).toEqual(["Initial SL ATR", "TP / SL R"]);
