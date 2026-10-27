@@ -198,7 +198,7 @@ unavailable SHALL NOT break the application.
 
 A manifest dimension marked `optional` (for example "Breakeven") SHALL be off by default and, while off,
 the view SHALL show only the rows that have no value for it. A checkbox SHALL switch it on; only then its
-values SHALL appear (buttons for up to six values, otherwise a slider): the values of the current geometry's
+values SHALL appear (as any other control, see `control` below): the values of the current geometry's
 rows plus the dimension's declared `values`. The checkbox SHALL be unavailable while the current geometry has
 no row with a value and the dimension declares no `values`, and a switched-on dimension SHALL switch itself
 off when a geometry without values is selected. While it is on, the heatmap SHALL keep every cell of the
@@ -247,7 +247,15 @@ AND, and every frame (the heatmap and each frame of the strip) SHALL compute its
 Each registered Experiment SHALL be opened and shown on its own, from its own manifest and table; the
 view SHALL NOT merge or reuse the rows, controls or comparison arms of another Experiment. Discrete
 dimension values MAY carry readable names in the manifest (`labels`), which the view SHALL use for slider
-readouts and point details.
+readouts and point details. A dimension MAY set `control` to `"buttons"` or `"slider"` in the manifest, and
+the view SHALL show its control that way; without `control`, a dimension with up to six values SHALL be a row
+of buttons and a longer one a slider.
+
+#### Scenario: Buttons chosen in the manifest
+
+- **WHEN** a dimension with seventeen values (for example Initial SL) sets `control: "buttons"`
+- **THEN** every value is a button, the row wraps when it does not fit, and dimensions without `control`
+  keep the six-value rule.
 
 #### Scenario: Third surface
 
