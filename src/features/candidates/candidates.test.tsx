@@ -218,20 +218,129 @@ describe("Candidates tab", () => {
   });
   afterEach(cleanup);
 
-  const rowOf = async (title: RegExp): Promise<HTMLElement> => (await screen.findByText(title)).closest("tr") as HTMLElement;
+  const rowsShown = async (): Promise<HTMLElement[]> =>
+    (await screen.findAllByRole("checkbox", { name: "Select candidate" })).map((b) => b.closest("tr") as HTMLElement);
+  const firstRow = async (): Promise<HTMLElement> => (await rowsShown())[0];
+  /** Clicking a row picks it; the object buttons above the table act on it. */
+  const openRow = async (i = 0): Promise<HTMLElement> => {
+    fireEvent.click((await rowsShown())[i]);
+    return screen.getByRole("toolbar", { name: "Selected candidate" });
+  };
 
-  it("Net PnL is the return times the initial equity, first among the metrics", async () => {
+  it("deletes the selected rows in one go and reloads the list once", async () => {
+    shortlist = [
+      candidate("cand_1", R_COORDS),
+      candidate("cand_2", { ...R_COORDS, sl: "10" }),
+      candidate("cand_3", { ...R_COORDS, tp_ratio: "6" }),
+    ];
+    unstarCandidate.mockImplementation(async (id: string) => {
+      shortlist = shortlist.filter((c) => c.candidate_id !== id);
+      return { removed: true };
+    });
+    render(<CandidatesPanel />);
+    const boxes = await screen.findAllByRole("checkbox", { name: "Select candidate" });
+    expect(boxes.length).toBe(3);
+    const del = screen.getByRole("button", { name: "Delete selected (0)" }) as HTMLButtonElement;
+    expect(del.disabled).toBe(true);
+    fireEvent.click(boxes[0]);
+    fireEvent.click(boxes[2]);
+    listCandidates.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Delete selected (2)" }));
+    await waitFor(() => expect(screen.getAllByRole("checkbox", { name: "Select candidate" }).length).toBe(1));
+    expect(unstarCandidate.mock.calls.map((c) => c[0])).toEqual(["cand_1", "cand_3"]);
+    expect(listCandidates).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Delete selected (0)" })).toBeTruthy();
+  });
+
+  it("object buttons sit above the table and act on the clicked row; Details opens it under the row; Remove unstars it", async () => {
+    shortlist = [candidate("cand_1", R_COORDS)];
+    unstarCandidate.mockImplementation(async () => {
+      shortlist = [];
+      return { removed: true };
+    });
+    render(<CandidatesPanel />);
+    const row = await firstRow();
+    expect(within(row).queryAllByRole("button").length).toBe(0);
+    const bar = screen.getByRole("toolbar", { name: "Selected candidate" });
+    for (const name of ["Chart", "On Surface", "To Runtime", "Details", "Remove"])
+      expect((within(bar).getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(within(row).getByRole("checkbox", { name: "Select candidate" }));
+    expect((within(bar).getByRole("button", { name: "Details" }) as HTMLButtonElement).disabled).toBe(true);
+    await openRow(0);
+    expect(within(bar).getByText("EMA500 · fixed SL × TP ratio")).toBeTruthy();
+    expect(document.querySelector(".sx-cand-detailrow")).toBeNull();
+    fireEvent.click(within(bar).getByRole("button", { name: "Details" }));
+    expect(document.querySelector(".sx-cand-detailrow")).not.toBeNull();
+    fireEvent.click(within(bar).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(unstarCandidate).toHaveBeenCalledWith("cand_1"));
+  });
+
+  it("select all picks every shown row", async () => {
+    shortlist = [candidate("cand_1", R_COORDS), candidate("cand_2", { ...R_COORDS, sl: "10" })];
+    unstarCandidate.mockResolvedValue({ removed: true });
+    render(<CandidatesPanel />);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select all shown candidates" }));
+    expect(screen.getByRole("button", { name: "Delete selected (2)" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+    expect(screen.getByRole("button", { name: "Delete selected (0)" })).toBeTruthy();
+  });
+
+  it("one flat row per point: title, ticker and anchor tags, point coordinates, Net PnL (return times equity)", async () => {
     shortlist = [candidate("cand_1", R_COORDS)];
     render(<CandidatesPanel />);
     const table = await screen.findByRole("table", { name: "Candidates" });
     const heads = within(table).getAllByRole("columnheader").map((h) => h.textContent);
-    expect(heads.slice(2, 4)).toEqual(["Net PnL USDT", "Return"]);
-    const row = await rowOf(/fixed SL/);
-    expect(within(row).getByText("2,500")).toBeTruthy(); // 0.25 × 10000
+    expect(heads.slice(1, 7)).toEqual(["Picked", "Experiment", "Ticker", "Point", "Net PnL USDT", "Return"]);
+    const row = await firstRow();
+    expect(within(row).getByText("EMA500 · fixed SL × TP ratio")).toBeTruthy();
+    const tags = [...row.querySelectorAll(".sx-tag")].map((el) => el.textContent);
+    expect(tags).toEqual(["BTCUSDT.P", "EMA500"]);
+    expect(within(row).getByText("Initial SL 5 ATR · TP / SL 5 R")).toBeTruthy();
+    expect(within(row).getByText("2,500").className).toContain("sx-gain"); // 0.25 × 10000
     expect(within(row).getByText("25.0%")).toBeTruthy();
-    const chips = [...row.querySelectorAll(".sx-chip")].map((el) => el.textContent);
-    expect(chips).toEqual(["EMA500", "Initial SL 5 ATR", "TP / SL 5 R", "fee 0.1% per side"]);
+    expect(screen.queryByText(/Profitable/)).toBeNull();
     expect(fetchRunSummaries).not.toHaveBeenCalled();
+  });
+
+  it("a row whose table row is gone shows the Experiment id and its stored coordinates", async () => {
+    shortlist = [
+      candidate("cand_t", { width: "4", lookback: "30" }, { experiment_id: TRAILING, current: CURRENT({ row_state: "missing", metrics: null, meaning: null }) }),
+    ];
+    render(<CandidatesPanel />);
+    const row = await firstRow();
+    expect(within(row).getByText(TRAILING)).toBeTruthy();
+    expect(within(row).getByText("width 4 · lookback 30")).toBeTruthy();
+    expect(within(row).getByText("missing")).toBeTruthy();
+  });
+
+  it("Columns picks which run-table metrics the table shows; the usual ones by default", async () => {
+    shortlist = [candidate("cand_1", R_COORDS, { current: CURRENT({ metrics: { return_pct: 0.25, years_up: 5, worst_year: -0.1 } }) })];
+    render(<CandidatesPanel />);
+    const table = await screen.findByRole("table", { name: "Candidates" });
+    const heads = () => within(table).getAllByRole("columnheader").map((h) => h.textContent);
+    expect(heads()).toContain("Return");
+    expect(heads()).not.toContain("Years up");
+    fireEvent.click(screen.getByRole("button", { name: "Columns (2/4)" }));
+    const menu = screen.getByRole("group", { name: "Columns from the run table" });
+    fireEvent.click(within(menu).getByRole("checkbox", { name: "Years up" }));
+    fireEvent.click(within(menu).getByRole("checkbox", { name: "Return" }));
+    expect(heads()).toContain("Years up");
+    expect(heads()).not.toContain("Return");
+    fireEvent.click(within(menu).getByRole("button", { name: "All" }));
+    expect(heads()).toEqual(expect.arrayContaining(["Net PnL USDT", "Return", "Years up", "Worst year"]));
+  });
+
+  it("a metric header sorts rows high to low, the next click low to high", async () => {
+    const at = (id: string, r: number) =>
+      candidate(id, { ...R_COORDS, width: id }, { current: CURRENT({ metrics: { return_pct: r } }) });
+    shortlist = [at("a", 0.1), at("b", 0.3), at("c", 0.2)];
+    render(<CandidatesPanel />);
+    const order = async () => (await rowsShown()).map((r) => within(r).getByText(/%$/).textContent);
+    expect(await order()).toEqual(["10.0%", "30.0%", "20.0%"]);
+    fireEvent.click(screen.getByRole("button", { name: /^Return/ }));
+    expect(await order()).toEqual(["30.0%", "20.0%", "10.0%"]);
+    fireEvent.click(screen.getByRole("button", { name: /^Return/ }));
+    expect(await order()).toEqual(["10.0%", "20.0%", "30.0%"]);
   });
 
   it("metric labels come from the Experiment manifest", async () => {
@@ -254,7 +363,7 @@ describe("Candidates tab", () => {
   it("a table's own net_pnl wins over the derived one", async () => {
     shortlist = [candidate("cand_1", R_COORDS, { current: CURRENT({ metrics: { net_pnl: 777, return_pct: 0.25 } }) })];
     render(<CandidatesPanel />);
-    const row = await rowOf(/fixed SL/);
+    const row = await firstRow();
     expect(within(row).getByText("777.00")).toBeTruthy();
     expect(within(row).queryByText("2,500")).toBeNull();
   });
@@ -264,7 +373,7 @@ describe("Candidates tab", () => {
       candidate("cand_1", R_COORDS, { current: CURRENT({ row_state: "changed", provenance: "replay" }) }),
     ];
     render(<CandidatesPanel />);
-    const row = await rowOf(/fixed SL/);
+    const row = await firstRow();
     expect(within(row).getByText("replay only")).toBeTruthy();
     expect(within(row).getByText("changed")).toBeTruthy();
     expect(within(row).getByText("25.0%").getAttribute("title")).toBe("at the time of the star: 20.0%");
@@ -276,13 +385,14 @@ describe("Candidates tab", () => {
       candidate("cand_none", { ...R_COORDS, width: "4" }, { current: CURRENT({ run_id: null, provenance: "engine" }) }),
     ];
     render(<CandidatesPanel />);
-    await screen.findAllByRole("button", { name: "Chart" });
-    const [withRun, without] = screen.getAllByRole("button", { name: "Chart" }) as HTMLButtonElement[];
-    expect(within(withRun.closest("tr")!).getByText("Engine run")).toBeTruthy();
-    expect(within(without.closest("tr")!).getByText("no full run", { selector: ".sx-badge" })).toBeTruthy();
+    const [runRow, noneRow] = await rowsShown();
+    expect(within(runRow).getByText("Engine run")).toBeTruthy();
+    expect(within(noneRow).getByText("no full run", { selector: ".sx-badge" })).toBeTruthy();
+    const without = within(await openRow(1)).getByRole("button", { name: "Chart" }) as HTMLButtonElement;
     expect(without.disabled).toBe(true);
     fireEvent.click(without);
     expect(setSelectedRunId).not.toHaveBeenCalled();
+    const withRun = within(await openRow(0)).getByRole("button", { name: "Chart" });
     fireEvent.click(withRun);
     expect(setSelectedRunId).toHaveBeenCalledWith("run_x");
     expect(setActiveTab).toHaveBeenCalledWith("chart");
@@ -296,13 +406,15 @@ describe("Candidates tab", () => {
     const seen = vi.fn();
     const off = subscribeFocus(seen);
     render(<CandidatesPanel />);
-    await screen.findAllByRole("button", { name: "On Surface" });
-    const [amb, miss] = screen.getAllByRole("button", { name: "On Surface" }) as HTMLButtonElement[];
+    const ambPanel = await openRow(0);
+    const amb = within(ambPanel).getByRole("button", { name: "On Surface" }) as HTMLButtonElement;
     expect(amb.disabled).toBe(true);
-    expect(miss.disabled).toBe(true);
-    expect(within(amb.closest("tr")!).getByText("several rows match this point", { selector: ".sx-note" })).toBeTruthy();
-    expect(within(miss.closest("tr")!).getByText("row not found", { selector: ".sx-note" })).toBeTruthy();
+    expect(within(ambPanel).getByText("several rows match this point", { selector: ".sx-note" })).toBeTruthy();
     fireEvent.click(amb);
+    const missPanel = await openRow(1);
+    const miss = within(missPanel).getByRole("button", { name: "On Surface" }) as HTMLButtonElement;
+    expect(miss.disabled).toBe(true);
+    expect(within(missPanel).getByText("row not found", { selector: ".sx-note" })).toBeTruthy();
     fireEvent.click(miss);
     expect(seen).not.toHaveBeenCalled();
     expect(setActiveTab).not.toHaveBeenCalled();
@@ -316,7 +428,8 @@ describe("Candidates tab", () => {
       }),
     ];
     render(<CandidatesPanel />);
-    fireEvent.click(await screen.findByRole("button", { name: "Details" }));
+    await openRow(0);
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
     expect(screen.getByText(/as it was when this point was starred/)).toBeTruthy();
     expect(screen.getByText(/not the current spec of this point/)).toBeTruthy();
     expect(screen.getByLabelText("Historical strategy spec").textContent).toContain("ema_bounce");
@@ -328,13 +441,12 @@ describe("Candidates tab", () => {
       candidate("deep", { ...R_COORDS, width: "4" }, { current: CURRENT({ metrics: { return_pct: 0.3, max_drawdown_pct: -0.35 } }) }),
     ];
     render(<CandidatesPanel />);
-    await screen.findAllByRole("button", { name: "Chart" });
-    expect(screen.getAllByRole("button", { name: "Chart" }).length).toBe(2);
+    expect((await rowsShown()).length).toBe(2);
     fireEvent.click(screen.getByText("+ add condition"));
     fireEvent.change(screen.getByLabelText("metric"), { target: { value: "max_drawdown_pct" } });
     fireEvent.change(screen.getByLabelText("operator"), { target: { value: "<=" } });
     fireEvent.change(screen.getByLabelText("threshold"), { target: { value: "20" } });
-    await waitFor(() => expect(screen.getAllByRole("button", { name: "Chart" }).length).toBe(1));
+    await waitFor(() => expect(screen.getAllByRole("checkbox", { name: "Select candidate" }).length).toBe(1));
     expect(screen.getByText("1 / 2 candidates shown")).toBeTruthy();
   });
 });
@@ -358,7 +470,8 @@ describe("On Surface", () => {
     );
     await openExperiment(/trailing geometry/); // the Surface shows another experiment
     await screen.findByRole("table", { name: /Stack width by Untouched lookback/ });
-    fireEvent.click(await screen.findByRole("button", { name: "On Surface" }));
+    fireEvent.click((await screen.findAllByRole("checkbox", { name: "Select candidate" }))[0].closest("tr") as HTMLElement);
+    fireEvent.click(screen.getByRole("button", { name: "On Surface" }));
     expect(setActiveTab).toHaveBeenCalledWith("surface");
     const details = await screen.findByLabelText("Point details");
     await waitFor(() => expect(within(details).getByText("10 ATR")).toBeTruthy());
@@ -383,7 +496,8 @@ describe("On Surface", () => {
     fireEvent.click(within(surfaceFilters).getByText("+ add condition"));
     fireEvent.change(within(surfaceFilters).getByLabelText("threshold"), { target: { value: "100000" } });
     await waitFor(() => expect(document.querySelectorAll(".sx-off").length).toBeGreaterThan(0));
-    fireEvent.click(await screen.findByRole("button", { name: "On Surface" }));
+    fireEvent.click((await screen.findAllByRole("checkbox", { name: "Select candidate" }))[0].closest("tr") as HTMLElement);
+    fireEvent.click(screen.getByRole("button", { name: "On Surface" }));
     expect(await screen.findByText("This point is hidden by the active filters.")).toBeTruthy();
     expect(document.querySelectorAll(".sx-cell.sx-sel").length).toBe(1);
   });
@@ -393,7 +507,10 @@ describe("To Runtime", () => {
   const SPEC = { source: "run_request" as const, run_id: "run_old", spec: { strategy_id: "ema_bounce" } };
   const withRuntime = (runtime: CandidateCurrent["runtime"], spec: Candidate["strategy_spec_snapshot"] = SPEC) =>
     candidate("cand_1", R_COORDS, { strategy_spec_snapshot: spec, current: CURRENT({ runtime }) });
-  const button = async () => (await screen.findByRole("button", { name: "To Runtime" })) as HTMLButtonElement;
+  const button = async () => {
+    fireEvent.click((await screen.findAllByRole("checkbox", { name: "Select candidate" }))[0].closest("tr") as HTMLElement);
+    return screen.getByRole("button", { name: "To Runtime" }) as HTMLButtonElement;
+  };
   const RESULT = { candidate_id: "cand_1", file: "btcusdt_p-cand_1.json", strategy_instance_id: "x:1", enabled: false, journal: "ok" };
 
   beforeEach(() => {
@@ -460,7 +577,7 @@ describe("To Runtime", () => {
     expect(exportCandidateToRuntime).toHaveBeenCalledWith("cand_1");
     await waitFor(() => expect(listCandidates.mock.calls.length).toBeGreaterThan(before));
     fireEvent.click(within(dlg).getByRole("button", { name: "Close" }));
-    expect(await screen.findByText(/In Runtime catalog · Off/)).toBeTruthy();
+    expect((await screen.findAllByText(/In Runtime catalog · Off/)).length).toBeGreaterThan(0);
     expect(((await button()) as HTMLButtonElement).disabled).toBe(true);
   });
 

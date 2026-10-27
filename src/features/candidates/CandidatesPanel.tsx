@@ -16,13 +16,22 @@ import {
   shownMetrics,
   type Shown,
 } from "@/features/candidates/metrics";
-import { loadCandidates, unstarPoint, useCandidates } from "@/features/candidates/store";
+import { loadCandidates, unstarPoint, unstarPoints, useCandidates } from "@/features/candidates/store";
 import { FiltersPanel } from "@/features/surface/FiltersPanel";
 import { formatMetric, makePasses, type Condition } from "@/features/surface/model";
 import { useWorkbenchReport, useWorkbenchShell } from "@/shared/context/WorkbenchContext";
 import { readSession, writeSession } from "@/shared/session/storage";
 
 const FILTERS_KEY = "candidates.filters";
+const COLUMNS_KEY = "candidates.columns";
+
+/** Metric columns shown until the viewer picks their own: the usual ones, or all when none of them is present. */
+const DEFAULT_COLUMNS = ["net_pnl", "return_pct", "profit_factor", "max_drawdown_pct", "win_rate", "realised_trade_count", "cumulative_net_r"];
+
+function loadColumns(): string[] | null {
+  const raw = readSession<unknown>(COLUMNS_KEY);
+  return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : null;
+}
 
 /** Result schemas of the candidates' Experiments, for metric labels and formats; a failed manifest is skipped. */
 function useResultSchemas(experimentIds: string[]): ExperimentResultSchema[] {
@@ -157,15 +166,68 @@ function Details({ c, meaning }: { c: Candidate; meaning: CandidateMeaning | nul
   );
 }
 
-/** The shortlist of starred Surface points: current metrics, row state, and the two ways to open a point. */
+/** The point's own coordinates (`<label> <value> <unit>`), without the anchor and the fee shown elsewhere. */
+function pointParts(c: Candidate): string[] {
+  const m = c.current?.meaning;
+  if (!m) return Object.entries(c.coords).filter(([, v]) => v !== null).map(([k, v]) => `${k} ${v}`);
+  return m.coords.filter((x) => x.value !== null).map((x) => `${x.label} ${x.value}${x.unit ? ` ${x.unit}` : ""}`);
+}
+
+/** Ticker and anchor of the row; the Experiment id stands in for the title when the row is not found. */
+function identity(c: Candidate): { title: string; ticker: string; anchor: string } {
+  const m = c.current?.meaning;
+  return { title: m?.title ?? c.experiment_id, ticker: m?.ticker ?? "", anchor: m?.anchor ?? "" };
+}
+
+/** Value colour of a metric cell: profit and loss by sign, drawdown always in the loss ink. */
+function tone(id: string, v: number | null | undefined): string {
+  if (typeof v !== "number") return "";
+  if (id === "max_drawdown_pct") return v !== 0 ? " sx-loss" : "";
+  if (SIGNED.has(id) || id === "cumulative_net_r") return v > 0 ? " sx-gain" : v < 0 ? " sx-loss" : "";
+  return "";
+}
+
+type Sort = { metric: string; dir: "desc" | "asc" };
+
+const SORT_KEY = "candidates.sort";
+
+function loadSort(): Sort | null {
+  const raw = readSession<unknown>(SORT_KEY);
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Partial<Sort>;
+  return typeof r.metric === "string" && (r.dir === "desc" || r.dir === "asc") ? { metric: r.metric, dir: r.dir } : null;
+}
+
+/** Rows ordered by one metric; rows without a value stay at the end in their list order. */
+function sortRows<T extends { s: Shown }>(rows: T[], sort: Sort | null): T[] {
+  if (!sort) return rows;
+  const sign = sort.dir === "desc" ? -1 : 1;
+  return rows
+    .map((r, i) => ({ r, i, v: r.s.metrics[sort.metric] }))
+    .sort((a, b) => {
+      const av = typeof a.v === "number" ? a.v : null;
+      const bv = typeof b.v === "number" ? b.v : null;
+      if (av === null || bv === null) return av === bv ? a.i - b.i : av === null ? 1 : -1;
+      return av === bv ? a.i - b.i : (av - bv) * sign;
+    })
+    .map((x) => x.r);
+}
+
+/** The shortlist of starred Surface points: one flat table, a row per point, object controls above it for the clicked row. */
 export function CandidatesPanel() {
   const { setSelectedRunId } = useWorkbenchReport();
   const { setActiveTab } = useWorkbenchShell();
   const { candidates, status, error } = useCandidates();
   const [filters, setFilters] = useState<Condition[]>(loadFilters);
-  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  const [sort, setSort] = useState<Sort | null>(loadSort);
+  const [focused, setFocused] = useState<string | null>(null);
+  const [details, setDetails] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [exporting, setExporting] = useState<string | null>(null);
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  const [removing, setRemoving] = useState(false);
+  const [columns, setColumns] = useState<string[] | null>(loadColumns);
+  const [picking, setPicking] = useState(false);
 
   useEffect(() => {
     void loadCandidates();
@@ -174,8 +236,14 @@ export function CandidatesPanel() {
   const schemas = useResultSchemas(candidates.map((c) => c.experiment_id));
   const defs = useMemo(() => metricDefs(schemas), [schemas]);
   const shown = useMemo(() => candidates.map(shownMetrics), [candidates]);
-  const ids = useMemo(() => metricIds(shown), [shown]);
-  const schema = useMemo(() => filterSchema(ids, defs), [ids, defs]);
+  const allIds = useMemo(() => metricIds(shown), [shown]);
+  /** Metric columns of the table: the viewer's pick from the run table's metrics; filters and sorting still see all. */
+  const ids = useMemo(() => {
+    if (columns) return allIds.filter((id) => columns.includes(id));
+    const usual = allIds.filter((id) => DEFAULT_COLUMNS.includes(id));
+    return usual.length > 0 ? usual : allIds;
+  }, [allIds, columns]);
+  const schema = useMemo(() => filterSchema(allIds, defs), [allIds, defs]);
 
   const visible = useMemo(() => {
     const rows = shown.map((s) => depthRow(s.metrics));
@@ -183,25 +251,70 @@ export function CandidatesPanel() {
     return candidates.map((c, i) => ({ c, s: shown[i], ok: pass(rows[i]) })).filter((x) => x.ok);
   }, [candidates, shown, schema, filters]);
 
+  const rows = useMemo(() => sortRows(visible, sort), [visible, sort]);
+
+  /** Selected rows that are still in the list and pass the filters: hidden rows are never removed. */
+  const selected = useMemo(() => visible.filter((x) => picked.has(x.c.candidate_id)).map((x) => x.c.candidate_id), [visible, picked]);
+  const allPicked = visible.length > 0 && selected.length === visible.length;
+
+  const focus = focused === null ? null : (visible.find((x) => x.c.candidate_id === focused)?.c ?? null);
   const exportCandidate = exporting === null ? null : (candidates.find((c) => c.candidate_id === exporting) ?? null);
+
+  const toggleColumn = (id: string) => {
+    const now = new Set(ids);
+    if (now.has(id)) now.delete(id);
+    else now.add(id);
+    const next = allIds.filter((x) => now.has(x));
+    setColumns(next);
+    writeSession(COLUMNS_KEY, next);
+  };
+
+  const setAllColumns = (next: string[] | null) => {
+    setColumns(next);
+    writeSession(COLUMNS_KEY, next);
+  };
 
   const update = (next: Condition[]) => {
     setFilters(next);
     writeSession(FILTERS_KEY, next);
   };
 
-  const toggle = (id: string) =>
-    setOpen((prev) => {
+  /** First click sorts by the metric from high to low, the next one flips the order. */
+  const sortBy = (metric: string) => {
+    const next: Sort = sort?.metric === metric && sort.dir === "desc" ? { metric, dir: "asc" } : { metric, dir: "desc" };
+    setSort(next);
+    writeSession(SORT_KEY, next);
+  };
+
+  const pick = (id: string) =>
+    setPicked((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
 
+  const pickAll = () => setPicked(allPicked ? new Set() : new Set(visible.map((x) => x.c.candidate_id)));
+
+  const removeSelected = async () => {
+    if (selected.length === 0) return;
+    setActionError(null);
+    setRemoving(true);
+    try {
+      await unstarPoints(selected);
+      setPicked(new Set());
+    } catch (e) {
+      setActionError(errorText(e));
+    } finally {
+      setRemoving(false);
+    }
+  };
+
   const unstar = async (c: Candidate) => {
     setActionError(null);
     try {
       await unstarPoint(c.candidate_id);
+      setFocused(null);
     } catch (e) {
       setActionError(errorText(e));
     }
@@ -214,7 +327,7 @@ export function CandidatesPanel() {
     return (
       <td
         key={id}
-        className={`sx-num${s.stale ? " sx-stale" : ""}${SIGNED.has(id) && typeof v === "number" && v < 0 ? " sx-loss" : ""}`}
+        className={`sx-num${s.stale ? " sx-stale" : tone(id, v)}`}
         title={s.stale ? "row not found: value at the time of the star" : changed ? `at the time of the star: ${formatMetric(m, typeof was === "number" ? was : null)}` : undefined}
       >
         {formatMetric(m, typeof v === "number" ? v : null)}
@@ -222,15 +335,90 @@ export function CandidatesPanel() {
     );
   };
 
+  /** Object controls above the table: they act on the row clicked last. */
+  const toolbar = (c: Candidate | null) => {
+    const rowState = c?.current?.row_state ?? "missing";
+    const runId = c?.current?.run_id ?? null;
+    const hint = c ? STATE_HINT[rowState] : undefined;
+    const toRuntime = c ? exportRule(c) : null;
+    const who = c ? identity(c) : null;
+    return (
+      <div className="sx-cand-objbar" role="toolbar" aria-label="Selected candidate">
+        <span className="sx-cand-objname">
+          {c && who ? (
+            <>
+              <b>{who.title}</b>
+              {who.ticker && <span className="sx-tag">{who.ticker}</span>}
+              {who.anchor && <span className="sx-tag">{who.anchor}</span>}
+              <span className="sx-cand-objpt">{pointParts(c).join(" · ")}</span>
+            </>
+          ) : (
+            <span className="sx-note">Click a row to pick the strategy</span>
+          )}
+        </span>
+        <div className="sx-cand-actions">
+          <button
+            type="button"
+            className="sx-act"
+            disabled={!runId}
+            title={runId ? "Open the run on the Chart" : "no full run"}
+            onClick={() => {
+              if (!runId) return;
+              setSelectedRunId(runId);
+              setActiveTab("chart");
+            }}
+          >
+            Chart
+          </button>
+          <button
+            type="button"
+            className="sx-act"
+            disabled={!c || hint !== undefined}
+            title={hint ?? "Show this point on the Surface"}
+            onClick={() => {
+              if (!c || hint !== undefined) return;
+              emitFocus({ experimentId: c.experiment_id, coords: c.coords });
+              setActiveTab("surface");
+            }}
+          >
+            On Surface
+          </button>
+          <button
+            type="button"
+            className="sx-act"
+            disabled={!c || !toRuntime?.canExport}
+            title={toRuntime?.hint}
+            onClick={() => c && toRuntime?.canExport && setExporting(c.candidate_id)}
+          >
+            To Runtime
+          </button>
+          <button
+            type="button"
+            className="sx-act sx-act-toggle"
+            disabled={!c}
+            aria-expanded={details}
+            onClick={() => setDetails((v) => !v)}
+          >
+            Details<span aria-hidden="true" className="sx-chev">›</span>
+          </button>
+          <button type="button" className="sx-act sx-act-danger" disabled={!c} onClick={() => c && unstar(c)}>
+            Remove
+          </button>
+        </div>
+        {hint && <span className="sx-note">{hint}</span>}
+      </div>
+    );
+  };
+
   return (
-    <section className="sx" aria-label="Candidates">
+    <section className="sx sx-cand-dark" aria-label="Candidates">
       <div className="sx-wrap sx-wrap-wide">
         <header>
           <div className="sx-eyebrow">Research · Shortlist</div>
           <h1>Candidates</h1>
           <p className="sx-sub">
-            Points starred on the Surface. Metrics are those of the point's row now; a changed row shows the value at the
-            time of the star on hover.
+            Points starred on the Surface. Click a row, then use the buttons above the table. A changed row
+            shows the value at the time of the star on hover.
           </p>
         </header>
         {(error || actionError) && <p role="alert" className="sx-error">{actionError ?? error}</p>}
@@ -248,115 +436,163 @@ export function CandidatesPanel() {
               onChange={update}
               label="Filters · all conditions must hold (AND) · candidates that fail are hidden · Max DD compares depth"
             />
-            <div className="sx-panel sx-cand-scroll">
-              <table className="sx-cand-table" aria-label="Candidates">
-                <thead>
-                  <tr>
-                    <th className="sx-cand-starcol" aria-label="star" />
-                    <th className="sx-cand-point">Point</th>
-                    {ids.map((id) => {
-                      const m = metricInfo(id, defs);
-                      return <th key={id} className="sx-num-h">{m.label}{m.unit ? ` ${m.unit}` : ""}</th>;
-                    })}
-                    <th>Picked</th>
-                    <th className="sx-cand-actcol">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visible.map(({ c, s }) => {
-                    const rowState = c.current?.row_state ?? "missing";
-                    const runId = c.current?.run_id ?? null;
-                    const origin = originBadge(c);
-                    const hint = STATE_HINT[rowState];
-                    const toRuntime = exportRule(c);
-                    const hasMark = c.current?.runtime != null && c.current.runtime.present;
-                    const expanded = open.has(c.candidate_id);
-                    const [day, time] = c.picked_at.replace("T", " ").slice(0, 16).split(" ");
-                    return (
-                      <Fragment key={c.candidate_id}>
-                        <tr className={expanded ? "sx-cand-open" : undefined}>
-                          <td className="sx-cand-starcol">
-                            <button type="button" className="sx-cand-star" aria-label="Unstar candidate" title="Remove from candidates" onClick={() => unstar(c)}>★</button>
-                          </td>
-                          <td className="sx-cand-point">
-                            <div className="sx-cand-title">{c.current?.meaning?.title ?? c.experiment_id}</div>
-                            <div className="sx-cand-chips" title={meaningLine(c)}>
-                              {meaningParts(c).map((p, i) => <span key={i} className="sx-chip">{p}</span>)}
-                            </div>
-                            {(origin || rowState !== "same" || hasMark) && (
-                              <div className="sx-cand-badges">
-                                {origin && <span className="sx-badge">{origin}</span>}
-                                {rowState !== "same" && <span className="sx-badge sx-badge-warn">{rowState}</span>}
-                                <CatalogMark c={c} />
-                              </div>
-                            )}
-                          </td>
-                          {ids.map((id) => cell(id, s, rowState === "changed"))}
-                          <td className="sx-num sx-cand-picked">
-                            <span>{day}</span>
-                            <span className="sx-cand-time">{time}</span>
-                          </td>
-                          <td className="sx-cand-actcol">
-                            <div className="sx-cand-actions">
-                              <button
-                                type="button"
-                                className="sx-act sx-act-toggle"
-                                onClick={() => toggle(c.candidate_id)}
-                                aria-expanded={expanded}
-                              >
-                                Details<span aria-hidden="true" className="sx-chev">›</span>
+            <div className="sx-cand-bulk">
+              <div className="sx-cand-colpick">
+                <button
+                  type="button"
+                  className="sx-act"
+                  aria-expanded={picking}
+                  onClick={() => setPicking((v) => !v)}
+                >
+                  Columns ({ids.length}/{allIds.length})
+                </button>
+                {picking && (
+                  <div className="sx-panel sx-cand-colmenu" role="group" aria-label="Columns from the run table">
+                    <div className="sx-cand-colmenu-head">
+                      <span className="sx-note">Columns from the run table</span>
+                      <button type="button" className="sx-cand-close" aria-label="Close columns" onClick={() => setPicking(false)}>×</button>
+                    </div>
+                    <div className="sx-cand-colmenu-list">
+                      {allIds.map((id) => {
+                        const m = metricInfo(id, defs);
+                        return (
+                          <label key={id} className="sx-cand-colitem">
+                            <input
+                              type="checkbox"
+                              className="sx-cand-check"
+                              checked={ids.includes(id)}
+                              onChange={() => toggleColumn(id)}
+                            />
+                            {m.label}{m.unit ? ` ${m.unit}` : ""}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <div className="sx-cand-colmenu-foot">
+                      <button type="button" className="sx-act" onClick={() => setAllColumns([...allIds])}>All</button>
+                      <button type="button" className="sx-act" onClick={() => setAllColumns(null)}>Default</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <label className="sx-cand-all">
+                <input
+                  type="checkbox"
+                  className="sx-cand-check"
+                  aria-label="Select all shown candidates"
+                  checked={allPicked}
+                  disabled={visible.length === 0}
+                  onChange={pickAll}
+                />
+                All shown
+              </label>
+              <button
+                type="button"
+                className="sx-act sx-act-danger"
+                disabled={selected.length === 0 || removing}
+                onClick={removeSelected}
+              >
+                {removing ? "Deleting…" : `Delete selected (${selected.length})`}
+              </button>
+              {selected.length > 0 && !removing && (
+                <button type="button" className="sx-act" onClick={() => setPicked(new Set())}>
+                  Clear selection
+                </button>
+              )}
+            </div>
+            <div className="sx-panel sx-cand-groups">
+              {toolbar(focus)}
+                <div className="sx-cand-scroll">
+                  <table className="sx-cand-table" aria-label="Candidates">
+                    <thead>
+                      <tr>
+                        <th className="sx-cand-checkcol" aria-label="select" />
+                        <th>Picked</th>
+                        <th>Experiment</th>
+                        <th>Ticker</th>
+                        <th>Point</th>
+                        {ids.map((id) => {
+                          const m = metricInfo(id, defs);
+                          const on = sort?.metric === id;
+                          return (
+                            <th
+                              key={id}
+                              className="sx-num-h"
+                              aria-sort={on ? (sort.dir === "desc" ? "descending" : "ascending") : "none"}
+                            >
+                              <button type="button" className={`sx-sort${on ? " sx-sort-on" : ""}`} onClick={() => sortBy(id)}>
+                                {m.label}{m.unit ? ` ${m.unit}` : ""}
+                                <span aria-hidden="true">{on ? (sort.dir === "desc" ? " ↓" : " ↑") : ""}</span>
                               </button>
-                              <button
-                                type="button"
-                                className="sx-act"
-                                disabled={!runId}
-                                title={runId ? "Open the run on the Chart" : "no full run"}
-                                onClick={() => {
-                                  if (!runId) return;
-                                  setSelectedRunId(runId);
-                                  setActiveTab("chart");
-                                }}
-                              >
-                                Chart
-                              </button>
-                              <button
-                                type="button"
-                                className="sx-act"
-                                disabled={hint !== undefined}
-                                title={hint ?? "Show this point on the Surface"}
-                                onClick={() => {
-                                  if (hint !== undefined) return;
-                                  emitFocus({ experimentId: c.experiment_id, coords: c.coords });
-                                  setActiveTab("surface");
-                                }}
-                              >
-                                On Surface
-                              </button>
-                              <button
-                                type="button"
-                                className="sx-act"
-                                disabled={!toRuntime.canExport}
-                                title={toRuntime.hint}
-                                onClick={() => toRuntime.canExport && setExporting(c.candidate_id)}
-                              >
-                                To Runtime
-                              </button>
-                            </div>
-                            {hint && <div className="sx-note">{hint}</div>}
-                          </td>
-                        </tr>
-                        {expanded && (
-                          <tr className="sx-cand-detailrow">
-                            <td colSpan={ids.length + 4}>
-                              <Details c={c} meaning={c.current?.meaning ?? null} />
+                            </th>
+                          );
+                        })}
+                        <th>Run</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map(({ c, s }) => {
+                        const rowState = c.current?.row_state ?? "missing";
+                        const origin = originBadge(c);
+                        const open = focus?.candidate_id === c.candidate_id;
+                        const choose = () => {
+                          if (!open) setFocused(c.candidate_id);
+                        };
+                        const who = identity(c);
+                        const point = pointParts(c);
+                        const [day, time] = c.picked_at.replace("T", " ").slice(0, 16).split(" ");
+                        return (
+                          <Fragment key={c.candidate_id}>
+                          <tr
+                            className={`sx-cand-row${open ? " sx-cand-open" : ""}${picked.has(c.candidate_id) ? " sx-cand-picked-row" : ""}`}
+                            aria-selected={open}
+                            onClick={choose}
+                          >
+                            <td className="sx-cand-checkcol" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                className="sx-cand-check"
+                                aria-label="Select candidate"
+                                checked={picked.has(c.candidate_id)}
+                                onChange={() => pick(c.candidate_id)}
+                              />
+                            </td>
+                            <td className="sx-cand-picked">
+                              <span>{day}</span>
+                              <span className="sx-cand-time">{time}</span>
+                            </td>
+                            <td className="sx-cand-exp">
+                              <span className="sx-cand-clamp" title={who.title}>{who.title}</span>
+                            </td>
+                            <td className="sx-cand-tags">
+                              {who.ticker && <span className="sx-tag">{who.ticker}</span>}
+                              {who.anchor && <span className="sx-tag">{who.anchor}</span>}
+                            </td>
+                            <td className="sx-cand-pt" title={meaningLine(c)}>
+                              <span className="sx-cand-clamp">{point.join(" · ") || "—"}</span>
+                            </td>
+                            {ids.map((id) => cell(id, s, rowState === "changed"))}
+                            <td className="sx-cand-state">
+                              {origin && <span className={`sx-badge${c.current?.run_id ? " sx-badge-ok" : ""}`}>{origin}</span>}
+                              {rowState !== "same" && <span className="sx-badge sx-badge-warn">{rowState}</span>}
+                              <CatalogMark c={c} />
                             </td>
                           </tr>
-                        )}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
+                          {open && details && (
+                            <tr className="sx-cand-detailrow">
+                              <td colSpan={ids.length + 6}>
+                                <div className="sx-cand-detailwrap">
+                                  <Details c={c} meaning={c.current?.meaning ?? null} />
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
             </div>
           </>
         )}

@@ -95,8 +95,7 @@ import {
 import { EpisodeToolbar, type EpisodeSideChoice } from "@/features/episodes/EpisodeToolbar";
 import { EpisodeTouchesTable } from "@/features/episodes/EpisodeTouchesTable";
 import { allEpisodes, episodeAt } from "@/features/episodes/episodeLookup";
-import { selectEpisodeParams, useEpisodeParams } from "@/features/episodes/useEpisodeParams";
-import { episodeParamsKey, type EpisodeWindowOverride, withEpisodeOverride } from "@/features/episodes/episodeParams";
+import { selectEpisodeParams, showEpisodeControls, useEpisodeParams } from "@/features/episodes/useEpisodeParams";
 import { useEpisodeHistories } from "@/features/episodes/useEpisodeHistories";
 import { resolveChartTimeframeMs } from "@/features/chart/chartTimeframeMs";
 
@@ -135,6 +134,18 @@ export function ChartPanel() {
   chartTabActiveRef.current = activeTab === "chart";
 
   const containerRef = useRef<HTMLDivElement>(null);
+  // Double-click on the chart pane expands it over the whole browser tab; double-click or Esc restores.
+  const [chartExpanded, setChartExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!chartExpanded) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setChartExpanded(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [chartExpanded]);
+
   const panelBodyRef = useRef<HTMLDivElement>(null);
   const asideRef = useRef<HTMLDivElement>(null);
   const { asideWidth, maxAsideWidth, splitHandleProps } = useChartAsideResize(panelBodyRef);
@@ -284,17 +295,7 @@ export function ChartPanel() {
     runDetail?.strategy_spec ?? null,
   );
   const strategyEpisodeParams = selectEpisodeParams(episodeParamsState, episodeRef);
-  const episodeStrategyKey = strategyEpisodeParams ? episodeParamsKey(strategyEpisodeParams) : null;
-  // The typed window applies only to the strategy parameters it was typed for (run and ref).
-  const [episodeOverrideEntry, setEpisodeOverrideEntry] = useState<{
-    key: string | null;
-    override: EpisodeWindowOverride;
-  }>({ key: null, override: {} });
-  const episodeOverride =
-    episodeOverrideEntry.key === episodeStrategyKey ? episodeOverrideEntry.override : {};
-  const setEpisodeOverride = (override: EpisodeWindowOverride) =>
-    setEpisodeOverrideEntry({ key: episodeStrategyKey, override });
-  const episodeParams = withEpisodeOverride(strategyEpisodeParams, episodeOverride);
+  const episodeParams = strategyEpisodeParams;
   const episodeTicker = runDetail?.result.strategy_evaluation.market.ticker ?? null;
   const episodeHistories = useEpisodeHistories(episodeTicker, chartTimeframe, episodeParams);
   const episodeSides = useMemo<EpisodeSide[]>(
@@ -323,9 +324,7 @@ export function ChartPanel() {
       : episodeParamsState.status === "error"
         ? `episode parameters unavailable: ${episodeParamsState.error ?? "error"}`
         : episodeParams === null
-          ? episodeParamsState.refs.length > 1
-            ? "choose an ema_stack_episode ref"
-            : "no anchor_stack or ema_stack_episode in strategy_spec"
+          ? "choose an ema_stack_episode ref"
           : episodeHistories.status === "loading"
         ? "loading episode history…"
         : episodeHistories.status === "error"
@@ -605,6 +604,8 @@ export function ChartPanel() {
       selectBar(timeSec);
 
     });
+
+    chart.subscribeDblClick(() => setChartExpanded((v) => !v));
 
     const adapter = interactionAdapterRef.current;
 
@@ -1086,7 +1087,7 @@ export function ChartPanel() {
 
   return (
 
-    <section className="panel chart-panel">
+    <section className={chartExpanded ? "panel chart-panel chart-panel--expanded" : "panel chart-panel"}>
 
       <div className="panel__header">
 
@@ -1163,19 +1164,19 @@ export function ChartPanel() {
         onShowTradeManagementExitMarkersChange={setChartShowTradeManagementExitMarkers}
       />
 
-      <EpisodeToolbar
-        layers={episodeLayers}
-        onLayersChange={setEpisodeLayers}
-        side={episodeSide}
-        onSideChange={setEpisodeSide}
-        status={episodeStatus}
-        refs={episodeParamsState.refs}
-        chosenRef={episodeRef}
-        onRefChange={setEpisodeRef}
-        params={episodeParams}
-        override={episodeOverride}
-        onOverrideChange={setEpisodeOverride}
-      />
+      {showEpisodeControls(episodeParamsState) && (
+        <EpisodeToolbar
+          layers={episodeLayers}
+          onLayersChange={setEpisodeLayers}
+          side={episodeSide}
+          onSideChange={setEpisodeSide}
+          status={episodeStatus}
+          refs={episodeParamsState.refs}
+          chosenRef={episodeRef}
+          onRefChange={setEpisodeRef}
+          params={episodeParams}
+        />
+      )}
 
       {chartTradeFocusWarning && (
 
@@ -1216,6 +1217,10 @@ export function ChartPanel() {
         <div className="chart-panel__main">
 
           <div ref={containerRef} className="chart-canvas" tabIndex={0} />
+
+          {chartExpanded && (
+            <p className="chart-panel__expanded-hint">Double-click or Esc to restore</p>
+          )}
 
           {selectedTradeId !== null && (
             <ChartTradeFocusNav

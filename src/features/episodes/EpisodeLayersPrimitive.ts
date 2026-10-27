@@ -41,6 +41,8 @@ export type EpisodeLayersState = {
   times: number[];
   stepSec: number;
   highlight: EpisodeHighlight;
+  /** Draw nothing outside the first to last candle (±half a bar); episodes keep their Engine numbers. */
+  clipToCandles?: boolean;
 };
 
 export const EPISODE_COLORS = {
@@ -423,6 +425,17 @@ class LayerRenderer implements IPrimitivePaneRenderer {
     const scene = this.scene();
     if (!scene || scene.state.times.length === 0) return;
     target.useMediaCoordinateSpace(({ context, mediaSize }) => {
+      if (scene.state.clipToCandles) {
+        const scale = scene.chart.timeScale();
+        const half = scale.options().barSpacing / 2;
+        const first = scale.logicalToCoordinate(0 as Logical);
+        const last = scale.logicalToCoordinate((scene.state.times.length - 1) as Logical);
+        const from = first === null ? 0 : Math.max(first - half, 0);
+        const to = last === null ? mediaSize.width : Math.min(last + half, mediaSize.width);
+        context.beginPath();
+        context.rect(from, 0, Math.max(to - from, 0), mediaSize.height);
+        context.clip();
+      }
       const drawer = new Drawer(scene);
       if (this.layer === "background") drawer.background(context, mediaSize.width, mediaSize.height);
       else drawer.foreground(context, mediaSize.width, mediaSize.height);

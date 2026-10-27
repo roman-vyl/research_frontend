@@ -1,6 +1,8 @@
 /**
  * Strategy Runtime read API, reached through the dev-server proxy `/runtime-api` (Runtime sends no CORS headers):
- * `GET /v1/strategy-instances`, the strategy instances registered in Runtime's deployment catalog.
+ * `GET /v1/strategy-instances`, the strategy instances registered in Runtime's deployment catalog, and
+ * `PUT /v1/strategy-instances/{id}/enabled`, which switches a strategy on or off, and
+ * `DELETE /v1/strategy-instances/{id}`, which removes a disabled strategy.
  */
 
 export type RuntimeStrategyInstance = {
@@ -8,7 +10,7 @@ export type RuntimeStrategyInstance = {
   strategy_id: string;
   instrument: string;
   base_timeframe: string;
-  /** The `enabled` value of the spec file in the catalog; not the state of Runtime's processing. */
+  /** The `enabled` value in the deployment file, changed through Runtime's enabled route. */
   enabled: boolean;
   source_path: string;
 };
@@ -80,4 +82,242 @@ export async function fetchRuntimeStrategyInstances(): Promise<RuntimeStrategyLi
     throw new RuntimeListError("unreachable");
   }
   throw new RuntimeListError("runtime_error");
+}
+
+export type RuntimeEnabledChanged = {
+  strategy_instance_id: string;
+  enabled: boolean;
+  cancelled_entry_order: boolean;
+};
+
+/**
+ * A switch that did not happen. `reason` is Runtime's own refusal code, read only from a body whose status is
+ * `enabled_change_refused`; for any other answer (or none) it is null.
+ */
+export class RuntimeEnabledError extends Error {
+  readonly reason: string | null;
+
+  constructor(reason: string | null) {
+    super(reason ?? "unexpected_answer");
+    this.name = "RuntimeEnabledError";
+    this.reason = reason;
+  }
+}
+
+/** Sets `enabled` of one strategy through Runtime; Runtime checks position and order state before it changes the file. */
+export async function setRuntimeStrategyEnabled(
+  strategyInstanceId: string,
+  enabled: boolean,
+): Promise<RuntimeEnabledChanged> {
+  let res: Response;
+  try {
+    res = await fetch(`${RUNTIME_API_BASE}/v1/strategy-instances/${encodeURIComponent(strategyInstanceId)}/enabled`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    });
+  } catch {
+    throw new RuntimeEnabledError(null);
+  }
+  if (res.ok) {
+    // a 2xx counts as a switch only when its body confirms this instance and this value
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      throw new RuntimeEnabledError(null);
+    }
+    const b = body && typeof body === "object" ? (body as Partial<RuntimeEnabledChanged>) : null;
+    if (
+      !b ||
+      b.strategy_instance_id !== strategyInstanceId ||
+      b.enabled !== enabled ||
+      typeof b.cancelled_entry_order !== "boolean"
+    ) {
+      throw new RuntimeEnabledError(null);
+    }
+    return b as RuntimeEnabledChanged;
+  }
+  let reason: string | null = null;
+  try {
+    const body: unknown = await res.json();
+    if (body && typeof body === "object") {
+      const b = body as { status?: unknown; reason?: unknown };
+      if (b.status === "enabled_change_refused" && typeof b.reason === "string") reason = b.reason;
+    }
+  } catch {
+    // not a Runtime body
+  }
+  throw new RuntimeEnabledError(reason);
+}
+
+export type RuntimeStrategyDeleted = {
+  strategy_instance_id: string;
+  deleted: true;
+  cancelled_entry_order: boolean;
+  trash_file?: string;
+};
+
+/**
+ * A delete that did not happen. `reason` is Runtime's own refusal code, read only from a body whose status is
+ * `delete_refused`; for any other answer (or none) it is null.
+ */
+export class RuntimeDeleteError extends Error {
+  readonly reason: string | null;
+
+  constructor(reason: string | null) {
+    super(reason ?? "unexpected_answer");
+    this.name = "RuntimeDeleteError";
+    this.reason = reason;
+  }
+}
+
+/** Deletes one strategy through Runtime: a disabled, settled strategy's file moves to Runtime's trash directory. */
+export async function deleteRuntimeStrategy(strategyInstanceId: string): Promise<RuntimeStrategyDeleted> {
+  let res: Response;
+  try {
+    res = await fetch(`${RUNTIME_API_BASE}/v1/strategy-instances/${encodeURIComponent(strategyInstanceId)}`, {
+      method: "DELETE",
+    });
+  } catch {
+    throw new RuntimeDeleteError(null);
+  }
+  if (res.ok) {
+    // a 2xx counts as a delete only when its body confirms this instance
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      throw new RuntimeDeleteError(null);
+    }
+    const b = body && typeof body === "object" ? (body as Partial<RuntimeStrategyDeleted>) : null;
+    if (
+      !b ||
+      b.strategy_instance_id !== strategyInstanceId ||
+      b.deleted !== true ||
+      typeof b.cancelled_entry_order !== "boolean"
+    ) {
+      throw new RuntimeDeleteError(null);
+    }
+    return b as RuntimeStrategyDeleted;
+  }
+  let reason: string | null = null;
+  try {
+    const body: unknown = await res.json();
+    if (body && typeof body === "object") {
+      const b = body as { status?: unknown; reason?: unknown };
+      if (b.status === "delete_refused" && typeof b.reason === "string") reason = b.reason;
+    }
+  } catch {
+    // not a Runtime body
+  }
+  throw new RuntimeDeleteError(reason);
+}
+
+export type RuntimeEmaStackEntry = {
+  role: "fast" | "anchor" | "slow";
+  /** As Engine's plan states it: the literal "base" (the strategy's base timeframe) or a concrete timeframe. */
+  timeframe: string;
+  period: number;
+  source: string;
+};
+
+export type RuntimeEpisodeEntry = {
+  episode_ref: string;
+  /** Engine's effective episode parameters, unchanged. */
+  params: Record<string, number>;
+};
+
+export type RuntimeChartLayers = {
+  strategy_instance_id: string;
+  ema_stack: RuntimeEmaStackEntry[];
+  episodes: RuntimeEpisodeEntry[];
+};
+
+/** A chart-layers read that did not give a valid answer; `reason` is Runtime's own code when it sent one. */
+export class RuntimeChartLayersError extends Error {
+  readonly reason: string | null;
+
+  constructor(reason: string | null) {
+    super(reason ?? "unexpected_answer");
+    this.name = "RuntimeChartLayersError";
+    this.reason = reason;
+  }
+}
+
+const STACK_ROLES = ["fast", "anchor", "slow"] as const;
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Strict check of a 200 body: anything not exactly the documented shape is not an answer. */
+function parseChartLayers(body: unknown, strategyInstanceId: string): RuntimeChartLayers | null {
+  if (!isObject(body) || body.strategy_instance_id !== strategyInstanceId) return null;
+  const { ema_stack: stack, episodes } = body;
+  if (!Array.isArray(stack) || stack.length !== STACK_ROLES.length || !Array.isArray(episodes)) return null;
+  const emaStack: RuntimeEmaStackEntry[] = [];
+  for (const [index, raw] of stack.entries()) {
+    if (!isObject(raw)) return null;
+    const { role, timeframe, period, source } = raw;
+    if (
+      role !== STACK_ROLES[index] ||
+      typeof timeframe !== "string" ||
+      timeframe === "" ||
+      typeof period !== "number" ||
+      !Number.isInteger(period) ||
+      period < 1 ||
+      typeof source !== "string"
+    ) {
+      return null;
+    }
+    emaStack.push({ role: STACK_ROLES[index]!, timeframe, period, source });
+  }
+  const parsedEpisodes: RuntimeEpisodeEntry[] = [];
+  for (const raw of episodes) {
+    if (!isObject(raw) || typeof raw.episode_ref !== "string" || !isObject(raw.params)) return null;
+    const params: Record<string, number> = {};
+    for (const [key, value] of Object.entries(raw.params)) {
+      if (typeof value !== "number" || !Number.isFinite(value)) return null;
+      params[key] = value;
+    }
+    parsedEpisodes.push({ episode_ref: raw.episode_ref, params });
+  }
+  return { strategy_instance_id: strategyInstanceId, ema_stack: emaStack, episodes: parsedEpisodes };
+}
+
+/**
+ * The EMA stack and the episode parameters one strategy uses, as Engine's feature plan resolves them
+ * (`GET /v1/strategy-instances/{id}/chart-layers`). Read only; sent when a strategy is selected and on Refresh.
+ */
+export async function fetchRuntimeChartLayers(
+  strategyInstanceId: string,
+  signal?: AbortSignal,
+): Promise<RuntimeChartLayers> {
+  let res: Response;
+  try {
+    res = await fetch(
+      `${RUNTIME_API_BASE}/v1/strategy-instances/${encodeURIComponent(strategyInstanceId)}/chart-layers`,
+      { method: "GET", signal },
+    );
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new RuntimeChartLayersError(null);
+  }
+  let body: unknown = null;
+  try {
+    body = await res.json();
+  } catch {
+    // not JSON
+  }
+  if (res.ok) {
+    const layers = parseChartLayers(body, strategyInstanceId);
+    if (layers === null) throw new RuntimeChartLayersError(null);
+    return layers;
+  }
+  let reason: string | null = null;
+  if (isObject(body) && body.status === "chart_layers_refused" && typeof body.reason === "string") {
+    reason = body.reason;
+  }
+  throw new RuntimeChartLayersError(reason);
 }

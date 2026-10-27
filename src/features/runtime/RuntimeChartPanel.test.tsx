@@ -15,6 +15,7 @@ const fetchCandlesWindow = vi.fn();
 const chartRenders = vi.fn();
 const fetchJournalEvents = vi.fn();
 const fetchJournalStrategyInstances = vi.fn();
+const fetchRuntimeChartLayers = vi.fn();
 
 vi.mock("@/api/journal", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api/journal")>()),
@@ -24,9 +25,16 @@ vi.mock("@/api/journal", async (importOriginal) => ({
 
 vi.mock("@/api/runtime", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/api/runtime")>();
-  return { ...actual, fetchRuntimeStrategyInstances: (...a: unknown[]) => fetchRuntimeStrategyInstances(...a) };
+  return {
+    ...actual,
+    fetchRuntimeStrategyInstances: (...a: unknown[]) => fetchRuntimeStrategyInstances(...a),
+    fetchRuntimeChartLayers: (...a: unknown[]) => fetchRuntimeChartLayers(...a),
+  };
 });
 vi.mock("@/api/client", () => ({
+  ApiError: class ApiError extends Error {},
+  fetchChartOverlayEma: vi.fn(),
+  fetchEmaStackEpisodeHistory: vi.fn(),
   fetchMarketBounds: (...a: unknown[]) => fetchMarketBounds(...a),
   fetchCandlesWindow: (...a: unknown[]) => fetchCandlesWindow(...a),
 }));
@@ -120,6 +128,8 @@ describe("Runtime strategy selection and chart", () => {
     chartRenders.mockReset();
     fetchJournalEvents.mockReset();
     fetchJournalStrategyInstances.mockReset();
+    fetchRuntimeChartLayers.mockReset();
+    fetchRuntimeChartLayers.mockImplementation(async (id: string) => ({ strategy_instance_id: id, ema_stack: [], episodes: [] }));
     fetchJournalStrategyInstances.mockResolvedValue([]);
     fetchJournalEvents.mockResolvedValue({ events: [], truncated: false });
     latest = LATEST;

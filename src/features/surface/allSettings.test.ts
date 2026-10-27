@@ -6,6 +6,7 @@ import {
   allSettingsSelection,
   evaluateAllSettings,
   neededMetrics,
+  tableMetrics,
   snapshotColumns,
 } from "@/features/surface/allSettings";
 import { RATIO_MANIFEST, TRAILING_MANIFEST, TRAILING_RESULTS } from "@/features/surface/fixtures/experiments";
@@ -109,6 +110,15 @@ describe("All settings parity with the displayed-grid filter code", () => {
 });
 
 describe("All settings snapshot columns", () => {
+  it("the matches table shows Win rate next to Net PnL when the Experiment has it", () => {
+    const schema = {
+      ...RATIO_MANIFEST.result_schema,
+      metrics: [...RATIO_MANIFEST.result_schema.metrics, { column: "win_rate", label: "Win rate", format: "fraction" as const }],
+    };
+    expect(tableMetrics(withNetPnl(schema, 10000))).toEqual(["net_pnl", "win_rate", "realised_trade_count"]);
+    expect(tableMetrics(withNetPnl(RATIO_MANIFEST.result_schema, 10000))).toEqual(["net_pnl", "realised_trade_count"]);
+  });
+
   it("asks for dimensions, arm, grid and only the needed metrics; derived Net PnL reads return_pct", () => {
     const shown = withNetPnl(RATIO_MANIFEST.result_schema, 10000);
     const metrics = neededMetrics(shown, "net_pnl", [cond("<=", 25, "max_drawdown_pct")]);
