@@ -84,6 +84,42 @@ export async function fetchRuntimeStrategyInstances(): Promise<RuntimeStrategyLi
   throw new RuntimeListError("runtime_error");
 }
 
+export type RuntimeTradeState = "flat" | "entry_pending" | "in_position";
+
+export type RuntimeStrategyState = {
+  strategy_instance_id: string;
+  trade_state: RuntimeTradeState;
+  trade_cycle_id: string | null;
+  side: "long" | "short" | null;
+  first_fill_at_ms: number | null;
+  recovery_pending: "entry" | "close" | null;
+};
+
+function isStrategyState(x: unknown): x is RuntimeStrategyState {
+  if (!x || typeof x !== "object") return false;
+  const o = x as Record<string, unknown>;
+  return (
+    typeof o.strategy_instance_id === "string" &&
+    (o.trade_state === "flat" || o.trade_state === "entry_pending" || o.trade_state === "in_position") &&
+    (o.side === null || o.side === "long" || o.side === "short") &&
+    (o.recovery_pending === null || o.recovery_pending === "entry" || o.recovery_pending === "close")
+  );
+}
+
+/**
+ * Runtime's own stored trade state of every deployed strategy (`GET /v1/strategy-instance-states`): flat,
+ * entry order placed, or in a position, as of the last processed bar. Read only. Any failure or invalid body
+ * throws; there is no partial answer.
+ */
+export async function fetchRuntimeStrategyStates(): Promise<RuntimeStrategyState[]> {
+  const res = await fetch(`${RUNTIME_API_BASE}/v1/strategy-instance-states`, { method: "GET" });
+  if (!res.ok) throw new Error(`strategy-instance-states ${res.status}`);
+  const body: unknown = await res.json();
+  const items = (body as { strategy_instances?: unknown } | null)?.strategy_instances;
+  if (!Array.isArray(items) || !items.every(isStrategyState)) throw new Error("invalid strategy-instance-states body");
+  return items;
+}
+
 export type RuntimeEnabledChanged = {
   strategy_instance_id: string;
   enabled: boolean;
