@@ -30,12 +30,18 @@ describe("Runtime Dashboard static guards", () => {
     for (const s of sources) expect({ file: s.file, hit: forbidden.test(s.text) }).toEqual({ file: s.file, hit: false });
   });
 
-  it("sends only GET, one PUT at the enabled route and one DELETE at the instance route; never polls", () => {
+  it("sends only GET, one PUT at the enabled route and one DELETE at the instance route; polls only the state route every 10 s in the dashboard", () => {
     for (const s of sources) {
       const methods = [...s.text.matchAll(/method:\s*["'](\w+)["']/g)].map((m) => m[1]);
       for (const m of methods) expect({ file: s.file, m: ["GET", "PUT", "DELETE"].includes(m!) }).toEqual({ file: s.file, m: true });
-      expect({ file: s.file, hit: /(setInterval|setTimeout)\s*\(/.test(s.text) }).toEqual({ file: s.file, hit: false });
+      expect({ file: s.file, hit: /setTimeout\s*\(/.test(s.text) }).toEqual({ file: s.file, hit: false });
+      // the only timer: the dashboard's single 10 s trade-state refresh
+      const intervals = [...s.text.matchAll(/setInterval\s*\(/g)].length;
+      expect({ file: s.file, intervals }).toEqual({ file: s.file, intervals: s.file === "RuntimeDashboard.tsx" ? 1 : 0 });
     }
+    const dash = sources.find((s) => s.file === "RuntimeDashboard.tsx")!.text;
+    expect(dash).toMatch(/STATE_REFRESH_MS = 10_000/);
+    expect(dash).toMatch(/setInterval\(tick, STATE_REFRESH_MS\)/);
     const api = readFileSync(join(__dirname, "../../api/runtime.ts"), "utf8");
     const puts = [...api.matchAll(/method:\s*"PUT"/g)];
     expect(puts).toHaveLength(1);
