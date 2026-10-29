@@ -7,8 +7,11 @@ import {
   deleteRuntimeStrategy,
   setRuntimeStrategyEnabled,
   RuntimeDeleteError,
+  RuntimeCommandError,
   RuntimeEnabledError,
   RuntimeListError,
+  sendRuntimeCommand,
+  type RuntimeOperatorCommand,
   type RuntimeListErrorKind,
   type RuntimeStrategyInstance,
   type RuntimeStrategyList,
@@ -56,6 +59,35 @@ const DELETE_REFUSAL_TEXT: Record<string, string> = {
   strategy_instance_not_found: "Runtime no longer has this strategy. Refresh the list.",
   catalog_unavailable: "Runtime cannot read the strategy files. Nothing was changed.",
 };
+
+const COMMAND_REFUSAL_TEXT: Record<string, string> = {
+  no_position: "There is no open position or entry order to act on any more. Nothing was changed.",
+  recovery_pending: "This strategy is recovering an order or position. Nothing was changed. Try again later.",
+  cycle_not_settled: "This strategy's trade cycle has just ended. Nothing was changed. Try again after the next bar.",
+  position_open: "The entry order has already filled, so the strategy is in a position. Nothing was changed.",
+  cancel_not_confirmed: "The entry order could not be confirmed cancelled on the exchange. The strategy stays enabled.",
+  abi_unavailable: "The exchange gateway did not answer. Nothing was changed.",
+  instance_busy: "The strategy is processing a bar. Nothing was changed. Try again in a moment.",
+  file_changed: "The strategy file was changed meanwhile. Try again and check the card.",
+  identity_changed: "The strategy file no longer matches this strategy. Refresh the list.",
+  write_failed: "Runtime could not write the strategy file. Check the card before trying again.",
+  strategy_instance_not_found: "Runtime no longer has this strategy. Refresh the list.",
+  catalog_unavailable: "Runtime cannot read the strategy files. Nothing was changed.",
+  not_ready: "Runtime is not ready. Nothing was changed.",
+};
+
+const CLOSE_NOT_CONFIRMED_TEXT =
+  "The exchange did not confirm the close. Runtime is still completing it, and the strategy is already disabled. Check the card in a minute.";
+
+function commandRefusalText(command: RuntimeOperatorCommand, err: unknown): string {
+  if (!(err instanceof RuntimeCommandError)) return GENERIC_REFUSAL;
+  if (command === "close-position" && err.httpStatus === 502) return CLOSE_NOT_CONFIRMED_TEXT;
+  const reason = err.reason;
+  return (
+    (reason !== null && Object.hasOwn(COMMAND_REFUSAL_TEXT, reason) ? COMMAND_REFUSAL_TEXT[reason] : undefined) ??
+    GENERIC_REFUSAL
+  );
+}
 
 function deleteRefusalText(reason: string | null): string {
   return (
@@ -110,6 +142,12 @@ function withoutId(set: ReadonlySet<string>, id: string): ReadonlySet<string> {
   return next;
 }
 
+function commandFor(state: RuntimeStrategyState | undefined): RuntimeOperatorCommand | null {
+  if (state?.trade_state === "in_position") return "close-position";
+  if (state?.trade_state === "entry_pending") return "cancel-entry-orders";
+  return null;
+}
+
 function tradeMarks(state: RuntimeStrategyState | undefined): string[] {
   if (!state) return [];
   const marks: string[] = [];
@@ -129,8 +167,11 @@ export function RuntimeDashboard() {
   const [statesFailed, setStatesFailed] = useState(false);
   const statesInFlight = useRef(false);
   const [switching, setSwitching] = useState<ReadonlySet<string>>(new Set());
-  const [refusal, setRefusal] = useState<{ text: string; instanceId: string; kind: "switch" | "delete" } | null>(null);
+  const [refusal, setRefusal] = useState<{ text: string; instanceId: string; kind: "switch" | "delete" | "command" } | null>(null);
   const [confirming, setConfirming] = useState<RuntimeStrategyInstance | null>(null);
+  const [commanding, setCommanding] = useState<{ s: RuntimeStrategyInstance; command: RuntimeOperatorCommand } | null>(
+    null,
+  );
   const switchRefs = useRef(new Map<string, HTMLButtonElement>());
   const trashRefs = useRef(new Map<string, HTMLButtonElement>());
   const cancelRef = useRef<HTMLButtonElement | null>(null);
@@ -256,9 +297,30 @@ export function RuntimeDashboard() {
     [load],
   );
 
+  const confirmCommand = useCallback(
+    (s: RuntimeStrategyInstance, command: RuntimeOperatorCommand) => {
+      setCommanding(null);
+      setSwitching((prev) => new Set(prev).add(s.strategy_instance_id));
+      sendRuntimeCommand(s.strategy_instance_id, command).then(
+        () => {
+          setSwitching((prev) => withoutId(prev, s.strategy_instance_id));
+          load(true);
+        },
+        (err: unknown) => {
+          setSwitching((prev) => withoutId(prev, s.strategy_instance_id));
+          setRefusal({ text: commandRefusalText(command, err), instanceId: s.strategy_instance_id, kind: "command" });
+          // a refusal may still follow a changed state (disabled strategy): show the real one
+          load(true);
+        },
+      );
+    },
+    [load],
+  );
+
   const closeRefusal = useCallback(() => {
     setRefusal((cur) => {
-      if (cur) (cur.kind === "delete" ? trashRefs : switchRefs).current.get(cur.instanceId)?.focus();
+      if (cur && cur.kind !== "command")
+        (cur.kind === "delete" ? trashRefs : switchRefs).current.get(cur.instanceId)?.focus();
       return null;
     });
   }, []);
@@ -268,8 +330,8 @@ export function RuntimeDashboard() {
   }, [refusal]);
 
   useEffect(() => {
-    if (confirming) cancelRef.current?.focus();
-  }, [confirming]);
+    if (confirming || commanding) cancelRef.current?.focus();
+  }, [confirming, commanding]);
 
   const busy = phase.kind === "loading";
   const list = phase.kind === "ready" ? phase.list : null;
@@ -378,6 +440,18 @@ export function RuntimeDashboard() {
                         )}
                       </button>
                       <div className="rt-card-foot">
+                        {commandFor(states?.get(s.strategy_instance_id)) && (
+                          <button
+                            type="button"
+                            className="sx-fbtn rt-danger"
+                            disabled={switching.has(s.strategy_instance_id)}
+                            onClick={() => setCommanding({ s, command: commandFor(states?.get(s.strategy_instance_id))! })}
+                          >
+                            {commandFor(states?.get(s.strategy_instance_id)) === "close-position"
+                              ? "Close position"
+                              : "Cancel entry order"}
+                          </button>
+                        )}
                         <button
                           type="button"
                           role="switch"
@@ -451,13 +525,51 @@ export function RuntimeDashboard() {
           </div>
         )}
 
+        {commanding && (
+          <div className="rt-dialog-backdrop">
+            <div
+              className="sx-panel rt-dialog"
+              role="alertdialog"
+              aria-modal="true"
+              aria-label={commanding.command === "close-position" ? "Close position" : "Cancel entry order"}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setCommanding(null);
+              }}
+            >
+              <p className="rt-dialog-text">
+                {commanding.command === "close-position"
+                  ? `Close the position of ${cardName(commanding.s.source_path)}? It will be closed at market and its stop and take orders cancelled. The strategy will be disabled.`
+                  : `Cancel the entry order of ${cardName(commanding.s.source_path)}? The resting order will be cancelled. The strategy will be disabled.`}
+              </p>
+              <div className="rt-dialog-actions">
+                <button type="button" className="sx-fbtn" ref={cancelRef} onClick={() => setCommanding(null)}>
+                  Back
+                </button>
+                <button
+                  type="button"
+                  className="sx-fbtn rt-danger"
+                  onClick={() => confirmCommand(commanding.s, commanding.command)}
+                >
+                  {commanding.command === "close-position" ? "Close position" : "Cancel entry order"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {refusal && (
           <div className="rt-dialog-backdrop">
             <div
               className="sx-panel rt-dialog"
               role="alertdialog"
               aria-modal="true"
-              aria-label={refusal.kind === "delete" ? "Strategy was not deleted" : "Strategy was not switched"}
+              aria-label={
+                refusal.kind === "delete"
+                  ? "Strategy was not deleted"
+                  : refusal.kind === "command"
+                    ? "Command did not complete"
+                    : "Strategy was not switched"
+              }
               onKeyDown={(e) => {
                 if (e.key === "Escape") closeRefusal();
               }}

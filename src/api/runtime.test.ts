@@ -6,9 +6,11 @@ import {
   fetchRuntimeStrategyInstances,
   fetchRuntimeStrategyStates,
   RuntimeChartLayersError,
+  RuntimeCommandError,
   RuntimeDeleteError,
   RuntimeEnabledError,
   RuntimeListError,
+  sendRuntimeCommand,
   setRuntimeStrategyEnabled,
   type RuntimeListErrorKind,
 } from "@/api/runtime";
@@ -267,5 +269,58 @@ describe("fetchRuntimeStrategyStates", () => {
       vi.fn().mockResolvedValue(new Response(JSON.stringify({ strategy_instances: [{ ...ok, trade_state: "weird" }] }), { status: 200 })),
     );
     await expect(fetchRuntimeStrategyStates()).rejects.toThrow();
+  });
+});
+
+describe("sendRuntimeCommand", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const OK = { strategy_instance_id: "s:abc", enabled: false, cancelled_entry_order: true };
+
+  async function failureOf(promise: Promise<unknown>): Promise<RuntimeCommandError> {
+    try {
+      await promise;
+    } catch (err) {
+      expect(err).toBeInstanceOf(RuntimeCommandError);
+      return err as RuntimeCommandError;
+    }
+    throw new Error("expected a RuntimeCommandError");
+  }
+
+  it.each(["close-position", "cancel-entry-orders"] as const)("sends one body-less POST to %s", async (command) => {
+    const fetchMock = vi.fn().mockResolvedValue(respond(200, JSON.stringify(OK)));
+    vi.stubGlobal("fetch", fetchMock);
+    await sendRuntimeCommand("s:abc", command);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(`/runtime-api/v1/strategy-instances/s%3Aabc/${command}`, { method: "POST" });
+  });
+
+  it.each([
+    ["wrong instance", { ...OK, strategy_instance_id: "s:other" }],
+    ["still enabled", { ...OK, enabled: true }],
+    ["null body", null],
+  ])("rejects a 200 with %s", async (_name, body) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(200, JSON.stringify(body))));
+    const err = await failureOf(sendRuntimeCommand("s:abc", "close-position"));
+    expect(err.reason).toBeNull();
+  });
+
+  it("reads Runtime's reason and status from a refusal", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(respond(502, JSON.stringify({ status: "enabled_change_refused", reason: "abi_unavailable" }))),
+    );
+    const err = await failureOf(sendRuntimeCommand("s:abc", "close-position"));
+    expect([err.reason, err.httpStatus]).toEqual(["abi_unavailable", 502]);
+  });
+
+  it("ignores a reason in a body that is not Runtime's refusal, and survives a network failure", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(409, JSON.stringify({ reason: "no_position" }))));
+    expect((await failureOf(sendRuntimeCommand("s:abc", "close-position"))).reason).toBeNull();
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("down")));
+    const err = await failureOf(sendRuntimeCommand("s:abc", "close-position"));
+    expect([err.reason, err.httpStatus]).toEqual([null, null]);
   });
 });
