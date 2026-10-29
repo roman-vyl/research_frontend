@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchJournalStrategyInstances, type JournalStrategyInstance } from "@/api/journal";
 import {
   fetchRuntimeStrategyInstances,
+  fetchRuntimeStrategyStates,
   deleteRuntimeStrategy,
   setRuntimeStrategyEnabled,
   RuntimeDeleteError,
@@ -11,6 +12,7 @@ import {
   type RuntimeListErrorKind,
   type RuntimeStrategyInstance,
   type RuntimeStrategyList,
+  type RuntimeStrategyState,
 } from "@/api/runtime";
 import { RuntimeChartPanel } from "@/features/runtime/RuntimeChartPanel";
 import "@/features/surface/surface.css";
@@ -22,6 +24,8 @@ const ERROR_TEXT: Record<RuntimeListErrorKind, string> = {
   runtime_error: "Runtime returned an error",
   unreachable: "Runtime is not reachable",
 };
+
+const STATE_REFRESH_MS = 10_000;
 
 const GENERIC_REFUSAL = "Runtime did not answer correctly. Nothing was changed.";
 
@@ -106,11 +110,24 @@ function withoutId(set: ReadonlySet<string>, id: string): ReadonlySet<string> {
   return next;
 }
 
+function tradeMarks(state: RuntimeStrategyState | undefined): string[] {
+  if (!state) return [];
+  const marks: string[] = [];
+  const side = state.side ? ` · ${state.side.toUpperCase()}` : "";
+  if (state.trade_state === "in_position") marks.push(`IN POSITION${side}`);
+  if (state.trade_state === "entry_pending") marks.push(`ENTRY ORDER${side}`);
+  if (state.recovery_pending) marks.push(`RECOVERY · ${state.recovery_pending.toUpperCase()}`);
+  return marks;
+}
+
 export function RuntimeDashboard() {
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [selected, setSelected] = useState<RuntimeStrategyInstance | null>(null);
   const [journal, setJournal] = useState<ReadonlyMap<string, JournalStrategyInstance> | null>(null);
   const generation = useRef(0);
+  const [states, setStates] = useState<ReadonlyMap<string, RuntimeStrategyState> | null>(null);
+  const [statesFailed, setStatesFailed] = useState(false);
+  const statesInFlight = useRef(false);
   const [switching, setSwitching] = useState<ReadonlySet<string>>(new Set());
   const [refusal, setRefusal] = useState<{ text: string; instanceId: string; kind: "switch" | "delete" } | null>(null);
   const [confirming, setConfirming] = useState<RuntimeStrategyInstance | null>(null);
@@ -119,10 +136,29 @@ export function RuntimeDashboard() {
   const cancelRef = useRef<HTMLButtonElement | null>(null);
   const okRef = useRef<HTMLButtonElement | null>(null);
 
+  // Runtime's stored trade state; a failure leaves the cards without marks. One read at a time.
+  const loadStates = useCallback(() => {
+    if (statesInFlight.current) return;
+    statesInFlight.current = true;
+    fetchRuntimeStrategyStates().then(
+      (rows) => {
+        statesInFlight.current = false;
+        setStates(new Map(rows.map((r) => [r.strategy_instance_id, r])));
+        setStatesFailed(false);
+      },
+      () => {
+        statesInFlight.current = false;
+        setStates(null);
+        setStatesFailed(true);
+      },
+    );
+  }, []);
+
   // `keepList`: a refresh after a switch re-reads in place; the cards stay mounted so the page keeps its scroll position
   const load = useCallback((keepList = false) => {
     const mine = ++generation.current;
     if (!keepList) setPhase({ kind: "loading" });
+    loadStates();
     // the cards' "Last evaluated" line; a Journal failure leaves the cards as they were
     fetchJournalStrategyInstances().then(
       (rows) => {
@@ -148,7 +184,7 @@ export function RuntimeDashboard() {
         setPhase({ kind: "error", error: err instanceof RuntimeListError ? err.kind : "runtime_error" });
       },
     );
-  }, []);
+  }, [loadStates]);
 
   useEffect(() => {
     load();
@@ -156,6 +192,19 @@ export function RuntimeDashboard() {
       generation.current += 1; // a response that arrives after the tab was left is ignored
     };
   }, [load]);
+
+  // every 10 s while the tab is visible; nothing is sent while it is hidden
+  useEffect(() => {
+    const tick = () => {
+      if (document.visibilityState === "visible") loadStates();
+    };
+    const timer = window.setInterval(tick, STATE_REFRESH_MS);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [loadStates]);
 
   const toggle = useCallback(
     (s: RuntimeStrategyInstance) => {
@@ -226,6 +275,8 @@ export function RuntimeDashboard() {
   const list = phase.kind === "ready" ? phase.list : null;
   const total = list?.strategy_instances.length ?? 0;
   const enabled = list?.strategy_instances.filter((s) => s.enabled).length ?? 0;
+  const inPosition = states ? [...states.values()].filter((x) => x.trade_state === "in_position").length : 0;
+  const entryOrders = states ? [...states.values()].filter((x) => x.trade_state === "entry_pending").length : 0;
   const noDiagnostics = !list || (list.invalid_files.length === 0 && list.duplicate_identities.length === 0);
 
   return (
@@ -249,7 +300,22 @@ export function RuntimeDashboard() {
             </span>
             <span className="sx-chip">{enabled} enabled</span>
             <span className="sx-chip">{total - enabled} disabled</span>
+            {states && <span className="sx-chip">{inPosition} in position</span>}
+            {states && <span className="sx-chip">{entryOrders} entry order</span>}
           </div>
+        )}
+
+        {list && states && (
+          <p className="sx-note">Marks show Runtime's state as of each strategy's last processed bar.</p>
+        )}
+
+        {list && statesFailed && (
+          <p className="sx-note" role="status">
+            Trade state unavailable{" "}
+            <button type="button" className="sx-fbtn" onClick={loadStates}>
+              Retry
+            </button>
+          </p>
         )}
 
         {phase.kind === "loading" && (
@@ -298,6 +364,11 @@ export function RuntimeDashboard() {
                           {s.strategy_id} · {s.instrument} · {s.base_timeframe}
                         </div>
                         <div className="rt-id sx-num">{s.strategy_instance_id}</div>
+                        {tradeMarks(states?.get(s.strategy_instance_id)).map((m) => (
+                          <div key={m} className="rt-meta sx-num">
+                            {m}
+                          </div>
+                        ))}
                         {journal && (
                           <div className="rt-meta sx-num">
                             {journal.has(s.strategy_instance_id)

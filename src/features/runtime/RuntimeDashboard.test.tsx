@@ -8,6 +8,7 @@ import { RuntimeDeleteError, RuntimeEnabledError, RuntimeListError, type Runtime
 import { RuntimeDashboard } from "@/features/runtime/RuntimeDashboard";
 
 const fetchRuntimeStrategyInstances = vi.fn();
+const fetchRuntimeStrategyStates = vi.fn();
 const setRuntimeStrategyEnabled = vi.fn();
 const deleteRuntimeStrategy = vi.fn();
 const fetchJournalEvents = vi.fn();
@@ -24,6 +25,7 @@ vi.mock("@/api/runtime", async (importOriginal) => {
   return {
     ...actual,
     fetchRuntimeStrategyInstances: (...a: unknown[]) => fetchRuntimeStrategyInstances(...a),
+    fetchRuntimeStrategyStates: (...a: unknown[]) => fetchRuntimeStrategyStates(...a),
     setRuntimeStrategyEnabled: (...a: unknown[]) => setRuntimeStrategyEnabled(...a),
     deleteRuntimeStrategy: (...a: unknown[]) => deleteRuntimeStrategy(...a),
   };
@@ -65,6 +67,8 @@ function realisticList(): RuntimeStrategyList {
 describe("RuntimeDashboard", () => {
   beforeEach(() => {
     fetchRuntimeStrategyInstances.mockReset();
+    fetchRuntimeStrategyStates.mockReset();
+    fetchRuntimeStrategyStates.mockResolvedValue([]);
     setRuntimeStrategyEnabled.mockReset();
     deleteRuntimeStrategy.mockReset();
     fetchJournalEvents.mockReset();
@@ -532,5 +536,88 @@ describe("RuntimeDashboard", () => {
     await screen.findByLabelText("Strategies");
     expect(screen.queryByText("No evaluations yet")).toBeNull();
     expect(screen.queryByText(/Last evaluated/)).toBeNull();
+  });
+});
+
+describe("RuntimeDashboard trade state marks", () => {
+  const a = instance("a.json", true);
+  const b = instance("b.json", true);
+  const c = instance("c.json", true);
+  const d = instance("d.json", true);
+  const state = (id: string, extra: Record<string, unknown>) => ({
+    strategy_instance_id: id,
+    trade_state: "flat",
+    trade_cycle_id: null,
+    side: null,
+    first_fill_at_ms: null,
+    recovery_pending: null,
+    ...extra,
+  });
+
+  beforeEach(() => {
+    fetchRuntimeStrategyInstances.mockReset();
+    fetchRuntimeStrategyStates.mockReset();
+    fetchJournalStrategyInstances.mockReset();
+    fetchJournalStrategyInstances.mockResolvedValue([]);
+    fetchRuntimeStrategyInstances.mockResolvedValue(list({ strategy_instances: [a, b, c, d] }));
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it("shows position, entry order, recovery and nothing for flat, with counts", async () => {
+    fetchRuntimeStrategyStates.mockResolvedValue([
+      state(a.strategy_instance_id, { trade_state: "in_position", side: "short", trade_cycle_id: "x" }),
+      state(b.strategy_instance_id, { trade_state: "entry_pending", side: "long", trade_cycle_id: "y" }),
+      state(c.strategy_instance_id, { recovery_pending: "close" }),
+    ]);
+    render(<RuntimeDashboard />);
+    await screen.findByText("IN POSITION · SHORT");
+    expect(screen.getByText("ENTRY ORDER · LONG")).toBeTruthy();
+    expect(screen.getByText("RECOVERY · CLOSE")).toBeTruthy();
+    expect(screen.getAllByText(/IN POSITION|ENTRY ORDER|RECOVERY/)).toHaveLength(3);
+    expect(screen.getByText("1 in position")).toBeTruthy();
+    expect(screen.getByText("1 entry order")).toBeTruthy();
+    expect(screen.getByText(/last processed bar/)).toBeTruthy();
+  });
+
+  it("shows the cards without marks and a failure line when the state read fails, then recovers", async () => {
+    fetchRuntimeStrategyStates.mockRejectedValueOnce(new Error("503"));
+    render(<RuntimeDashboard />);
+    await screen.findByText(/Trade state unavailable/);
+    expect(screen.getAllByRole("switch")).toHaveLength(4);
+    expect(screen.queryByText(/IN POSITION/)).toBeNull();
+    fetchRuntimeStrategyStates.mockResolvedValue([
+      state(a.strategy_instance_id, { trade_state: "in_position", side: "long" }),
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByText("IN POSITION · LONG");
+    expect(screen.queryByText(/Trade state unavailable/)).toBeNull();
+    expect(fetchRuntimeStrategyStates).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-reads every 10 seconds while visible and not while hidden", async () => {
+    fetchRuntimeStrategyStates.mockResolvedValue([]);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<RuntimeDashboard />);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchRuntimeStrategyStates).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fetchRuntimeStrategyStates).toHaveBeenCalledTimes(2);
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(fetchRuntimeStrategyStates).toHaveBeenCalledTimes(2);
+    vi.restoreAllMocks();
+  });
+
+  it("does not start a second state read while one is unfinished", async () => {
+    let finish: (v: unknown[]) => void = () => {};
+    fetchRuntimeStrategyStates.mockReturnValue(new Promise((r) => (finish = r)));
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<RuntimeDashboard />);
+    await vi.advanceTimersByTimeAsync(25_000);
+    expect(fetchRuntimeStrategyStates).toHaveBeenCalledTimes(1);
+    finish([]);
   });
 });

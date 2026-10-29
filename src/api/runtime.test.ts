@@ -4,6 +4,7 @@ import {
   deleteRuntimeStrategy,
   fetchRuntimeChartLayers,
   fetchRuntimeStrategyInstances,
+  fetchRuntimeStrategyStates,
   RuntimeChartLayersError,
   RuntimeDeleteError,
   RuntimeEnabledError,
@@ -243,5 +244,28 @@ describe("fetchRuntimeChartLayers", () => {
     await expect(fetchRuntimeChartLayers("s:abc")).rejects.toMatchObject({ reason: "engine_unavailable" });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(respond(502, JSON.stringify({ reason: "x" }))));
     await expect(fetchRuntimeChartLayers("s:abc")).rejects.toMatchObject({ reason: null });
+  });
+});
+
+describe("fetchRuntimeStrategyStates", () => {
+  const ok = { strategy_instance_id: "s", trade_state: "flat", trade_cycle_id: null, side: null, first_fill_at_ms: null, recovery_pending: null };
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("GETs the state route and returns the items", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ strategy_instances: [ok] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await fetchRuntimeStrategyStates()).toEqual([ok]);
+    expect(fetchMock).toHaveBeenCalledWith("/runtime-api/v1/strategy-instance-states", { method: "GET" });
+  });
+
+  it("throws on a non-2xx answer and on an invalid body", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 503 })));
+    await expect(fetchRuntimeStrategyStates()).rejects.toThrow();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ strategy_instances: [{ ...ok, trade_state: "weird" }] }), { status: 200 })),
+    );
+    await expect(fetchRuntimeStrategyStates()).rejects.toThrow();
   });
 });
