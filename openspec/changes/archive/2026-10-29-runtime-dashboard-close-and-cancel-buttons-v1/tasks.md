@@ -7,4 +7,4 @@
 
 ## 2. Verification on the Mac (on owner's word only)
 
-- [x] 2.1 Deploy Runtime with the commands, then the frontend; try both buttons on Bybit demo.
+- [ ] 2.1 Deploy Runtime with the commands, then the frontend; try both buttons on Bybit demo.
