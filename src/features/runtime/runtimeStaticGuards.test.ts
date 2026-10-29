@@ -30,10 +30,10 @@ describe("Runtime Dashboard static guards", () => {
     for (const s of sources) expect({ file: s.file, hit: forbidden.test(s.text) }).toEqual({ file: s.file, hit: false });
   });
 
-  it("sends only GET, one PUT at the enabled route and one DELETE at the instance route; polls only the state route every 10 s in the dashboard", () => {
+  it("sends only GET, one PUT at the enabled route, one DELETE at the instance route and one POST for the two operator commands; polls only the state route every 10 s in the dashboard", () => {
     for (const s of sources) {
       const methods = [...s.text.matchAll(/method:\s*["'](\w+)["']/g)].map((m) => m[1]);
-      for (const m of methods) expect({ file: s.file, m: ["GET", "PUT", "DELETE"].includes(m!) }).toEqual({ file: s.file, m: true });
+      for (const m of methods) expect({ file: s.file, m: ["GET", "PUT", "DELETE", "POST"].includes(m!) }).toEqual({ file: s.file, m: true });
       expect({ file: s.file, hit: /setTimeout\s*\(/.test(s.text) }).toEqual({ file: s.file, hit: false });
       // the only timer: the dashboard's single 10 s trade-state refresh
       const intervals = [...s.text.matchAll(/setInterval\s*\(/g)].length;
@@ -49,7 +49,11 @@ describe("Runtime Dashboard static guards", () => {
     const deletes = [...api.matchAll(/method:\s*"DELETE"/g)];
     expect(deletes).toHaveLength(1);
     expect(api).toMatch(/\/v1\/strategy-instances\/\$\{encodeURIComponent\(strategyInstanceId\)\}`, \{\s*method: "DELETE"/);
-    expect(/method:\s*["'](POST|PATCH)["']/.test(api)).toBe(false);
+    const posts = [...api.matchAll(/method:\s*"POST"/g)];
+    expect(posts).toHaveLength(1);
+    expect(api).toMatch(/strategy-instances\/\$\{encodeURIComponent\(strategyInstanceId\)\}\/\$\{command\}`, \{\s*method: "POST"/);
+    expect(api).toMatch(/RuntimeOperatorCommand = "close-position" \| "cancel-entry-orders"/);
+    expect(/method:\s*["']PATCH["']/.test(api)).toBe(false);
   });
 
   it("does not use the timer-driven episode hook; episode and EMA data come only from the cached loaders", () => {

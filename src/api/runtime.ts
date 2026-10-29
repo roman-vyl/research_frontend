@@ -187,6 +187,66 @@ export async function setRuntimeStrategyEnabled(
   throw new RuntimeEnabledError(reason);
 }
 
+export type RuntimeOperatorCommand = "close-position" | "cancel-entry-orders";
+
+/**
+ * An operator command that did not complete. `reason` is Runtime's own refusal code, read only from a body whose
+ * status is `enabled_change_refused`; `httpStatus` is null when Runtime did not answer at all.
+ */
+export class RuntimeCommandError extends Error {
+  readonly reason: string | null;
+  readonly httpStatus: number | null;
+
+  constructor(reason: string | null, httpStatus: number | null) {
+    super(reason ?? "unexpected_answer");
+    this.name = "RuntimeCommandError";
+    this.reason = reason;
+    this.httpStatus = httpStatus;
+  }
+}
+
+/**
+ * Sends one operator command (close the position, or cancel the entry order) for one strategy. Runtime disables the
+ * strategy as part of either command. A 2xx counts only when its body confirms this instance and `enabled: false`.
+ */
+export async function sendRuntimeCommand(
+  strategyInstanceId: string,
+  command: RuntimeOperatorCommand,
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${RUNTIME_API_BASE}/v1/strategy-instances/${encodeURIComponent(strategyInstanceId)}/${command}`, {
+      method: "POST",
+    });
+  } catch {
+    throw new RuntimeCommandError(null, null);
+  }
+  if (res.ok) {
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      throw new RuntimeCommandError(null, res.status);
+    }
+    const b = body && typeof body === "object" ? (body as { strategy_instance_id?: unknown; enabled?: unknown }) : null;
+    if (!b || b.strategy_instance_id !== strategyInstanceId || b.enabled !== false) {
+      throw new RuntimeCommandError(null, res.status);
+    }
+    return;
+  }
+  let reason: string | null = null;
+  try {
+    const body: unknown = await res.json();
+    if (body && typeof body === "object") {
+      const b = body as { status?: unknown; reason?: unknown };
+      if (b.status === "enabled_change_refused" && typeof b.reason === "string") reason = b.reason;
+    }
+  } catch {
+    // not a Runtime body
+  }
+  throw new RuntimeCommandError(reason, res.status);
+}
+
 export type RuntimeStrategyDeleted = {
   strategy_instance_id: string;
   deleted: true;

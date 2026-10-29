@@ -4,13 +4,14 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { RuntimeDeleteError, RuntimeEnabledError, RuntimeListError, type RuntimeStrategyInstance, type RuntimeStrategyList } from "@/api/runtime";
+import { RuntimeCommandError, RuntimeDeleteError, RuntimeEnabledError, RuntimeListError, type RuntimeStrategyInstance, type RuntimeStrategyList } from "@/api/runtime";
 import { RuntimeDashboard } from "@/features/runtime/RuntimeDashboard";
 
 const fetchRuntimeStrategyInstances = vi.fn();
 const fetchRuntimeStrategyStates = vi.fn();
 const setRuntimeStrategyEnabled = vi.fn();
 const deleteRuntimeStrategy = vi.fn();
+const sendRuntimeCommand = vi.fn();
 const fetchJournalEvents = vi.fn();
 const fetchJournalStrategyInstances = vi.fn();
 
@@ -28,6 +29,7 @@ vi.mock("@/api/runtime", async (importOriginal) => {
     fetchRuntimeStrategyStates: (...a: unknown[]) => fetchRuntimeStrategyStates(...a),
     setRuntimeStrategyEnabled: (...a: unknown[]) => setRuntimeStrategyEnabled(...a),
     deleteRuntimeStrategy: (...a: unknown[]) => deleteRuntimeStrategy(...a),
+    sendRuntimeCommand: (...a: unknown[]) => sendRuntimeCommand(...a),
   };
 });
 
@@ -619,5 +621,107 @@ describe("RuntimeDashboard trade state marks", () => {
     await vi.advanceTimersByTimeAsync(25_000);
     expect(fetchRuntimeStrategyStates).toHaveBeenCalledTimes(1);
     finish([]);
+  });
+});
+
+describe("RuntimeDashboard operator commands", () => {
+  const a = instance("a.json", true);
+  const b = instance("b.json", true);
+  const c = instance("c.json", true);
+  const state = (id: string, trade_state: string) => ({
+    strategy_instance_id: id,
+    trade_state,
+    trade_cycle_id: null,
+    side: "long",
+    first_fill_at_ms: null,
+    recovery_pending: null,
+  });
+
+  beforeEach(() => {
+    fetchRuntimeStrategyInstances.mockReset();
+    fetchRuntimeStrategyStates.mockReset();
+    sendRuntimeCommand.mockReset();
+    fetchJournalStrategyInstances.mockReset();
+    fetchJournalStrategyInstances.mockResolvedValue([]);
+    fetchRuntimeStrategyInstances.mockResolvedValue(list({ strategy_instances: [a, b, c] }));
+    fetchRuntimeStrategyStates.mockResolvedValue([
+      state(a.strategy_instance_id, "in_position"),
+      state(b.strategy_instance_id, "entry_pending"),
+      state(c.strategy_instance_id, "flat"),
+    ]);
+  });
+  afterEach(cleanup);
+
+  it("offers Close position in a position, Cancel entry order for an entry order, nothing when flat", async () => {
+    render(<RuntimeDashboard />);
+    await screen.findByText("IN POSITION · LONG");
+    expect(screen.getAllByRole("button", { name: "Close position" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Cancel entry order" })).toHaveLength(1);
+  });
+
+  it("offers nothing when the trade state could not be read", async () => {
+    fetchRuntimeStrategyStates.mockRejectedValue(new Error("503"));
+    render(<RuntimeDashboard />);
+    await screen.findByText(/Trade state unavailable/);
+    expect(screen.queryByRole("button", { name: "Close position" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel entry order" })).toBeNull();
+  });
+
+  it("asks first, names the strategy and sends nothing until accepted; Back sends nothing", async () => {
+    render(<RuntimeDashboard />);
+    await screen.findByText("IN POSITION · LONG");
+    fireEvent.click(screen.getByRole("button", { name: "Close position" }));
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog.textContent).toMatch(/a\b.*closed at market.*stop and take orders cancelled.*disabled/);
+    expect(sendRuntimeCommand).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Back" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(sendRuntimeCommand).not.toHaveBeenCalled();
+  });
+
+  it("sends one close command, then re-reads the list and the trade state", async () => {
+    sendRuntimeCommand.mockResolvedValue(undefined);
+    render(<RuntimeDashboard />);
+    await screen.findByText("IN POSITION · LONG");
+    fireEvent.click(screen.getByRole("button", { name: "Close position" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Close position" }));
+    await waitFor(() => expect(fetchRuntimeStrategyInstances).toHaveBeenCalledTimes(2));
+    expect(sendRuntimeCommand).toHaveBeenCalledTimes(1);
+    expect(sendRuntimeCommand).toHaveBeenCalledWith(a.strategy_instance_id, "close-position");
+    expect(fetchRuntimeStrategyStates).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends the cancel command for an entry order", async () => {
+    sendRuntimeCommand.mockResolvedValue(undefined);
+    render(<RuntimeDashboard />);
+    await screen.findByText("ENTRY ORDER · LONG");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel entry order" }));
+    expect(screen.getByRole("alertdialog").textContent).toMatch(/entry order of b.*cancelled.*disabled/);
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Cancel entry order" }));
+    await waitFor(() => expect(sendRuntimeCommand).toHaveBeenCalledWith(b.strategy_instance_id, "cancel-entry-orders"));
+  });
+
+  it("shows a refusal in plain words", async () => {
+    sendRuntimeCommand.mockRejectedValue(new RuntimeCommandError("recovery_pending", 409));
+    render(<RuntimeDashboard />);
+    await screen.findByText("IN POSITION · LONG");
+    fireEvent.click(screen.getByRole("button", { name: "Close position" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Close position" }));
+    await screen.findByText(/recovering an order or position.*Nothing was changed/);
+  });
+
+  it("says the close is still being completed and the strategy is disabled on a 502", async () => {
+    sendRuntimeCommand.mockRejectedValue(new RuntimeCommandError("abi_unavailable", 502));
+    render(<RuntimeDashboard />);
+    await screen.findByText("IN POSITION · LONG");
+    fireEvent.click(screen.getByRole("button", { name: "Close position" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Close position" }));
+    await screen.findByText(/still completing it, and the strategy is already disabled/);
+  });
+
+  it("sends nothing on its own when opened or on the periodic refresh", async () => {
+    render(<RuntimeDashboard />);
+    await screen.findByText("IN POSITION · LONG");
+    expect(sendRuntimeCommand).not.toHaveBeenCalled();
   });
 });
