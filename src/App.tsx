@@ -4,6 +4,7 @@ import { ComposerPanel } from "@/features/composer/ComposerPanel";
 import { ReportsPanel } from "@/features/reports/ReportsPanel";
 import { RuntimeDashboard } from "@/features/runtime/RuntimeDashboard";
 import { SurfaceView } from "@/features/surface/SurfaceView";
+import { TradesPanel } from "@/features/trades/TradesPanel";
 import { AppLayout } from "@/shared/layout/AppLayout";
 import { WorkbenchGate } from "@/shared/layout/WorkbenchGate";
 import { useWorkbenchShell } from "@/shared/context/WorkbenchContext";
@@ -37,9 +38,12 @@ function WorkbenchTabs() {
       </div>
       {activeTab === "candidates" && <CandidatesPanel />}
       {activeTab === "runtime" && <RuntimeDashboard />}
+      {activeTab === "trades" && <TradesPanel />}
       <div
         className="workbench-tab-pane"
-        hidden={activeTab === "surface" || activeTab === "candidates" || activeTab === "runtime"}
+        hidden={
+          activeTab === "surface" || activeTab === "candidates" || activeTab === "runtime" || activeTab === "trades"
+        }
       >
         <WorkbenchGate>
           <ReportBackedTabs />

@@ -21,7 +21,13 @@ describe("TabNav", () => {
   it("lists Runtime Dashboard right after Candidates and keeps the other tabs", () => {
     render(<TabNav />);
     const labels = screen.getAllByRole("button").map((b) => b.textContent);
-    expect(labels).toEqual(["Chart", "Surface", "Candidates", "Runtime Dashboard", "Reports", "Strategy Composer"]);
+    expect(labels).toEqual(["Chart", "Surface", "Candidates", "Runtime Dashboard", "Trades", "Reports", "Strategy Composer"]);
+  });
+
+  it("activates the trades tab", () => {
+    render(<TabNav />);
+    fireEvent.click(screen.getByRole("button", { name: "Trades" }));
+    expect(setActiveTab).toHaveBeenCalledWith("trades");
   });
 
   it("activates the runtime tab", () => {

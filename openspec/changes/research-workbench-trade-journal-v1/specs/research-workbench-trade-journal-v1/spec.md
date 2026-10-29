@@ -66,7 +66,7 @@ with previous and next month buttons.
 
 #### Scenario: Real Demo short alone
 - **WHEN** the only row is the complete BTCUSDT short `6072511f` with `net_pnl_usdt` `-1307.99088539`, `gross_pnl_usdt` `-969.3902`, `fees_usdt` `338.60068539`, `r_multiple` `-1.3780585…`
-- **THEN** Net PnL shows −1,307.99, Trades 1, Win rate 0%, Average R −1.38, Profit factor "—", Fees 338.60
+- **THEN** Net PnL shows −1,307.99, Trades 1, Win rate 0%, Average R −1.38, Profit factor 0.00, Fees 338.60
 - **AND** the calendar opens on October 2026 with −1,308 and 1 trade on the 25th
 
 #### Scenario: Two trades
