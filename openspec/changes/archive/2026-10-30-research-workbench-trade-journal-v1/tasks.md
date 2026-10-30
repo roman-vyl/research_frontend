@@ -8,5 +8,5 @@
 
 ## 2. Rollout (on owner's word only)
 
-- [ ] 2.1 PR and merge.
-- [ ] 2.2 Mac: open the Trades tab against the Demo journal (21 rows on 2026-10-29) and check the summary against the rows.
+- [x] 2.1 PR and merge.
+- [x] 2.2 Mac: open the Trades tab against the Demo journal (21 rows on 2026-10-29) and check the summary against the rows.
