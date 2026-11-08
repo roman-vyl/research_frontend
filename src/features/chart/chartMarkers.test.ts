@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { TradeRecord } from "@/api/types";
 import {
+  buildTradeMarkers,
   buildTradeMarkersForView,
   filterMarkersToTimeRange,
 } from "@/features/chart/chartMarkers";
@@ -48,6 +49,13 @@ describe("buildTradeMarkersForView", () => {
       net_pnl: "-1",
     }),
   ];
+
+  it.each(["long", "short"] as const)("puts the %s trailing-stop marker at the fill price", side => {
+    const trade = makeTradeRecord({ side, exit_reason: "active_stop:managed_stop", exit_price: "43542.01263020834" });
+    expect(buildTradeMarkers([trade], trade.trade_id)[1]).toMatchObject({
+      time: trade.exit_time_ms / 1000, position: "atPriceMiddle", price: 43542.01263020834, text: "Трейлинг-стоп#1",
+    });
+  });
 
   it("excludes markers outside view candle window", () => {
     const viewCandles = [{ time: 50 }, { time: 150 }, { time: 250 }];

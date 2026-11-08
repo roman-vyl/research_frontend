@@ -4,6 +4,7 @@ import type {
   ManagedPolicyEvent,
   TradeRecord,
 } from "@/api/types";
+import { classifyExitReason } from "@/features/chart/chartMarkers";
 import { resolveChartTimeframeMs } from "@/features/chart/chartTimeframeMs";
 
 export type TradeManagementLevelKind = "stop" | "take";
@@ -196,7 +197,14 @@ export function buildTradeManagementLevelSegments(options: {
 /** Join adjacent segments into stair-step series while preserving inactive gaps. */
 export function groupTradeManagementLevelCurves(
   segments: readonly TradeManagementLevelSegment[],
+  trade?: TradeRecord,
 ): TradeManagementLevelCurve[] {
+  // A stop activated and filled on the same bar has no horizontal duration.
+  // The fill supplies the last step at the exit time, without creating a later bar.
+  const stopFill = trade && classifyExitReason(trade.exit_reason) === "managed_stop"
+    ? finitePrice(trade.exit_price)
+    : null;
+  const exitSec = trade ? Math.floor(trade.exit_time_ms / 1000) : null;
   const curves: TradeManagementLevelCurve[] = [];
   for (const kind of ["stop", "take"] as const) {
     const matching = segments
@@ -215,7 +223,12 @@ export function groupTradeManagementLevelCurves(
             timeSec: segment.fromTimeSec,
             price: segment.price,
           })),
-          { timeSec: last.toTimeSec, price: last.price },
+          {
+            timeSec: last.toTimeSec,
+            price: kind === "stop" && last.toTimeSec === exitSec && stopFill !== null
+              ? stopFill
+              : last.price,
+          },
         ],
       });
       current = [];

@@ -39,7 +39,7 @@ export function ChartMarkerLegend({
       <p className="chart-legend__note">
         Trade markers show bar timing (E, SL, TP, SIG). Component events use semantic types
         (source, span start/end, point). Selected trade entry/exit prices use horizontal price
-        lines, not marker position.
+        lines. The trailing-stop marker sits at the fill price.
       </p>
       {EXIT_MARKER_LEGEND.map((item) => (
         <span key={item.label + item.kind} className="chart-legend__badge" title={item.description}>

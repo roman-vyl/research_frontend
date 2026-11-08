@@ -143,6 +143,29 @@ describe("managedEventEffectiveTimeMs", () => {
 });
 
 describe("groupTradeManagementLevelCurves", () => {
+  it.each([
+    ["active_stop:managed_stop", 107],
+    ["stop_loss:sl", 100],
+    ["take_profit:tp", 100],
+    ["signal:exit", 100],
+  ] as const)("ends the stop curve at the factual fill only for a managed stop (%s)", (reason, endPrice) => {
+    const closed = { ...trade, exit_reason: reason, exit_price: "107" };
+    const changes = [
+      update({}),
+      update({ time_ms: 2_200_000, bar_index: 14, price: "107", metadata: { effective_from_bar: 15 } }),
+    ];
+    const segments = buildTradeManagementLevelSegments({
+      trade: closed, executionEvents: [entryEvent], managedPolicyEvents: changes, candles, chartTimeframe: "5m",
+    });
+    const curves = groupTradeManagementLevelCurves(segments, closed);
+    expect(curves.find(curve => curve.kind === "stop")?.points).toEqual([
+      { timeSec: 1000, price: 90 },
+      { timeSec: 1900, price: 100 },
+      { timeSec: 2500, price: endPrice },
+    ]);
+    expect(curves.find(curve => curve.kind === "take")?.points.at(-1)).toEqual({ timeSec: 2500, price: 120 });
+  });
+
   it("joins adjacent changes as steps but keeps disabled intervals as gaps", () => {
     expect(
       groupTradeManagementLevelCurves([

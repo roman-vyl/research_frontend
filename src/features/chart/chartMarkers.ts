@@ -5,6 +5,7 @@ import { tradeIdsEqual } from "@/features/chart/tradeLookup";
 
 export type ExitReasonMarkerKind =
   | "stop_loss"
+  | "managed_stop"
   | "take_profit"
   | "signal"
   | "break_even"
@@ -19,6 +20,7 @@ export const EXIT_MARKER_LEGEND: {
   { kind: "entry", label: "E", description: "Entry (closed trade)" },
   { kind: "open", label: "OPEN", description: "Entry (open trade, no exit marker)" },
   { kind: "stop_loss", label: "SL", description: "Exit · stop_loss:*" },
+  { kind: "managed_stop", label: "Трейлинг-стоп", description: "Выход по подтянутому стопу" },
   { kind: "take_profit", label: "TP", description: "Exit · take_profit:*" },
   { kind: "signal", label: "SIG", description: "Exit · signal:*" },
   { kind: "break_even", label: "BE", description: "Exit · break-even (moved stop)" },
@@ -28,6 +30,7 @@ export const EXIT_MARKER_LEGEND: {
 export function classifyExitReason(exitReason: string): ExitReasonMarkerKind {
   if (exitReason === "open") return "open";
   if (exitReason === "unknown") return "unknown";
+  if (exitReason.startsWith("active_stop:")) return "managed_stop";
   if (exitReason.startsWith("stop_loss:")) return "stop_loss";
   if (exitReason.startsWith("take_profit:")) return "take_profit";
   if (exitReason.startsWith("signal:")) return "signal";
@@ -50,6 +53,8 @@ function entryMarkerText(displayNumber: number, highlighted: boolean): string {
 function exitMarkerColor(kind: ExitReasonMarkerKind, highlighted: boolean): string {
   if (highlighted) return "#fbbf24";
   switch (kind) {
+    case "managed_stop":
+      return "#f87171";
     case "stop_loss":
       return "#f97316";
     case "take_profit":
@@ -65,7 +70,7 @@ function exitMarkerColor(kind: ExitReasonMarkerKind, highlighted: boolean): stri
   }
 }
 
-/** Bar-time markers only — `aboveBar`/`belowBar` position is not entry/exit price truth. */
+/** Managed stops are marked at the actual fill. Other markers identify the bar. */
 export function buildTradeMarkers(
   trades: TradeRecord[],
   selectedTradeId: number | string | null,
@@ -93,9 +98,13 @@ export function buildTradeMarkers(
 
     const exitKind = classifyExitReason(trade.exit_reason);
     const exitTime = msToChartTime(trade.exit_time_ms) as Time;
+    const fill = Number(trade.exit_price);
+    const location = exitKind === "managed_stop" && Number.isFinite(fill) && fill > 0
+      ? { position: "atPriceMiddle" as const, price: fill }
+      : { position: trade.side === "long" ? "aboveBar" as const : "belowBar" as const };
     markers.push({
       time: exitTime,
-      position: trade.side === "long" ? "aboveBar" : "belowBar",
+      ...location,
       color: exitMarkerColor(exitKind, highlighted),
       shape: "circle",
       text: highlighted ? `${exitLabel}#${displayNumber}` : exitLabel,

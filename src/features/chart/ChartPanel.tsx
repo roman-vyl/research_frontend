@@ -1014,6 +1014,7 @@ export function ChartPanel() {
         candles: chartCandles,
         chartTimeframe,
       }),
+      selectedTrade,
     );
 
     tradeManagementLevelSeriesRef.current = curves.map((curve) => {

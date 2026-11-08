@@ -209,6 +209,7 @@ select {
   color: #fca5a5;
 }
 
+.chart-legend__chip--managed_stop,
 .chart-legend__chip--stop_loss {
   border-color: #9a3412;
   color: #fdba74;
