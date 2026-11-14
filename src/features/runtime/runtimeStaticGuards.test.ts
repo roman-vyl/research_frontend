@@ -65,6 +65,21 @@ describe("Runtime Dashboard static guards", () => {
     expect(hook).toMatch(/refreshCurrent/);
   });
 
+  it("keeps the wide Runtime layout scoped and responsive", () => {
+    const css = readFileSync(join(__dirname, "runtime.css"), "utf8");
+    expect(css).toMatch(/\.sx \.rt-wrap\{[^}]*max-width:1680px/);
+    expect(css).toMatch(/@media \(min-width:1100px\)/);
+    expect(css).toMatch(/\.rt-split \.rt-grid\{[^}]*flex:0 0 460px/);
+    expect(css).toMatch(/height:clamp\(520px, calc\(100vh - 260px\), 760px\)/);
+    expect(css).toMatch(/@media \(max-width:719px\)/);
+    const dash = sources.find((s) => s.file === "RuntimeDashboard.tsx")!.text;
+    expect(dash).toMatch(/sx-wrap rt-wrap/);
+    expect(dash).toMatch(/rt-strategy-details/);
+    expect(dash).toMatch(/rt-trade-mark/);
+    expect(dash).toMatch(/displayTitle=/);
+    expect(dash).toMatch(/deploymentFile=/);
+  });
+
   it("reads the layer plan with one GET and keeps the series count fixed", () => {
     const api = readFileSync(join(__dirname, "../../api/runtime.ts"), "utf8");
     expect([...api.matchAll(/chart-layers`,\s*\{\s*method:\s*"GET"/g)]).toHaveLength(1);
