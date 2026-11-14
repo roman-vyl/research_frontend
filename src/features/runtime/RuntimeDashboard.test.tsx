@@ -4,9 +4,11 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { Candidate } from "@/api/candidates";
 import { RuntimeCommandError, RuntimeDeleteError, RuntimeEnabledError, RuntimeListError, type RuntimeStrategyInstance, type RuntimeStrategyList } from "@/api/runtime";
 import { RuntimeDashboard } from "@/features/runtime/RuntimeDashboard";
 
+const listCandidates = vi.fn();
 const fetchRuntimeStrategyInstances = vi.fn();
 const fetchRuntimeStrategyStates = vi.fn();
 const setRuntimeStrategyEnabled = vi.fn();
@@ -14,6 +16,11 @@ const deleteRuntimeStrategy = vi.fn();
 const sendRuntimeCommand = vi.fn();
 const fetchJournalEvents = vi.fn();
 const fetchJournalStrategyInstances = vi.fn();
+
+vi.mock("@/api/client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/api/client")>()),
+  listCandidates: (...a: unknown[]) => listCandidates(...a),
+}));
 
 vi.mock("@/api/journal", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api/journal")>()),
@@ -66,6 +73,57 @@ function realisticList(): RuntimeStrategyList {
   });
 }
 
+function dashboardCandidate(file: string, componentId?: string): Candidate {
+  return {
+    candidate_id: `candidate-${file}`,
+    experiment_id: "experiment",
+    coords: { width: "7", lookback: "170", sl: "4.75", tp_ratio: "4" },
+    picked_at: "2026-11-14T00:00:00Z",
+    fingerprint_fields: [],
+    fingerprint: "fixture",
+    table_key: { mtime_ns: 1, size: 1 },
+    snapshot: { metrics: {}, provenance: null, run_id: "run", row_columns: {} },
+    strategy_spec_snapshot: {
+      source: "run_request",
+      run_id: "run",
+      spec: {
+        raw_spec: {
+          components: { trigger: { component_id: "touch_anchor" } },
+          setups: [
+            { component_id: "anchor_stack_width_setup", params: {} },
+            { component_id: "untouched_anchor_setup", params: {} },
+            ...(componentId ? [{ component_id: componentId, params: {} }] : []),
+          ],
+          trade_management: {
+            exit_policy: {
+              always_on: {
+                exits: [
+                  { component_id: "atr_stop_loss", exit_kind: "stop_loss", distance: { multiplier: 4.75 } },
+                  { component_id: "atr_take_profit", exit_kind: "take_profit", distance: { multiplier: 19 } },
+                ],
+              },
+            },
+            exit_management: { mode: "managed", phase_rules: [], stop_management: [], take_management: [] },
+          },
+        },
+      },
+    },
+    current: {
+      row_state: "same",
+      run_id: "run",
+      provenance: null,
+      metrics: {},
+      meaning: null,
+      runtime: { present: true, file, enabled: false },
+    },
+  };
+}
+
+beforeEach(() => {
+  listCandidates.mockReset();
+  listCandidates.mockResolvedValue({ candidates: [] });
+});
+
 describe("RuntimeDashboard", () => {
   beforeEach(() => {
     fetchRuntimeStrategyInstances.mockReset();
@@ -99,7 +157,7 @@ describe("RuntimeDashboard", () => {
     const cards = within(screen.getByLabelText("Strategies")).getAllByRole("listitem");
     expect(cards).toHaveLength(33);
     expect(within(cards[0]).getByText("journal-smoke-eth-ema500")).toBeTruthy();
-    expect(within(cards[0]).getByText("ema_pullback · ETHUSDT.P · 5m")).toBeTruthy();
+    expect(within(cards[0]).getByText("ema_pullback · 5m")).toBeTruthy();
     expect(within(cards[0]).getByText("ENABLED")).toBeTruthy();
     expect(within(cards[0]).getByText(/^ema_pullback:/)).toBeTruthy();
     expect(within(cards[1]).getByText("loadtest-00")).toBeTruthy();
@@ -204,6 +262,77 @@ describe("RuntimeDashboard", () => {
 
     await waitFor(() => expect(fetchRuntimeStrategyInstances).toHaveBeenCalledTimes(2));
     await screen.findByLabelText("Strategies");
+    expect(listCandidates).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows a stored summary in the existing name element and keeps file identity in the tooltip and actions", async () => {
+    fetchRuntimeStrategyInstances.mockResolvedValue(list({ strategy_instances: [instance("a.json", false)] }));
+    listCandidates.mockResolvedValue({ candidates: [dashboardCandidate("a.json")] });
+    render(<RuntimeDashboard />);
+
+    const name = await screen.findByText("ETH · 7/170");
+    expect(name.className).toBe("rt-name");
+    expect(name.getAttribute("title")).toBe("a.json");
+    expect(screen.getByText("SL 4,75 · TP 4").classList.contains("rt-strategy-details")).toBe(true);
+    expect(screen.getByRole("switch", { name: "Enabled: a" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Delete: a" })).toBeTruthy();
+    expect(screen.getByLabelText("Runtime Dashboard").querySelector(".rt-wrap")).toBeTruthy();
+
+    fireEvent.click(name.closest("button")!);
+    const chart = screen.getByLabelText("Market chart");
+    expect(within(chart).getByText("ETH · 7/170")).toBeTruthy();
+    expect(within(chart).getByText("a.json")).toBeTruthy();
+  });
+
+  it("isolates an unsupported matched spec and leaves unmatched cards on the file fallback", async () => {
+    fetchRuntimeStrategyInstances.mockResolvedValue(
+      list({ strategy_instances: [instance("known.json", false), instance("future.json", false), instance("manual.json", false)] }),
+    );
+    listCandidates.mockResolvedValue({
+      candidates: [dashboardCandidate("known.json"), dashboardCandidate("future.json", "future_component")],
+    });
+    render(<RuntimeDashboard />);
+
+    expect(await screen.findByText("ETH · 7/170")).toBeTruthy();
+    expect(screen.getByText("SL 4,75 · TP 4")).toBeTruthy();
+    expect(screen.getByText("Неизвестная спецификация").getAttribute("title")).toBe("future.json");
+    expect(screen.getByText("manual").getAttribute("title")).toBe("manual.json");
+    expect(within(screen.getByLabelText("Strategies")).getAllByRole("listitem")).toHaveLength(3);
+  });
+
+  it("keeps Runtime usable when Candidates fails", async () => {
+    fetchRuntimeStrategyInstances.mockResolvedValue(list({ strategy_instances: [instance("a.json", false)] }));
+    listCandidates.mockRejectedValue(new Error("Candidates unavailable"));
+    render(<RuntimeDashboard />);
+    expect(await screen.findByText("a")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("does not load Candidates during state-only visibility refresh", async () => {
+    fetchRuntimeStrategyInstances.mockResolvedValue(list({ strategy_instances: [instance("a.json", false)] }));
+    render(<RuntimeDashboard />);
+    await screen.findByLabelText("Strategies");
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => expect(fetchRuntimeStrategyStates).toHaveBeenCalledTimes(2));
+    expect(listCandidates).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a late Candidates response from an older catalog generation", async () => {
+    let releaseOld!: (value: { candidates: Candidate[] }) => void;
+    listCandidates
+      .mockReturnValueOnce(new Promise<{ candidates: Candidate[] }>((resolve) => (releaseOld = resolve)))
+      .mockResolvedValueOnce({ candidates: [] });
+    fetchRuntimeStrategyInstances.mockResolvedValue(list({ strategy_instances: [instance("a.json", false)] }));
+    render(<RuntimeDashboard />);
+    await screen.findByText("a");
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(listCandidates).toHaveBeenCalledTimes(2));
+    releaseOld({ candidates: [dashboardCandidate("a.json")] });
+    await Promise.resolve();
+
+    expect(screen.getByText("a")).toBeTruthy();
+    expect(screen.queryByText("ETH · 7/170")).toBeNull();
   });
 
   it("ignores a response that arrives after the tab was left", async () => {

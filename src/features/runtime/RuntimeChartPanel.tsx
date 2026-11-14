@@ -80,11 +80,13 @@ function formatUtc(ms: number): string {
  * journal events, never candles.
  */
 export function RuntimeChartPanel({
-  strategyName,
+  displayTitle,
+  deploymentFile,
   strategyInstanceId,
   market,
 }: {
-  strategyName: string | null;
+  displayTitle: string | null;
+  deploymentFile: string | null;
   strategyInstanceId: string | null;
   market: RuntimeMarket | null;
 }) {
@@ -240,7 +242,8 @@ export function RuntimeChartPanel({
     <section className="sx-panel rt-chart" aria-label="Market chart">
       <div className="rt-chart-head">
         <div className="rt-chart-title">
-          <span className="rt-name">{strategyName}</span>
+          <span className="rt-name">{displayTitle}</span>
+          {deploymentFile && <span className="rt-chart-file sx-num">{deploymentFile}</span>}
           <span className="rt-meta sx-num">
             {symbol} · {timeframe}
           </span>

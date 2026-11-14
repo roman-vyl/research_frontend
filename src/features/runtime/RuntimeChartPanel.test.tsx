@@ -33,6 +33,7 @@ vi.mock("@/api/runtime", async (importOriginal) => {
 });
 vi.mock("@/api/client", () => ({
   ApiError: class ApiError extends Error {},
+  listCandidates: async () => ({ candidates: [] }),
   fetchChartOverlayEma: vi.fn(),
   fetchEmaStackEpisodeHistory: vi.fn(),
   fetchMarketBounds: (...a: unknown[]) => fetchMarketBounds(...a),

@@ -35,6 +35,7 @@ vi.mock("@/api/client", () => ({
     status = 0;
     code: string | null = null;
   },
+  listCandidates: async () => ({ candidates: [] }),
   fetchMarketBounds: (...a: unknown[]) => fetchMarketBounds(...a),
   fetchCandlesWindow: (...a: unknown[]) => fetchCandlesWindow(...a),
   fetchChartOverlayEma: (...a: unknown[]) => fetchChartOverlayEma(...a),

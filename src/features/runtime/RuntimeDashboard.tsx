@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { listCandidates } from "@/api/client";
 import { fetchJournalStrategyInstances, type JournalStrategyInstance } from "@/api/journal";
 import {
   fetchRuntimeStrategyInstances,
@@ -18,6 +19,12 @@ import {
   type RuntimeStrategyState,
 } from "@/api/runtime";
 import { RuntimeChartPanel } from "@/features/runtime/RuntimeChartPanel";
+import {
+  indexCandidatesByRuntimeFile,
+  summarizeRuntimeStrategy,
+  UNKNOWN_STRATEGY_SPEC,
+  type RuntimeCandidateIndex,
+} from "@/features/runtime/strategySummary";
 import "@/features/surface/surface.css";
 import "@/features/runtime/runtime.css";
 
@@ -148,20 +155,41 @@ function commandFor(state: RuntimeStrategyState | undefined): RuntimeOperatorCom
   return null;
 }
 
-function tradeMarks(state: RuntimeStrategyState | undefined): string[] {
+type TradeMark = { text: string; tone: "position" | "order" | "recovery" };
+
+function tradeMarks(state: RuntimeStrategyState | undefined): TradeMark[] {
   if (!state) return [];
-  const marks: string[] = [];
+  const marks: TradeMark[] = [];
   const side = state.side ? ` · ${state.side.toUpperCase()}` : "";
-  if (state.trade_state === "in_position") marks.push(`IN POSITION${side}`);
-  if (state.trade_state === "entry_pending") marks.push(`ENTRY ORDER${side}`);
-  if (state.recovery_pending) marks.push(`RECOVERY · ${state.recovery_pending.toUpperCase()}`);
+  if (state.trade_state === "in_position") marks.push({ text: `IN POSITION${side}`, tone: "position" });
+  if (state.trade_state === "entry_pending") marks.push({ text: `ENTRY ORDER${side}`, tone: "order" });
+  if (state.recovery_pending) marks.push({ text: `RECOVERY · ${state.recovery_pending.toUpperCase()}`, tone: "recovery" });
   return marks;
+}
+
+type StrategyPresentation = { heading: string; details: readonly string[] };
+
+function strategyPresentation(
+  strategy: RuntimeStrategyInstance,
+  candidateIndex: RuntimeCandidateIndex | null,
+): StrategyPresentation {
+  const candidate = candidateIndex?.get(strategy.source_path);
+  if (!candidate) {
+    const fallback = cardName(strategy.source_path);
+    return { heading: fallback, details: [] };
+  }
+  const summary = summarizeRuntimeStrategy(strategy, candidate);
+  if (summary.kind === "unsupported") {
+    return { heading: UNKNOWN_STRATEGY_SPEC, details: [] };
+  }
+  return { heading: summary.heading, details: summary.details };
 }
 
 export function RuntimeDashboard() {
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [selected, setSelected] = useState<RuntimeStrategyInstance | null>(null);
   const [journal, setJournal] = useState<ReadonlyMap<string, JournalStrategyInstance> | null>(null);
+  const [candidateIndex, setCandidateIndex] = useState<RuntimeCandidateIndex | null>(null);
   const generation = useRef(0);
   const [states, setStates] = useState<ReadonlyMap<string, RuntimeStrategyState> | null>(null);
   const [statesFailed, setStatesFailed] = useState(false);
@@ -199,6 +227,7 @@ export function RuntimeDashboard() {
   const load = useCallback((keepList = false) => {
     const mine = ++generation.current;
     if (!keepList) setPhase({ kind: "loading" });
+    setCandidateIndex(null);
     loadStates();
     // the cards' "Last evaluated" line; a Journal failure leaves the cards as they were
     fetchJournalStrategyInstances().then(
@@ -207,6 +236,14 @@ export function RuntimeDashboard() {
       },
       () => {
         if (generation.current === mine) setJournal(null);
+      },
+    );
+    listCandidates().then(
+      ({ candidates }) => {
+        if (generation.current === mine) setCandidateIndex(indexCandidatesByRuntimeFile(candidates));
+      },
+      () => {
+        if (generation.current === mine) setCandidateIndex(null);
       },
     );
     fetchRuntimeStrategyInstances().then(
@@ -340,10 +377,11 @@ export function RuntimeDashboard() {
   const inPosition = states ? [...states.values()].filter((x) => x.trade_state === "in_position").length : 0;
   const entryOrders = states ? [...states.values()].filter((x) => x.trade_state === "entry_pending").length : 0;
   const noDiagnostics = !list || (list.invalid_files.length === 0 && list.duplicate_identities.length === 0);
+  const selectedPresentation = selected ? strategyPresentation(selected, candidateIndex) : null;
 
   return (
     <section className="sx" aria-label="Runtime Dashboard">
-      <div className="sx-wrap">
+      <div className="sx-wrap rt-wrap">
         <header className="rt-head">
           <div className="rt-head-text">
             <div className="sx-eyebrow">Runtime</div>
@@ -407,6 +445,7 @@ export function RuntimeDashboard() {
               <ul className="rt-grid" aria-label="Strategies">
                 {list.strategy_instances.map((s) => {
                   const isSelected = selected?.strategy_instance_id === s.strategy_instance_id;
+                  const presentation = strategyPresentation(s, candidateIndex);
                   return (
                     <li key={s.strategy_instance_id} className="sx-panel rt-card" data-selected={isSelected ? "true" : "false"}>
                       <button
@@ -416,20 +455,21 @@ export function RuntimeDashboard() {
                         onClick={() => setSelected(s)}
                       >
                         <div className="rt-card-top">
-                          <span className="rt-name">{cardName(s.source_path)}</span>
+                          <span className="rt-name" title={s.source_path}>{presentation.heading}</span>
                           <span className="rt-state" data-enabled={s.enabled ? "true" : "false"}>
                             <span className="rt-dot" aria-hidden="true" />
                             {s.enabled ? "ENABLED" : "DISABLED"}
                           </span>
                         </div>
+                        {presentation.details.length > 0 && (
+                          <div className="rt-strategy-details sx-num">{presentation.details.join(" · ")}</div>
+                        )}
                         <div className="rt-meta sx-num">
-                          {s.strategy_id} · {s.instrument} · {s.base_timeframe}
+                          {s.strategy_id} · {s.base_timeframe}
                         </div>
-                        <div className="rt-id sx-num">{s.strategy_instance_id}</div>
+                        <div className="rt-id sx-num" title={s.strategy_instance_id}>{s.strategy_instance_id}</div>
                         {tradeMarks(states?.get(s.strategy_instance_id)).map((m) => (
-                          <div key={m} className="rt-meta sx-num">
-                            {m}
-                          </div>
+                          <span key={m.text} className="rt-trade-mark sx-num" data-tone={m.tone}>{m.text}</span>
                         ))}
                         {journal && (
                           <div className="rt-meta sx-num">
@@ -490,7 +530,8 @@ export function RuntimeDashboard() {
               </ul>
             )}
             <RuntimeChartPanel
-              strategyName={selected ? cardName(selected.source_path) : null}
+              displayTitle={selectedPresentation?.heading ?? null}
+              deploymentFile={selected?.source_path ?? null}
               strategyInstanceId={selected ? selected.strategy_instance_id : null}
               market={selected ? { symbol: selected.instrument, timeframe: selected.base_timeframe } : null}
             />
